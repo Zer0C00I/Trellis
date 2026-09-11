@@ -263,6 +263,48 @@ B2B (лицензирование домам престарелых) — roadmap
 сессия могла бы добавить "своего" approver и затем украсть vault через
 rotation). Зафиксировать это правило при имплементации.
 
+## Sources
+
+**Colosseum / hackathon правила и критерии**
+- [colosseum.com/hackathon](https://colosseum.com/hackathon) — даты (build 09-14→10-12), eligibility, submission requirements
+- [Announcing the Solana Frontier Hackathon](https://blog.colosseum.com/announcing-the-solana-frontier-hackathon/)
+- [Colosseum Frontier Hackathon 2026 Winners — Solana Compass](https://solanacompass.com/news/colosseum-announces-26-winners-of-the-solana-frontier-hackathon-the-largest-crypto-hackathon-ever)
+- [$2.75M in Investments and Prizes — Incrypted](https://incrypted.com/en/the-colosseum-frontier-hackathon-has-officially-kicked-off/)
+- [Solana Grants and Funding](https://solana.org/grants-funding)
+- [SuperteamCanada: how-to-win-colosseum-hackathon guide](https://github.com/SuperteamCanada/how-to-win-colosseum-hackathon)
+
+**Проблема / статистика**
+- [Pew Research crypto ownership by age (via coinlaw.io)](https://coinlaw.io/crypto-ownership-by-generation-statistics/)
+- [Motley Fool 2026 Cryptocurrency Investor Trends Survey](https://www.fool.com/money/research/study-americans-cryptocurrency/)
+- [Digital Disparities Among Older Adults — PMC](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12760905/)
+- [Rapid review of digital exclusion interventions in older adults — medRxiv](https://www.medrxiv.org/content/10.1101/2024.03.21.24304670.full.pdf)
+
+**Этика eldercare-tech / монетизация**
+- [Aging 4.0? Rethinking the ethical framing of technology-assisted eldercare — PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC8332600/)
+- [NCRC: FinTech and Older Adults](https://ncrc.org/issue-brief-fintech-and-older-adults/)
+- [Elder Financial Exploitation in the Digital Age — JAAPL](https://jaapl.org/content/51/2/173)
+- [Beyond technical access in digital eldercare: ethical lag — BMC Geriatrics](https://link.springer.com/article/10.1186/s12877-026-07768-1)
+- [Care coordination in B2B and B2C telemonitoring models — PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC5734380/)
+
+**Anti-scam**
+- [Elliptic: crypto scams and elder financial exploitation](https://www.elliptic.co/blog/analysis/crypto-scams-and-elder-financial-exploitation-cracking-down-on-fraud-targeting-the-vulnerable)
+- [KoinX: Crypto Whitelist Scams](https://www.koinx.com/blog/crypto-whitelist-scams)
+
+**Технологии / крейты**
+- [Anchor releases — solana-foundation/anchor](https://github.com/solana-foundation/anchor/releases)
+- [solana-client crates.io](https://crates.io/crates/solana-client)
+- [solana-sdk crates.io](https://crates.io/crates/solana-sdk)
+- [anchor_spl::token::Approve — docs.rs](https://docs.rs/anchor-spl/latest/anchor_spl/token/struct.Approve.html)
+- [spl_token::instruction approve/revoke — docs.rs](https://docs.rs/spl-token/latest/spl_token/instruction/enum.TokenInstruction.html)
+- [Helius Rust SDK docs](https://www.helius.dev/docs/agents/rust-sdk)
+- [Circle Docs: Transfer USDC on Solana (devnet mint + faucet)](https://developers.circle.com/stablecoins/quickstart-transfer-10-usdc-on-solana)
+- [i-slint-backend-winit — crates.io](https://crates.io/crates/i-slint-backend-winit)
+- [Slint FAQ (license options)](https://github.com/slint-ui/slint/blob/master/FAQ.md)
+- [Slint 1.1 Royalty-Free License blog](https://slint.dev/blog/slint-1.1-released)
+- [cage — Alpine Linux package](https://pkgs.alpinelinux.org/package/edge/community/x86/cage)
+- [InventorsTale/alpinelinux-kiosk (reference build)](https://github.com/InventorsTale/alpinelinux-kiosk)
+- [wlroots multi-gpu / QEMU rendering issue](https://github.com/swaywm/wlroots/issues/1181)
+
 ## Открытые вопросы / вне скоупа MVP
 
 - Realloc-логика для BeneficiaryList/TrustedApprovers при росте сверх
