@@ -1,1 +1,2 @@
-// Instruction handlers added starting Task 4.
+pub mod initialize_vault;
+pub use initialize_vault::*;

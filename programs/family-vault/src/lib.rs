@@ -4,9 +4,15 @@ pub mod errors;
 pub mod state;
 pub mod instructions;
 
-declare_id!("6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S");
+use instructions::*;
+
+declare_id!("FVau1t1111111111111111111111111111111111111");
 
 #[program]
 pub mod family_vault {
     use super::*;
+
+    pub fn initialize_vault(ctx: Context<InitializeVault>, is_pool: bool, daily_limit: u64) -> Result<()> {
+        instructions::initialize_vault(ctx, is_pool, daily_limit)
+    }
 }
