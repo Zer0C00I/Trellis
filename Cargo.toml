@@ -1,0 +1,3 @@
+[workspace]
+members = ["programs/family-vault"]
+resolver = "2"

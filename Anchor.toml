@@ -1,0 +1,23 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "2.1.21"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+family_vault = "11111111111111111111111111111111"
+
+[programs.devnet]
+family_vault = "11111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test --manifest-path programs/family-vault/Cargo.toml -- --test-threads=1"
