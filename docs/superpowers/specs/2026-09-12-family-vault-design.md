@@ -98,7 +98,10 @@ struct Beneficiary {
     active_after: i64,     // added_at + 48h, anti-scam cooldown
 }
 
-// Seeds: ["approvers", vault_pubkey] — только для pool
+// Seeds: ["approvers", vault_pubkey]
+// Для pool: одобряет withdrawal сверх daily_limit.
+// Для personal: одобряет owner-rotation (recovery) — withdrawal-лимита
+// на personal нет, approvers там нужны ТОЛЬКО для recovery-сценария.
 struct TrustedApprovers {
     vault: Pubkey,
     entries: Vec<Pubkey>,  // fixed capacity 5
@@ -112,6 +115,16 @@ struct PendingWithdrawal {
     requested_at: i64,
     approved_by: Option<Pubkey>,
     executed: bool,
+}
+
+// Seeds: ["rotation", vault_pubkey, nonce] — personal и pool
+struct PendingRotation {
+    vault: Pubkey,
+    new_owner: Pubkey,
+    requested_by: Pubkey,
+    requested_at: i64,
+    executes_at: i64,   // requested_at + 72h
+    cancelled: bool,
 }
 ```
 
@@ -148,6 +161,20 @@ withdraw(amount: u64, to: Pubkey)
 approve_withdrawal(request: Pubkey)
   // signer: любой из TrustedApprovers
   // выполняет transfer сразу (approve + execute в одной инструкции)
+
+request_owner_rotation(new_owner: Pubkey)
+  // signer: любой из TrustedApprovers (нужны и на personal vault теперь,
+  // не только на pool — см. изменение в Accounts)
+  // создаёт PendingRotation { new_owner, requested_at, executes_at: now+72h }
+
+execute_owner_rotation(rotation: Pubkey)
+  // permissionless (кто угодно может дёрнуть после истечения timelock)
+  // проверка: now >= executes_at
+  // vault.owner = new_owner
+
+cancel_owner_rotation(rotation: Pubkey)
+  // signer: текущий owner (если ключ жив и это ложная тревога/атака)
+  // ИЛИ любой другой trusted approver, не согласный с ротацией
 ```
 
 ## Anti-scam модель
@@ -205,13 +232,30 @@ B2B (лицензирование домам престарелых) — roadmap
 питча, риск pass-through стоимости на резидента требует отдельной
 проработки governance.
 
+## Recovery-флоу (потеря/кража устройства)
+
+`owner`-ключ каждого vault (personal и pool) может быть заменён через
+`request_owner_rotation` → 72h timelock → `execute_owner_rotation`.
+Инициирует любой из `TrustedApprovers`. Timelock даёт время заметить и
+отменить (`cancel_owner_rotation`) — либо самим владельцем (если ключ
+жив и это ложная тревога), либо другим approver'ом, не согласным с
+ротацией. Это тот же паттерн, что atomic multisig-recovery у стандартных
+кошельков (Squads и т.п.), не изобретение нового примитива — только
+адаптация timelock+multisig под наш account-дизайн.
+
+Личный вывод (`owner`) не даёт назначить approvers на personal vault
+сам себе бесконтрольно — `add_trusted_approver` на personal vault
+должен требовать хотя бы одного уже существующего approver либо
+задаваться при `initialize_vault` (иначе одна скомпрометированная
+сессия могла бы добавить "своего" approver и затем украсть vault через
+rotation). Зафиксировать это правило при имплементации.
+
 ## Открытые вопросы / вне скоупа MVP
 
 - Realloc-логика для BeneficiaryList/TrustedApprovers при росте сверх
   fixed capacity — не в MVP.
 - Secure element/TPM — roadmap.
 - Мультисемейные сценарии (несколько admin на один pool одновременно) —
-  не в MVP, один admin создаёт pool.
-- Recovery-флоу при потере/краже устройства (переиздание нового
-  устройства с доступом к тем же vault-аккаунтам) — не проработано,
-  требует отдельного design pass перед реальным использованием.
+  сознательно не поддерживаем: один физический гаджет = один конкретный
+  vault-набор для одного пожилого человека, как реальный кошелёк с
+  наличными, не мульти-тенантное устройство.
