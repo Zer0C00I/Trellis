@@ -245,6 +245,34 @@ B2B (лицензирование домам престарелых) — roadmap
 питча, риск pass-through стоимости на резидента требует отдельной
 проработки governance.
 
+## Demand validation
+
+**Вторичное доказательство (уже есть, не требует действий):**
+- Вирусные документированные случаи вреда: внук уговорил бабушку вложить
+  $50K в крипто, потеряла 60% пенсионных накоплений; подросток обнаружил,
+  что мать потеряла ~$30K — проблема не гипотетическая.
+- Существующие конкуренты уже видят и обслуживают этот сегмент частично:
+  **Tangem** (hardware wallet, no seed phrase, позиционируется под
+  seniors), приложение **"Family - Crypto Wallet"** в App Store — рынок
+  подтверждён другими игроками, но closed-address-book +
+  single-purpose kiosk + family-pool combo не занято никем из них
+  (differentiator).
+- Рыночный рост: взрослые 60+ — уже **17%** всех крипто-владельцев в
+  мире, в США **37%** крипто-юзеров — Gen X или Baby Boomers.
+  Сегмент растёт быстрее, чем появляются подходящие инструменты под
+  него — отсюда и вред из вирусных историй выше.
+
+**Первичное (нужно собрать до конца хакатона, план):**
+- 5-10 коротких интервью с людьми, у которых есть пожилой родственник и
+  либо (а) есть желание вовлечь его в crypto/финансы безопасно, либо
+  (б) уже был негативный опыт (потеря денег, скам, отказ пользоваться
+  технологией). Цель — не питчить продукт, а подтвердить/опровергнуть
+  проблему их словами, для питч-слайда и для калибровки UI-решений.
+- Опционально: простой лендинг с описанием проблемы + waitlist-форма,
+  трафик через тематические сообщества (reddit r/CryptoCurrency,
+  r/eldercare, тематические Facebook-группы для caregivers) — сигнал
+  интереса, не продаж.
+
 ## Recovery-флоу (потеря/кража устройства)
 
 `owner`-ключ каждого vault (personal и pool) может быть заменён через
@@ -272,6 +300,14 @@ rotation). Зафиксировать это правило при имплем�
 - [$2.75M in Investments and Prizes — Incrypted](https://incrypted.com/en/the-colosseum-frontier-hackathon-has-officially-kicked-off/)
 - [Solana Grants and Funding](https://solana.org/grants-funding)
 - [SuperteamCanada: how-to-win-colosseum-hackathon guide](https://github.com/SuperteamCanada/how-to-win-colosseum-hackathon)
+
+**Demand validation**
+- [Reddit grandson/$50K crypto loss story — Yahoo Finance](https://finance.yahoo.com/news/reddit-roasting-guy-lost-grandmas-170041767.html)
+- [Teen discovers mom lost ~$30K in crypto — AOL](https://www.aol.com/articles/teen-overhears-mom-lost-around-141001200.html)
+- [Tangem: Best Crypto Wallet for Seniors 2026](https://tangem.com/en/blog/post/best-crypto-wallet-for-seniors/)
+- [Family - Crypto Wallet — App Store](https://apps.apple.com/app/id1606779267)
+- [Market validation tactics for pre-seed startups — Thinslices](https://www.thinslices.com/insights/market-validation-tactics-for-pre-seed-and-seed-tech-startups)
+- [Customer Validation With No Customers — Pitch Deck Fire](https://pitchdeckfire.com/resources/validation-with-no-customers-perfect-pitch-deck-traction/)
 
 **Проблема / статистика**
 - [Pew Research crypto ownership by age (via coinlaw.io)](https://coinlaw.io/crypto-ownership-by-generation-statistics/)
