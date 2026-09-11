@@ -262,20 +262,34 @@ B2B (лицензирование домам престарелых) — roadmap
   Сегмент растёт быстрее, чем появляются подходящие инструменты под
   него — отсюда и вред из вирусных историй выше.
 
+**Масштаб денежного вреда (FBI/отраслевые данные):**
+- Американцы 60+ потеряли почти **$3 млрд** на крипто-скамах только в
+  2024 году (FBI).
+- Индивидуальные кейсы: пара потеряла **$1.3 млн** пенсионных
+  накоплений скамерам, представившимся сотрудниками FTC; мужчина
+  потерял **$340K** сбережений через "друга", встреченного онлайн,
+  убедившего вложиться в крипто.
+- **Romance/"pig butchering" scams** (фейковые романтические отношения,
+  затем убеждение вложить в фиктивную крипто-платформу) — один из
+  крупнейших источников финансовых потерь пожилых, свыше **$3.5 млрд**
+  зарегистрированных убытков за год по этой отдельной категории.
+- Паттерн от caregiver-ресурсов: пожилой человек часто отвергает
+  предупреждения родственника, если эмоционально вовлечён (романтический
+  скам) или доверяет "другу" — что усиливает аргумент за
+  **closed address book** (Секция anti-scam) как структурное, а не
+  уговорное решение: не полагаться на то, что пожилой человек поверит
+  предупреждению постфактум.
+- Reddit-кейс (см. Sources) — вирусный пример именно того сценария,
+  который наш продукт должен архитектурно исключить: родственник сам
+  инициировал рискованное вложение от имени бабушки без структурных
+  ограничений на сумму/адрес.
+
 **Founder-insight (личное наблюдение, не формальное исследование):**
 Основатели лично наблюдают более раннюю стадию того же разрыва в своём
 окружении — старшее поколение вокруг них не перешло даже на банковские
-карты, использует наличные. Это не заменяет формальные интервью, но
-честный personal founder-market-fit сигнал: проблема не гипотетическая,
-видна напрямую, до всякой крипты.
-
-**Первичные интервью — сознательно не проводились в рамках хакатона.**
-Не выдумываем несуществующие интервью ради галочки в форме (прямое
-основание для дисквалификации по правилам Colosseum — misrepresentation
-of development history). Опора на вторичные источники выше +
-founder-insight. Если появится время до дедлайна — честная опция:
-пост в тематическом сообществе (r/CryptoCurrency, caregiver-форумы) с
-открытым вопросом, реальные ответы как естественно накопленный сигнал.
+карты, использует наличные. Не заменяет формальные интервью, но честный
+personal founder-market-fit сигнал: проблема не гипотетическая, видна
+напрямую, до всякой крипты.
 
 ## Recovery-флоу (потеря/кража устройства)
 
@@ -308,6 +322,11 @@ rotation). Зафиксировать это правило при имплем�
 **Demand validation**
 - [Reddit grandson/$50K crypto loss story — Yahoo Finance](https://finance.yahoo.com/news/reddit-roasting-guy-lost-grandmas-170041767.html)
 - [Teen discovers mom lost ~$30K in crypto — AOL](https://www.aol.com/articles/teen-overhears-mom-lost-around-141001200.html)
+- [FBI: Americans 60+ lost ~$3B to crypto scams in 2024 — TipRanks](https://www.tipranks.com/news/crypto-scams-are-quietly-draining-seniors-life-savings-heres-how-to-stop-it)
+- [Couple lost $1.3M to fake-FTC crypto scam — Global News](https://globalnews.ca/news/9099844/newmarket-senior-grandparent-scam/amp/)
+- [$340K life savings lost via online "friend" crypto scam — MEXC News](https://www.mexc.com/news/452750)
+- [Romance/"pig butchering" crypto scams targeting elders — Mass.gov](https://www.mass.gov/news/cryptocurrency-scams-are-targeting-older-adults-what-you-need-to-know)
+- [Caregiver pushback patterns in elder scam intervention — HelpGuide.org](https://www.helpguide.org/aging/healthy-aging/elder-scams-and-senior-fraud-abuse)
 - [Tangem: Best Crypto Wallet for Seniors 2026](https://tangem.com/en/blog/post/best-crypto-wallet-for-seniors/)
 - [Family - Crypto Wallet — App Store](https://apps.apple.com/app/id1606779267)
 - [Market validation tactics for pre-seed startups — Thinslices](https://www.thinslices.com/insights/market-validation-tactics-for-pre-seed-and-seed-tech-startups)
