@@ -76,3 +76,25 @@ impl TrustedApprovers {
         + 1  // count
         + 32 * MAX_APPROVERS;
 }
+
+#[account]
+pub struct PendingWithdrawal {
+    pub vault: Pubkey,
+    pub amount: u64,
+    pub to: Pubkey,
+    pub requested_at: i64,
+    pub approved_by: Option<Pubkey>,
+    pub executed: bool,
+    pub bump: u8,
+}
+
+impl PendingWithdrawal {
+    pub const SPACE: usize = 8 // discriminator
+        + 32 // vault
+        + 8  // amount
+        + 32 // to
+        + 8  // requested_at
+        + (1 + 32) // approved_by: Option<Pubkey>
+        + 1  // executed
+        + 1; // bump
+}

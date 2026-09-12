@@ -10,3 +10,7 @@ pub mod initialize_approvers;
 pub use initialize_approvers::*;
 pub mod add_trusted_approver;
 pub use add_trusted_approver::*;
+pub mod request_withdrawal;
+pub use request_withdrawal::*;
+pub mod approve_withdrawal;
+pub use approve_withdrawal::*;

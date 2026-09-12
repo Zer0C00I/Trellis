@@ -35,4 +35,12 @@ pub mod family_vault {
     pub fn add_trusted_approver(ctx: Context<AddTrustedApprover>, address: Pubkey) -> Result<()> {
         instructions::add_trusted_approver(ctx, address)
     }
+
+    pub fn request_withdrawal(ctx: Context<RequestWithdrawal>, amount: u64, nonce: u64) -> Result<()> {
+        instructions::request_withdrawal(ctx, amount, nonce)
+    }
+
+    pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
+        instructions::approve_withdrawal(ctx)
+    }
 }

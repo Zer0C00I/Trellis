@@ -26,4 +26,10 @@ pub enum VaultError {
     ApproverListFull,
     #[msg("Address is already a trusted approver")]
     ApproverAlreadyExists,
+    #[msg("This instruction is only valid for pool vaults")]
+    NotPoolVault,
+    #[msg("This withdrawal request has already been executed")]
+    RequestAlreadyExecuted,
+    #[msg("Signer is not a trusted approver")]
+    NotTrustedApprover,
 }
