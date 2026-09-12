@@ -38,4 +38,14 @@ pub enum VaultError {
     NotAuthorizedToCancel,
     #[msg("The rotation timelock has not elapsed yet")]
     RotationTimelockNotElapsed,
+    #[msg("An existing trusted approver must co-sign to add another approver to a personal vault")]
+    ExistingApproverRequired,
+    #[msg("Requested amount does not exceed the daily limit; use ordinary withdraw instead")]
+    AmountDoesNotExceedDailyLimit,
+    #[msg("The vault owner may not be added as a trusted approver")]
+    CannotApproveOwnWithdrawals,
+    #[msg("An approver may not name themselves as the new owner")]
+    CannotRotateToSelf,
+    #[msg("Approver address may not be the default (all-zeros) pubkey")]
+    InvalidApproverAddress,
 }

@@ -61,7 +61,7 @@ fn setup_pool_vault_with_approver(
     let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, owner], ctx.svm.latest_blockhash());
     ctx.svm.send_transaction(tx).unwrap();
 
-    let add_app_accounts = family_vault::accounts::AddTrustedApprover { signer: owner.pubkey(), vault, approvers };
+    let add_app_accounts = family_vault::accounts::AddTrustedApprover { signer: owner.pubkey(), vault, approvers, existing_approver: None };
     let add_app_data = family_vault::instruction::AddTrustedApprover { address: approver.pubkey() };
     let ix = Instruction { program_id: family_vault::ID, accounts: add_app_accounts.to_account_metas(None), data: add_app_data.data() };
     let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, owner], ctx.svm.latest_blockhash());
@@ -236,6 +236,192 @@ fn cannot_approve_the_same_request_twice() {
     let result2 = ctx.svm.send_transaction(tx2);
     assert!(result2.is_err(), "expected second approve_withdrawal on the same request to be rejected");
     assert_eq!(token_balance(&ctx, &beneficiary_ata), 60_000_000, "balance must reflect exactly one execution");
+}
+
+#[test]
+fn approver_cannot_redirect_recipient_to_a_different_token_account() {
+    let mut ctx = setup();
+    let owner = Keypair::new();
+    let approver = Keypair::new();
+    let beneficiary = Keypair::new();
+    let attacker = Keypair::new();
+    ctx.svm.airdrop(&owner.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&approver.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&beneficiary.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&attacker.pubkey(), 1_000_000_000).unwrap();
+
+    let fixture = setup_pool_vault_with_approver(&mut ctx, &owner, &approver, beneficiary.pubkey());
+    let beneficiary_ata = create_ata(&mut ctx, &beneficiary.pubkey());
+    // An account the attacker (a malicious or compromised approver) controls,
+    // NOT the recipient named in the original request.
+    let attacker_ata = create_ata(&mut ctx, &attacker.pubkey());
+
+    let nonce: u64 = 1;
+    let (pending_withdrawal, _) = Pubkey::find_program_address(
+        &[b"request", fixture.vault.as_ref(), &nonce.to_le_bytes()],
+        &family_vault::ID,
+    );
+    let request_accounts = family_vault::accounts::RequestWithdrawal {
+        signer: owner.pubkey(),
+        vault: fixture.vault,
+        beneficiary_list: fixture.beneficiary_list,
+        recipient_token_account: beneficiary_ata,
+        pending_withdrawal,
+        system_program: system_program::id(),
+    };
+    let request_data = family_vault::instruction::RequestWithdrawal { amount: 80_000_000, nonce };
+    let ix = Instruction { program_id: family_vault::ID, accounts: request_accounts.to_account_metas(None), data: request_data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &owner], ctx.svm.latest_blockhash());
+    ctx.svm.send_transaction(tx).unwrap();
+
+    // Approver substitutes attacker_ata instead of the originally-requested
+    // beneficiary_ata — this must be rejected by the
+    // `recipient_token_account.owner == pending_withdrawal.to` constraint.
+    let approve_accounts = family_vault::accounts::ApproveWithdrawal {
+        signer: approver.pubkey(),
+        pending_withdrawal,
+        approvers: fixture.approvers,
+        vault_token_account: fixture.vault_token_account,
+        recipient_token_account: attacker_ata,
+        vault: fixture.vault,
+        token_program: spl_token::id(),
+    };
+    let ix = Instruction { program_id: family_vault::ID, accounts: approve_accounts.to_account_metas(None), data: family_vault::instruction::ApproveWithdrawal {}.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &approver], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected approve_withdrawal with a substituted recipient_token_account to be rejected");
+    assert_eq!(token_balance(&ctx, &attacker_ata), 0, "no funds should have moved to the attacker's account");
+    assert_eq!(token_balance(&ctx, &beneficiary_ata), 0, "no funds should have moved at all");
+}
+
+#[test]
+fn cross_vault_substitution_of_pending_withdrawal_and_approvers_is_rejected() {
+    let mut ctx = setup();
+    let owner_a = Keypair::new();
+    let approver_a = Keypair::new();
+    let beneficiary_a = Keypair::new();
+    let owner_b = Keypair::new();
+    let approver_b = Keypair::new();
+    let beneficiary_b = Keypair::new();
+    ctx.svm.airdrop(&owner_a.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&approver_a.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&beneficiary_a.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&owner_b.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&approver_b.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&beneficiary_b.pubkey(), 1_000_000_000).unwrap();
+
+    // Two independent pool vaults, each with their own approvers, beneficiary
+    // and pending_withdrawal.
+    let fixture_a = setup_pool_vault_with_approver(&mut ctx, &owner_a, &approver_a, beneficiary_a.pubkey());
+    let beneficiary_a_ata = create_ata(&mut ctx, &beneficiary_a.pubkey());
+    let fixture_b = setup_pool_vault_with_approver(&mut ctx, &owner_b, &approver_b, beneficiary_b.pubkey());
+    let beneficiary_b_ata = create_ata(&mut ctx, &beneficiary_b.pubkey());
+
+    let nonce: u64 = 1;
+    let (pending_withdrawal_a, _) = Pubkey::find_program_address(
+        &[b"request", fixture_a.vault.as_ref(), &nonce.to_le_bytes()],
+        &family_vault::ID,
+    );
+    let request_accounts_a = family_vault::accounts::RequestWithdrawal {
+        signer: owner_a.pubkey(),
+        vault: fixture_a.vault,
+        beneficiary_list: fixture_a.beneficiary_list,
+        recipient_token_account: beneficiary_a_ata,
+        pending_withdrawal: pending_withdrawal_a,
+        system_program: system_program::id(),
+    };
+    let request_data_a = family_vault::instruction::RequestWithdrawal { amount: 80_000_000, nonce };
+    let ix = Instruction { program_id: family_vault::ID, accounts: request_accounts_a.to_account_metas(None), data: request_data_a.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &owner_a], ctx.svm.latest_blockhash());
+    ctx.svm.send_transaction(tx).unwrap();
+
+    let (pending_withdrawal_b, _) = Pubkey::find_program_address(
+        &[b"request", fixture_b.vault.as_ref(), &nonce.to_le_bytes()],
+        &family_vault::ID,
+    );
+    let request_accounts_b = family_vault::accounts::RequestWithdrawal {
+        signer: owner_b.pubkey(),
+        vault: fixture_b.vault,
+        beneficiary_list: fixture_b.beneficiary_list,
+        recipient_token_account: beneficiary_b_ata,
+        pending_withdrawal: pending_withdrawal_b,
+        system_program: system_program::id(),
+    };
+    let request_data_b = family_vault::instruction::RequestWithdrawal { amount: 80_000_000, nonce };
+    let ix = Instruction { program_id: family_vault::ID, accounts: request_accounts_b.to_account_metas(None), data: request_data_b.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &owner_b], ctx.svm.latest_blockhash());
+    ctx.svm.send_transaction(tx).unwrap();
+
+    // Attempt to use vault A's `approvers` and `pending_withdrawal` against
+    // vault B's `approve_withdrawal` call (vault: fixture_b.vault). The
+    // `has_one = vault` constraints on both accounts must reject this.
+    let approve_accounts = family_vault::accounts::ApproveWithdrawal {
+        signer: approver_a.pubkey(),
+        pending_withdrawal: pending_withdrawal_a,
+        approvers: fixture_a.approvers,
+        vault_token_account: fixture_b.vault_token_account,
+        recipient_token_account: beneficiary_a_ata,
+        vault: fixture_b.vault,
+        token_program: spl_token::id(),
+    };
+    let ix = Instruction { program_id: family_vault::ID, accounts: approve_accounts.to_account_metas(None), data: family_vault::instruction::ApproveWithdrawal {}.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &approver_a], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected cross-vault substitution of pending_withdrawal/approvers against a different vault to be rejected");
+    assert_eq!(token_balance(&ctx, &beneficiary_a_ata), 0, "no funds should have moved on a rejected cross-vault substitution");
+
+    // Also attempt using vault B's approvers/pending_withdrawal but vault A's
+    // `vault` account — the has_one constraints must reject this direction too.
+    let approve_accounts2 = family_vault::accounts::ApproveWithdrawal {
+        signer: approver_b.pubkey(),
+        pending_withdrawal: pending_withdrawal_b,
+        approvers: fixture_b.approvers,
+        vault_token_account: fixture_a.vault_token_account,
+        recipient_token_account: beneficiary_b_ata,
+        vault: fixture_a.vault,
+        token_program: spl_token::id(),
+    };
+    let ix2 = Instruction { program_id: family_vault::ID, accounts: approve_accounts2.to_account_metas(None), data: family_vault::instruction::ApproveWithdrawal {}.data() };
+    let tx2 = Transaction::new_signed_with_payer(&[ix2], Some(&ctx.payer.pubkey()), &[&ctx.payer, &approver_b], ctx.svm.latest_blockhash());
+    let result2 = ctx.svm.send_transaction(tx2);
+    assert!(result2.is_err(), "expected reverse-direction cross-vault substitution to be rejected");
+    assert_eq!(token_balance(&ctx, &beneficiary_b_ata), 0, "no funds should have moved on a rejected cross-vault substitution");
+}
+
+#[test]
+fn request_withdrawal_rejects_amount_within_daily_limit() {
+    let mut ctx = setup();
+    let owner = Keypair::new();
+    let approver = Keypair::new();
+    let beneficiary = Keypair::new();
+    ctx.svm.airdrop(&owner.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&approver.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&beneficiary.pubkey(), 1_000_000_000).unwrap();
+
+    let fixture = setup_pool_vault_with_approver(&mut ctx, &owner, &approver, beneficiary.pubkey());
+    let beneficiary_ata = create_ata(&mut ctx, &beneficiary.pubkey());
+
+    // 10M does not exceed the 50M daily limit — request_withdrawal must not
+    // be usable as an unlimited-amount bypass channel; callers within the
+    // limit should use ordinary `withdraw` instead.
+    let nonce: u64 = 1;
+    let (pending_withdrawal, _) = Pubkey::find_program_address(
+        &[b"request", fixture.vault.as_ref(), &nonce.to_le_bytes()],
+        &family_vault::ID,
+    );
+    let request_accounts = family_vault::accounts::RequestWithdrawal {
+        signer: owner.pubkey(),
+        vault: fixture.vault,
+        beneficiary_list: fixture.beneficiary_list,
+        recipient_token_account: beneficiary_ata,
+        pending_withdrawal,
+        system_program: system_program::id(),
+    };
+    let request_data = family_vault::instruction::RequestWithdrawal { amount: 10_000_000, nonce };
+    let ix = Instruction { program_id: family_vault::ID, accounts: request_accounts.to_account_metas(None), data: request_data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &owner], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected request_withdrawal for an amount within the daily limit to be rejected");
 }
 
 #[test]

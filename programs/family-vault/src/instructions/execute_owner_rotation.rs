@@ -6,12 +6,14 @@ use crate::state::{PendingRotation, Vault};
 pub fn execute_owner_rotation(ctx: Context<ExecuteOwnerRotation>) -> Result<()> {
     let rotation = &ctx.accounts.rotation;
     require!(!rotation.cancelled, VaultError::RotationAlreadyCancelled);
+    require!(!rotation.executed, VaultError::RequestAlreadyExecuted);
 
     let now = Clock::get()?.unix_timestamp;
     require!(now >= rotation.executes_at, VaultError::RotationTimelockNotElapsed);
 
     let new_owner = rotation.new_owner;
     ctx.accounts.vault.owner = new_owner;
+    ctx.accounts.rotation.executed = true;
 
     Ok(())
 }
@@ -26,6 +28,6 @@ pub struct ExecuteOwnerRotation<'info> {
     #[account(mut)]
     pub vault: Account<'info, Vault>,
 
-    #[account(has_one = vault)]
+    #[account(mut, has_one = vault)]
     pub rotation: Account<'info, PendingRotation>,
 }

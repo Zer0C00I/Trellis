@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 
 pub const MAX_BENEFICIARIES: usize = 10;
-// reserved for the family-vault-approvals follow-up plan
 pub const MAX_APPROVERS: usize = 5;
 pub const BENEFICIARY_NAME_LEN: usize = 32;
 pub const BENEFICIARY_COOLDOWN_SECS: i64 = 172_800; // 48h
@@ -15,6 +14,13 @@ pub struct Vault {
     pub last_reset_day: i64,
     pub is_pool: bool,
     pub bump: u8,
+    // The ORIGINAL owner used to derive this vault's PDA at `initialize_vault`
+    // time. The PDA's address is permanently fixed to this value, so unlike
+    // `owner` (which owner-rotation mutates), `seed_owner` is never updated
+    // after init — CPI signer-seed reconstruction must always use this field,
+    // never the current `owner`, or invoke_signed will fail with
+    // PrivilegeEscalation after any rotation.
+    pub seed_owner: Pubkey,
 }
 
 impl Vault {
@@ -25,7 +31,8 @@ impl Vault {
         + 8  // spent_today
         + 8  // last_reset_day
         + 1  // is_pool
-        + 1; // bump
+        + 1  // bump
+        + 32; // seed_owner
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
@@ -110,6 +117,7 @@ pub struct PendingRotation {
     pub executes_at: i64,
     pub cancelled: bool,
     pub bump: u8,
+    pub executed: bool,
 }
 
 impl PendingRotation {
@@ -120,5 +128,6 @@ impl PendingRotation {
         + 8  // requested_at
         + 8  // executes_at
         + 1  // cancelled
-        + 1; // bump
+        + 1  // bump
+        + 1; // executed
 }

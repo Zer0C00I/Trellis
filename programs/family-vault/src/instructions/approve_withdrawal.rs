@@ -18,8 +18,9 @@ pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
     }
     require!(is_approver, VaultError::NotTrustedApprover);
 
+    let vault_info = ctx.accounts.vault.to_account_info();
     let vault = &ctx.accounts.vault;
-    let owner_key = vault.owner;
+    let owner_key = vault.seed_owner;
     let seed_kind: &[u8] = if vault.is_pool { b"pool" } else { b"personal" };
     let bump = vault.bump;
     let vault_seeds: &[&[u8]] = &[b"vault", owner_key.as_ref(), seed_kind, &[bump]];
@@ -30,7 +31,7 @@ pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
     let cpi_accounts = Transfer {
         from: ctx.accounts.vault_token_account.to_account_info(),
         to: ctx.accounts.recipient_token_account.to_account_info(),
-        authority: vault.to_account_info(),
+        authority: vault_info,
     };
     let cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),
@@ -38,6 +39,23 @@ pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
         signer_seeds,
     );
     token::transfer(cpi_ctx, amount)?;
+
+    // Keep daily outflow accounting accurate regardless of which channel
+    // (ordinary withdraw or an approved request) moved the funds, applying
+    // the same lazy-reset-on-new-day logic used in `withdraw`.
+    let clock = Clock::get()?;
+    let today = clock.unix_timestamp / 86_400;
+    let vault = &mut ctx.accounts.vault;
+    if vault.is_pool {
+        if vault.last_reset_day != today {
+            vault.spent_today = 0;
+            vault.last_reset_day = today;
+        }
+        vault.spent_today = vault
+            .spent_today
+            .checked_add(amount)
+            .ok_or(VaultError::AmountOverflow)?;
+    }
 
     let request = &mut ctx.accounts.pending_withdrawal;
     request.approved_by = Some(signer_key);
@@ -62,6 +80,7 @@ pub struct ApproveWithdrawal<'info> {
     #[account(mut, constraint = recipient_token_account.owner == pending_withdrawal.to @ VaultError::UnknownBeneficiary)]
     pub recipient_token_account: Account<'info, TokenAccount>,
 
+    #[account(mut)]
     pub vault: Account<'info, Vault>,
 
     pub token_program: Program<'info, Token>,

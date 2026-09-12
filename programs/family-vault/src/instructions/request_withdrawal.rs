@@ -25,6 +25,23 @@ pub fn request_withdrawal(ctx: Context<RequestWithdrawal>, amount: u64, _nonce: 
     }
     require!(found, VaultError::UnknownBeneficiary);
 
+    // `request_withdrawal` is a channel meant for OVER-limit withdrawals that
+    // require approver sign-off; it must not be usable as an unlimited-amount
+    // bypass of the ordinary daily limit. Apply the same lazy-reset logic as
+    // `withdraw` and reject if the amount does not actually exceed what's
+    // left of today's limit — callers within the limit should use `withdraw`.
+    let today = clock.unix_timestamp / 86_400;
+    let vault = &mut ctx.accounts.vault;
+    if vault.last_reset_day != today {
+        vault.spent_today = 0;
+        vault.last_reset_day = today;
+    }
+    let would_be_spent = vault
+        .spent_today
+        .checked_add(amount)
+        .ok_or(VaultError::AmountOverflow)?;
+    require!(would_be_spent > vault.daily_limit, VaultError::AmountDoesNotExceedDailyLimit);
+
     let request = &mut ctx.accounts.pending_withdrawal;
     request.vault = vault.key();
     request.amount = amount;
@@ -43,6 +60,7 @@ pub struct RequestWithdrawal<'info> {
     #[account(mut, constraint = signer.key() == vault.owner @ VaultError::NotVaultOwner)]
     pub signer: Signer<'info>,
 
+    #[account(mut)]
     pub vault: Account<'info, Vault>,
 
     #[account(has_one = vault)]

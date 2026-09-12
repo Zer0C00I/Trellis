@@ -12,6 +12,7 @@ pub fn initialize_vault(ctx: Context<InitializeVault>, is_pool: bool, daily_limi
 
     let vault = &mut ctx.accounts.vault;
     vault.owner = ctx.accounts.owner.key();
+    vault.seed_owner = ctx.accounts.owner.key();
     vault.vault_token_account = ctx.accounts.vault_token_account.key();
     vault.daily_limit = if is_pool { daily_limit } else { u64::MAX };
     vault.spent_today = 0;

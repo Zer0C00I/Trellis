@@ -4,6 +4,8 @@ use crate::errors::VaultError;
 use crate::state::{PendingRotation, TrustedApprovers, Vault, ROTATION_TIMELOCK_SECS};
 
 pub fn request_owner_rotation(ctx: Context<RequestOwnerRotation>, new_owner: Pubkey, _nonce: u64) -> Result<()> {
+    require!(new_owner != ctx.accounts.signer.key(), VaultError::CannotRotateToSelf);
+
     let signer_key = ctx.accounts.signer.key();
     let approvers = &ctx.accounts.approvers;
     let mut is_approver = false;
@@ -28,6 +30,7 @@ pub fn request_owner_rotation(ctx: Context<RequestOwnerRotation>, new_owner: Pub
     rotation.executes_at = executes_at;
     rotation.cancelled = false;
     rotation.bump = ctx.bumps.rotation;
+    rotation.executed = false;
 
     Ok(())
 }

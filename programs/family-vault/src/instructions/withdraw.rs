@@ -37,7 +37,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         vault.spent_today = new_spent;
     }
 
-    let owner_key = vault.owner;
+    let owner_key = vault.seed_owner;
     let seed_kind: &[u8] = if vault.is_pool { b"pool" } else { b"personal" };
     let bump = vault.bump;
     let vault_seeds: &[&[u8]] = &[b"vault", owner_key.as_ref(), seed_kind, &[bump]];
