@@ -98,3 +98,27 @@ impl PendingWithdrawal {
         + 1  // executed
         + 1; // bump
 }
+
+pub const ROTATION_TIMELOCK_SECS: i64 = 259_200; // 72h
+
+#[account]
+pub struct PendingRotation {
+    pub vault: Pubkey,
+    pub new_owner: Pubkey,
+    pub requested_by: Pubkey,
+    pub requested_at: i64,
+    pub executes_at: i64,
+    pub cancelled: bool,
+    pub bump: u8,
+}
+
+impl PendingRotation {
+    pub const SPACE: usize = 8 // discriminator
+        + 32 // vault
+        + 32 // new_owner
+        + 32 // requested_by
+        + 8  // requested_at
+        + 8  // executes_at
+        + 1  // cancelled
+        + 1; // bump
+}

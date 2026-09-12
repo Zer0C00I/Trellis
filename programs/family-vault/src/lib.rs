@@ -43,4 +43,16 @@ pub mod family_vault {
     pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
         instructions::approve_withdrawal(ctx)
     }
+
+    pub fn request_owner_rotation(ctx: Context<RequestOwnerRotation>, new_owner: Pubkey, nonce: u64) -> Result<()> {
+        instructions::request_owner_rotation(ctx, new_owner, nonce)
+    }
+
+    pub fn cancel_owner_rotation(ctx: Context<CancelOwnerRotation>) -> Result<()> {
+        instructions::cancel_owner_rotation(ctx)
+    }
+
+    pub fn execute_owner_rotation(ctx: Context<ExecuteOwnerRotation>) -> Result<()> {
+        instructions::execute_owner_rotation(ctx)
+    }
 }

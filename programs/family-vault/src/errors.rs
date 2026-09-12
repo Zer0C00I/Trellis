@@ -32,4 +32,10 @@ pub enum VaultError {
     RequestAlreadyExecuted,
     #[msg("Signer is not a trusted approver")]
     NotTrustedApprover,
+    #[msg("This rotation request has already been cancelled")]
+    RotationAlreadyCancelled,
+    #[msg("Only the vault owner or a trusted approver may cancel a rotation")]
+    NotAuthorizedToCancel,
+    #[msg("The rotation timelock has not elapsed yet")]
+    RotationTimelockNotElapsed,
 }
