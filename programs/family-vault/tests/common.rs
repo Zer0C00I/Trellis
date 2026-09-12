@@ -1,11 +1,9 @@
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{program_pack::Pack, system_instruction};
 use litesvm::LiteSVM;
-use solana_sdk::{
-    program_pack::Pack,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_instruction,
-    transaction::Transaction,
-};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 use spl_token::state::Mint as SplMint;
 
 pub const PROGRAM_ID: Pubkey = family_vault::ID;
@@ -19,8 +17,12 @@ pub struct TestCtx {
 
 pub fn setup() -> TestCtx {
     let mut svm = LiteSVM::new();
-    svm.add_program_from_file(PROGRAM_ID, "target/deploy/family_vault.so")
-        .expect("load family_vault.so — run `cargo build-sbf` first");
+    let so_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../target/deploy/family_vault.so"
+    );
+    svm.add_program_from_file(PROGRAM_ID, so_path)
+        .expect("load family_vault.so — run `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml` from the workspace root first");
 
     let payer = Keypair::new();
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();

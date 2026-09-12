@@ -1,14 +1,12 @@
 mod common;
 
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{instruction::Instruction, system_program};
 use anchor_lang::{InstructionData, ToAccountMetas};
 use common::setup;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
-};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 
 #[test]
 fn initializes_a_personal_vault_with_unlimited_daily_limit() {
