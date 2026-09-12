@@ -15,4 +15,8 @@ pub mod family_vault {
     pub fn initialize_vault(ctx: Context<InitializeVault>, is_pool: bool, daily_limit: u64) -> Result<()> {
         instructions::initialize_vault(ctx, is_pool, daily_limit)
     }
+
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        instructions::deposit(ctx, amount)
+    }
 }
