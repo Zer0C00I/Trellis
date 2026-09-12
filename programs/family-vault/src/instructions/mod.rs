@@ -6,3 +6,7 @@ pub mod add_beneficiary;
 pub use add_beneficiary::*;
 pub mod withdraw;
 pub use withdraw::*;
+pub mod initialize_approvers;
+pub use initialize_approvers::*;
+pub mod add_trusted_approver;
+pub use add_trusted_approver::*;

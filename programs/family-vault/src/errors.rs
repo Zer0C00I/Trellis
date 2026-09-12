@@ -22,4 +22,8 @@ pub enum VaultError {
     InvalidDailyLimit,
     #[msg("Amount must be greater than zero")]
     ZeroAmount,
+    #[msg("Trusted approver list is full")]
+    ApproverListFull,
+    #[msg("Address is already a trusted approver")]
+    ApproverAlreadyExists,
 }

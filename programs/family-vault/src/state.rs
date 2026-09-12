@@ -62,3 +62,17 @@ impl BeneficiaryList {
         + 1  // count
         + (32 + BENEFICIARY_NAME_LEN + 1 + 8 + 8) * MAX_BENEFICIARIES;
 }
+
+#[account]
+pub struct TrustedApprovers {
+    pub vault: Pubkey,
+    pub count: u8,
+    pub entries: [Pubkey; MAX_APPROVERS],
+}
+
+impl TrustedApprovers {
+    pub const SPACE: usize = 8 // discriminator
+        + 32 // vault
+        + 1  // count
+        + 32 * MAX_APPROVERS;
+}

@@ -27,4 +27,12 @@ pub mod family_vault {
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         instructions::withdraw(ctx, amount)
     }
+
+    pub fn initialize_approvers(ctx: Context<InitializeApprovers>) -> Result<()> {
+        instructions::initialize_approvers(ctx)
+    }
+
+    pub fn add_trusted_approver(ctx: Context<AddTrustedApprover>, address: Pubkey) -> Result<()> {
+        instructions::add_trusted_approver(ctx, address)
+    }
 }
