@@ -19,4 +19,8 @@ pub mod family_vault {
     pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         instructions::deposit(ctx, amount)
     }
+
+    pub fn add_beneficiary(ctx: Context<AddBeneficiary>, name: String, address: Pubkey) -> Result<()> {
+        instructions::add_beneficiary(ctx, name, address)
+    }
 }
