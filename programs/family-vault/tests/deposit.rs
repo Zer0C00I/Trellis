@@ -76,3 +76,39 @@ fn owner_can_deposit_into_own_personal_vault() {
         anchor_lang::solana_program::program_pack::Pack::unpack(&vault_ata_account.data).unwrap();
     assert_eq!(vault_ata_data.amount, 40_000_000);
 }
+
+#[test]
+fn non_owner_cannot_deposit_into_personal_vault() {
+    let mut ctx = setup();
+    let elder = Keypair::new();
+    ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
+    let (vault, vault_token_account) = init_personal_vault(&mut ctx, &elder);
+
+    let attacker = Keypair::new();
+    ctx.svm.airdrop(&attacker.pubkey(), 1_000_000_000).unwrap();
+
+    // Create the attacker's own token account (no need to mint into it — the
+    // owner-only check must reject the transaction before the CPI transfer runs).
+    let attacker_ata = spl_associated_token_account::get_associated_token_address(&attacker.pubkey(), &ctx.mint);
+    let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
+        &ctx.payer.pubkey(), &attacker.pubkey(), &ctx.mint, &spl_token::id(),
+    );
+    let tx = Transaction::new_signed_with_payer(
+        &[create_ata_ix], Some(&ctx.payer.pubkey()),
+        &[&ctx.payer], ctx.svm.latest_blockhash(),
+    );
+    ctx.svm.send_transaction(tx).unwrap();
+
+    let deposit_accounts = family_vault::accounts::Deposit {
+        depositor: attacker.pubkey(),
+        depositor_token_account: attacker_ata,
+        vault_token_account,
+        vault,
+        token_program: spl_token::id(),
+    };
+    let deposit_data = family_vault::instruction::Deposit { amount: 40_000_000 };
+    let ix = Instruction { program_id: family_vault::ID, accounts: deposit_accounts.to_account_metas(None), data: deposit_data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &attacker], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected non-owner deposit into personal vault to be rejected");
+}
