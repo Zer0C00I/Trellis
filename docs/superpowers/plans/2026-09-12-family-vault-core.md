@@ -15,17 +15,27 @@ account type shared by personal (unlimited, closed address book) and pool
 arrays for beneficiary/approver lists — no `realloc`. Tests use `litesvm`
 (pure Rust, no JS/mocha) loading the compiled `.so` directly.
 
-**Tech Stack:** Rust, Anchor 0.32.1, anchor-spl 0.32.1, solana-cli 2.1.21,
-rustc 1.86.0 (verified working combination — see spec Sources), litesvm 0.9.1
-for tests, USDC devnet mint for later manual devnet testing.
+**Tech Stack:** Rust, Anchor 1.2.0, anchor-spl 1.2.0, solana-cli 3.1.10,
+litesvm 0.10.0 with its own granular solana-* crates for tests (verified
+end-to-end by scaffolding an official `anchor init --test-template
+litesvm` reference project — see plan-execution ledger), USDC devnet
+mint for later manual devnet testing.
 
 **Spec:** `docs/superpowers/specs/2026-09-12-family-vault-design.md`
 
 ## Global Constraints
 
-- Pin exactly: `anchor-lang = "0.32.1"`, `anchor-spl = "0.32.1"`, Solana CLI
-  `2.1.21`, `rustc 1.86.0`. Do not mix with Anchor 1.0.0 toolchain — breaking
-  changes (Surfpool/LiteSVM-as-default-template) target a different CLI line.
+- Pin exactly (revised during Task 4, superseding the original 0.32.1 pin —
+  see ledger for the full investigation): `anchor-lang = "1.2.0"`,
+  `anchor-spl = "1.2.0"`, Solana CLI `3.1.10`, `litesvm = "0.10.0"`. Test
+  dev-dependencies use litesvm's own granular crates (`solana-message`,
+  `solana-transaction`, `solana-signer`, `solana-keypair`) — do NOT add the
+  monolithic `solana-sdk` crate, it pulls a conflicting, older generation of
+  `solana-hash`/`solana-clock` that fails to compile against litesvm. Any
+  on-chain-program crate used only as a client-side helper in tests (e.g.
+  `spl-token`, `spl-associated-token-account`) must enable its
+  `no-entrypoint` feature, or its entrypoint symbol collides with
+  `family_vault`'s own at link time.
 - Token: USDC devnet mint `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` for
   manual/devnet testing later; unit tests use a locally-minted test token.
 - Fixed-capacity accounts only: `MAX_BENEFICIARIES = 10`, `MAX_APPROVERS = 5`.
@@ -94,18 +104,18 @@ resolver = "2"
 
 ```toml
 [toolchain]
-anchor_version = "0.32.1"
-solana_version = "2.1.21"
+anchor_version = "1.2.0"
+solana_version = "3.1.10"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.localnet]
-family_vault = "FVau1t111111111111111111111111111111111111"
+family_vault = "6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S"
 
 [programs.devnet]
-family_vault = "FVau1t111111111111111111111111111111111111"
+family_vault = "6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S"
 
 [registry]
 url = "https://api.apr.dev"
@@ -136,14 +146,17 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = "0.32.1"
-anchor-spl = { version = "0.32.1", features = ["token", "associated_token"] }
+anchor-lang = "1.2.0"
+anchor-spl = { version = "1.2.0", features = ["token", "associated_token"] }
 
 [dev-dependencies]
-litesvm = "0.9.1"
-solana-sdk = "2.1.21"
-spl-associated-token-account = "6.0.0"
-spl-token = "7.0.0"
+litesvm = "0.10.0"
+solana-message = "3.0.1"
+solana-transaction = "3.0.2"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
+spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
 ```
 
 - [ ] **Step 4: Create `programs/family-vault/src/errors.rs` (empty placeholder module body, filled in Task 3)**
@@ -179,7 +192,7 @@ pub mod errors;
 pub mod state;
 pub mod instructions;
 
-declare_id!("FVau1t111111111111111111111111111111111111");
+declare_id!("6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S");
 
 #[program]
 pub mod family_vault {
@@ -189,7 +202,7 @@ pub mod family_vault {
 
 - [ ] **Step 8: Verify it builds**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds, produces `target/deploy/family_vault.so`
 
 - [ ] **Step 9: Commit**
@@ -283,7 +296,7 @@ impl BeneficiaryList {
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds
 
 - [ ] **Step 3: Commit**
@@ -329,7 +342,7 @@ pub enum VaultError {
 
 - [ ] **Step 2: Verify it compiles**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds (unused-variant warnings are fine at this stage)
 
 - [ ] **Step 3: Commit**
@@ -443,7 +456,7 @@ pub mod instructions;
 
 use instructions::*;
 
-declare_id!("FVau1t111111111111111111111111111111111111");
+declare_id!("6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S");
 
 #[program]
 pub mod family_vault {
@@ -457,7 +470,7 @@ pub mod family_vault {
 
 - [ ] **Step 4: Build**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds, `target/deploy/family_vault.so` updated
 
 - [ ] **Step 5: Write the shared litesvm test harness**
@@ -465,14 +478,12 @@ Expected: build succeeds, `target/deploy/family_vault.so` updated
 Create `programs/family-vault/tests/common.rs`:
 
 ```rust
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{program_pack::Pack, system_instruction};
 use litesvm::LiteSVM;
-use solana_sdk::{
-    program_pack::Pack,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_instruction,
-    transaction::Transaction,
-};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 use spl_token::state::Mint as SplMint;
 
 pub const PROGRAM_ID: Pubkey = family_vault::ID;
@@ -486,8 +497,15 @@ pub struct TestCtx {
 
 pub fn setup() -> TestCtx {
     let mut svm = LiteSVM::new();
-    svm.add_program_from_file(PROGRAM_ID, "target/deploy/family_vault.so")
-        .expect("load family_vault.so — run `cargo build-sbf` first");
+    // cargo runs integration tests with the package dir as CWD, not the
+    // workspace root — build the .so path from CARGO_MANIFEST_DIR so it
+    // resolves correctly regardless of where `cargo test` is invoked from.
+    let so_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../target/deploy/family_vault.so"
+    );
+    svm.add_program_from_file(PROGRAM_ID, so_path)
+        .expect("load family_vault.so — run `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml` from the workspace root first");
 
     let payer = Keypair::new();
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
@@ -531,15 +549,13 @@ Create `programs/family-vault/tests/initialize_vault.rs`:
 ```rust
 mod common;
 
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{instruction::Instruction, system_program};
 use anchor_lang::{InstructionData, ToAccountMetas};
 use common::setup;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
-};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 
 #[test]
 fn initializes_a_personal_vault_with_unlimited_daily_limit() {
@@ -604,7 +620,7 @@ fn initializes_a_personal_vault_with_unlimited_daily_limit() {
 
 - [ ] **Step 7: Run the test**
 
-Run: `cd programs/family-vault && cargo build-sbf && cargo test --test initialize_vault -- --nocapture`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml && cargo test --test initialize_vault -- --nocapture`
 Expected: PASS — `initializes_a_personal_vault_with_unlimited_daily_limit ... ok`
 
 - [ ] **Step 8: Commit**
@@ -695,7 +711,7 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
 
 - [ ] **Step 4: Build**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds
 
 - [ ] **Step 5: Write the failing test**
@@ -707,13 +723,11 @@ mod common;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use common::setup;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
-};
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{instruction::Instruction, system_program};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 
 fn init_personal_vault(ctx: &mut common::TestCtx, elder: &Keypair) -> (Pubkey, Pubkey) {
     let (vault, _) = Pubkey::find_program_address(
@@ -787,7 +801,7 @@ fn owner_can_deposit_into_own_personal_vault() {
 
 - [ ] **Step 6: Run the test**
 
-Run: `cd programs/family-vault && cargo build-sbf && cargo test --test deposit -- --nocapture`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml && cargo test --test deposit -- --nocapture`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -882,7 +896,7 @@ pub fn add_beneficiary(ctx: Context<AddBeneficiary>, name: String, address: Pubk
 
 - [ ] **Step 4: Build**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds
 
 - [ ] **Step 5: Write the failing test**
@@ -894,13 +908,11 @@ mod common;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use common::setup;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
-};
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{instruction::Instruction, system_program};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 
 fn init_personal_vault(ctx: &mut common::TestCtx, elder: &Keypair) -> (Pubkey, Pubkey) {
     let (vault, _) = Pubkey::find_program_address(&[b"vault", elder.pubkey().as_ref(), b"personal"], &family_vault::ID);
@@ -944,7 +956,7 @@ fn owner_can_add_a_beneficiary_with_cooldown() {
 
 - [ ] **Step 6: Run the test**
 
-Run: `cd programs/family-vault && cargo build-sbf && cargo test --test add_beneficiary -- --nocapture`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml && cargo test --test add_beneficiary -- --nocapture`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -1071,7 +1083,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
 
 - [ ] **Step 4: Build**
 
-Run: `cd programs/family-vault && cargo build-sbf`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml`
 Expected: build succeeds
 
 - [ ] **Step 5: Write the failing tests (happy path + rejection paths)**
@@ -1083,13 +1095,11 @@ mod common;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use common::setup;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    system_program,
-    transaction::Transaction,
-};
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::solana_program::{instruction::Instruction, system_program};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use solana_transaction::Transaction;
 
 fn init_personal_vault_with_funds(ctx: &mut common::TestCtx, elder: &Keypair, amount: u64) -> (Pubkey, Pubkey, Pubkey) {
     let (vault, _) = Pubkey::find_program_address(&[b"vault", elder.pubkey().as_ref(), b"personal"], &family_vault::ID);
@@ -1167,7 +1177,7 @@ fn owner_can_withdraw_unlimited_amount_to_an_active_beneficiary() {
     // starts at the host's wall-clock time and does not auto-advance, so to
     // exercise the success path this test warps the clock forward past the
     // cooldown before withdrawing.
-    let mut clock = ctx.svm.get_sysvar::<solana_sdk::clock::Clock>();
+    let mut clock = ctx.svm.get_sysvar::<anchor_lang::solana_program::clock::Clock>();
     clock.unix_timestamp += 172_801;
     ctx.svm.set_sysvar(&clock);
 
@@ -1197,7 +1207,7 @@ fn owner_can_withdraw_unlimited_amount_to_an_active_beneficiary() {
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd programs/family-vault && cargo build-sbf && cargo test --test withdraw -- --nocapture`
+Run: `cargo build-sbf --manifest-path programs/family-vault/Cargo.toml && cargo test --test withdraw -- --nocapture`
 Expected: both tests PASS
 
 - [ ] **Step 7: Commit**

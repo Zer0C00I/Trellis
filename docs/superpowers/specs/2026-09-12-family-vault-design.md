@@ -224,8 +224,9 @@ Roadmap (не в MVP): secure element / TPM-backed key storage.
 
 | Слой | Технология | Обоснование |
 |---|---|---|
-| On-chain программа | Anchor (зафиксировать конкретную версию: 1.0.0 + solana-cli 3.1.x + rustc 1.89+, либо стабильная 0.32.1 + solana-cli 2.1.21 — не смешивать) | стандарт индустрии, аудированный |
-| RPC-клиент | `solana-client` 3.1.8, `solana-sdk` 4.0.1 | официальные крейты |
+| On-chain программа | Anchor **1.2.0** + Solana CLI **3.1.10** + rustc 1.96 (проверено эмпирически: собран через `anchor init --test-template litesvm`, `anchor build` и litesvm-тест реально проходят end-to-end) | текущий стабильный toolchain на момент разработки |
+| Тестирование программы | `litesvm 0.10.0` + гранулярные крейты (`solana-message`, `solana-transaction`, `solana-signer`, `solana-keypair`) вместо monolithic `solana-sdk` | единственная связка версий, которая не ловит splits между поколениями `solana-hash`/`solana-clock` в графе зависимостей на эту дату — см. ledger `family-vault-core` за детали перебора |
+| RPC-клиент (для kiosk-приложения) | `solana-client`, `solana-sdk` — версия зафиксируется отдельно при написании клиентского кода (Task GUI), не обязана совпадать с версией внутри программы/тестов | официальные крейты |
 | GUI | Slint (`i-slint-backend-winit`, feature `backend-winit-wayland`), лицензия GPLv3 | Rust-native, touch-friendly, GPL покрывает embedded use-case |
 | OS/kiosk | Alpine Linux + `cage` (wayland kiosk compositor, пакет в Alpine edge/community) | минимальный, single-app, референс: `InventorsTale/alpinelinux-kiosk` |
 | Devnet тестирование | USDC devnet mint + Circle faucet / spl-token-faucet.com | не нужно эмулировать волатильный SOL-баланс |
