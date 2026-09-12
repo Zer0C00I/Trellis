@@ -55,9 +55,10 @@ fn approver_can_request_and_execute_rotation_after_timelock() {
     let mut ctx = setup();
     let owner = Keypair::new();
     let approver = Keypair::new();
-    let new_owner = Pubkey::new_unique();
+    let new_owner = Keypair::new();
     ctx.svm.airdrop(&owner.pubkey(), 1_000_000_000).unwrap();
     ctx.svm.airdrop(&approver.pubkey(), 1_000_000_000).unwrap();
+    ctx.svm.airdrop(&new_owner.pubkey(), 1_000_000_000).unwrap();
     let fixture = setup_personal_vault_with_approver(&mut ctx, &owner, &approver);
 
     let nonce: u64 = 1;
@@ -69,7 +70,7 @@ fn approver_can_request_and_execute_rotation_after_timelock() {
         signer: approver.pubkey(), vault: fixture.vault, approvers: fixture.approvers,
         rotation, system_program: system_program::id(),
     };
-    let request_data = family_vault::instruction::RequestOwnerRotation { new_owner, nonce };
+    let request_data = family_vault::instruction::RequestOwnerRotation { new_owner: new_owner.pubkey(), nonce };
     let ix = Instruction { program_id: family_vault::ID, accounts: request_accounts.to_account_metas(None), data: request_data.data() };
     let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &approver], ctx.svm.latest_blockhash());
     let result = ctx.svm.send_transaction(tx);
@@ -97,7 +98,30 @@ fn approver_can_request_and_execute_rotation_after_timelock() {
     let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer], ctx.svm.latest_blockhash());
     let result = ctx.svm.send_transaction(tx);
     assert!(result.is_ok(), "execute_owner_rotation after the timelock failed: {:?}", result);
-    assert_eq!(vault_owner(&ctx, &fixture.vault), new_owner);
+    assert_eq!(vault_owner(&ctx, &fixture.vault), new_owner.pubkey());
+
+    // Prove the rotation transferred *real* owner authority, not just the
+    // stored pubkey field: the new owner must now be able to exercise owner
+    // authority (add_trusted_approver), and the old owner must have lost it.
+    let another_approver = Keypair::new();
+
+    let new_owner_add_accounts = family_vault::accounts::AddTrustedApprover {
+        signer: new_owner.pubkey(), vault: fixture.vault, approvers: fixture.approvers,
+    };
+    let new_owner_add_data = family_vault::instruction::AddTrustedApprover { address: another_approver.pubkey() };
+    let ix = Instruction { program_id: family_vault::ID, accounts: new_owner_add_accounts.to_account_metas(None), data: new_owner_add_data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &new_owner], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_ok(), "new owner should be able to add_trusted_approver after rotation: {:?}", result);
+
+    let old_owner_add_accounts = family_vault::accounts::AddTrustedApprover {
+        signer: owner.pubkey(), vault: fixture.vault, approvers: fixture.approvers,
+    };
+    let old_owner_add_data = family_vault::instruction::AddTrustedApprover { address: Pubkey::new_unique() };
+    let ix = Instruction { program_id: family_vault::ID, accounts: old_owner_add_accounts.to_account_metas(None), data: old_owner_add_data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &owner], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "old owner must no longer be able to add_trusted_approver after rotation");
 }
 
 #[test]
