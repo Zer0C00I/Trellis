@@ -4,3 +4,5 @@ pub mod deposit;
 pub use deposit::*;
 pub mod add_beneficiary;
 pub use add_beneficiary::*;
+pub mod withdraw;
+pub use withdraw::*;
