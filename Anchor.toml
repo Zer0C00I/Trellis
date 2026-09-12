@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-family_vault = "6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S"
+family_vault = "FXFxTexyhpdjmb6s2kvjVeY2aJFD9jmW8PsfSUY6LF7m"
 
 [programs.devnet]
-family_vault = "6FM6U29Kz1KBjnztNJ6W1bjtQqfKTCMZruw8Rsij4C8S"
+family_vault = "FXFxTexyhpdjmb6s2kvjVeY2aJFD9jmW8PsfSUY6LF7m"
 
 [registry]
 url = "https://api.apr.dev"

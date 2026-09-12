@@ -24,7 +24,7 @@ pub fn add_beneficiary(ctx: Context<AddBeneficiary>, name: String, address: Pubk
         name: name_bytes,
         name_len: src.len() as u8,
         added_at: now,
-        active_after: now + BENEFICIARY_COOLDOWN_SECS,
+        active_after: now.checked_add(BENEFICIARY_COOLDOWN_SECS).ok_or(VaultError::AmountOverflow)?,
     };
     list.count += 1;
 
@@ -33,7 +33,7 @@ pub fn add_beneficiary(ctx: Context<AddBeneficiary>, name: String, address: Pubk
 
 #[derive(Accounts)]
 pub struct AddBeneficiary<'info> {
-    #[account(constraint = signer.key() == vault.owner)]
+    #[account(constraint = signer.key() == vault.owner @ VaultError::NotVaultOwner)]
     pub signer: Signer<'info>,
 
     pub vault: Account<'info, Vault>,

@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 pub const MAX_BENEFICIARIES: usize = 10;
+// reserved for the family-vault-approvals follow-up plan
 pub const MAX_APPROVERS: usize = 5;
 pub const BENEFICIARY_NAME_LEN: usize = 32;
 pub const BENEFICIARY_COOLDOWN_SECS: i64 = 172_800; // 48h

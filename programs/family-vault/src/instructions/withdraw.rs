@@ -5,6 +5,8 @@ use crate::errors::VaultError;
 use crate::state::{BeneficiaryList, Vault};
 
 pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+    require!(amount > 0, VaultError::ZeroAmount);
+
     let to_key = ctx.accounts.recipient_token_account.owner;
     let list = &ctx.accounts.beneficiary_list;
     let clock = Clock::get()?;
@@ -31,7 +33,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
             .spent_today
             .checked_add(amount)
             .ok_or(VaultError::AmountOverflow)?;
-        require!(new_spent <= vault.daily_limit, VaultError::AmountOverflow); // over-limit path: family-vault-approvals plan
+        require!(new_spent <= vault.daily_limit, VaultError::DailyLimitExceeded); // over-limit path: family-vault-approvals plan
         vault.spent_today = new_spent;
     }
 
@@ -56,7 +58,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
-    #[account(constraint = signer.key() == vault.owner)]
+    #[account(constraint = signer.key() == vault.owner @ VaultError::NotVaultOwner)]
     pub signer: Signer<'info>,
 
     #[account(mut, address = vault.vault_token_account)]

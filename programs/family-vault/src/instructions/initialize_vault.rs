@@ -2,9 +2,14 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_spl::associated_token::AssociatedToken;
 
+use crate::errors::VaultError;
 use crate::state::*;
 
 pub fn initialize_vault(ctx: Context<InitializeVault>, is_pool: bool, daily_limit: u64) -> Result<()> {
+    if is_pool {
+        require!(daily_limit > 0, VaultError::InvalidDailyLimit);
+    }
+
     let vault = &mut ctx.accounts.vault;
     vault.owner = ctx.accounts.owner.key();
     vault.vault_token_account = ctx.accounts.vault_token_account.key();
@@ -27,8 +32,7 @@ pub struct InitializeVault<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// CHECK: only used to derive seeds; not read or written directly here
-    pub owner: UncheckedAccount<'info>,
+    pub owner: Signer<'info>,
 
     #[account(
         init,

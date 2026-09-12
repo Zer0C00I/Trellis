@@ -6,7 +6,7 @@ pub mod instructions;
 
 use instructions::*;
 
-declare_id!("FVau1t1111111111111111111111111111111111111");
+declare_id!("FXFxTexyhpdjmb6s2kvjVeY2aJFD9jmW8PsfSUY6LF7m");
 
 #[program]
 pub mod family_vault {

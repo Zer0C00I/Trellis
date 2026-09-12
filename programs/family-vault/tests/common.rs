@@ -12,6 +12,11 @@ pub struct TestCtx {
     pub svm: LiteSVM,
     pub payer: Keypair,
     pub mint: Pubkey,
+    // Used by most (but not every) test binary to mint test tokens; each
+    // `tests/*.rs` file is compiled as its own crate, so a binary that
+    // doesn't happen to call mint_to on it sees a (harmless) unused-field
+    // warning for this shared helper struct.
+    #[allow(dead_code)]
     pub mint_authority: Keypair,
 }
 

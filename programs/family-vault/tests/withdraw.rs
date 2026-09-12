@@ -20,7 +20,7 @@ fn init_personal_vault_with_funds(ctx: &mut common::TestCtx, elder: &Keypair, am
     };
     let init_data = family_vault::instruction::InitializeVault { is_pool: false, daily_limit: 0 };
     let ix1 = Instruction { program_id: family_vault::ID, accounts: init_accounts.to_account_metas(None), data: init_data.data() };
-    let tx1 = Transaction::new_signed_with_payer(&[ix1], Some(&ctx.payer.pubkey()), &[&ctx.payer], ctx.svm.latest_blockhash());
+    let tx1 = Transaction::new_signed_with_payer(&[ix1], Some(&ctx.payer.pubkey()), &[&ctx.payer, elder], ctx.svm.latest_blockhash());
     ctx.svm.send_transaction(tx1).unwrap();
 
     // Fund the vault directly via mint_to (simulates a prior deposit for test simplicity).
@@ -196,4 +196,90 @@ fn rejects_withdrawal_using_a_beneficiary_list_from_a_different_vault() {
     let grandson_ata_data: spl_token::state::Account =
         anchor_lang::solana_program::program_pack::Pack::unpack(&grandson_ata_account.data).unwrap();
     assert_eq!(grandson_ata_data.amount, 0, "no funds should have moved when beneficiary_list belongs to a different vault");
+}
+
+#[test]
+fn non_owner_cannot_withdraw() {
+    let mut ctx = setup();
+    let elder = Keypair::new();
+    ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
+    let (vault, vault_token_account, beneficiary_list) = init_personal_vault_with_funds(&mut ctx, &elder, 100_000_000);
+
+    let grandson = Keypair::new();
+    ctx.svm.airdrop(&grandson.pubkey(), 1_000_000_000).unwrap();
+    add_beneficiary_now(&mut ctx, &elder, vault, beneficiary_list, grandson.pubkey());
+
+    let mut clock = ctx.svm.get_sysvar::<anchor_lang::solana_program::clock::Clock>();
+    clock.unix_timestamp += 172_801;
+    ctx.svm.set_sysvar(&clock);
+
+    let grandson_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
+        &ctx.payer.pubkey(), &grandson.pubkey(), &ctx.mint, &spl_token::id(),
+    );
+    let tx0 = Transaction::new_signed_with_payer(&[grandson_ata_ix], Some(&ctx.payer.pubkey()), &[&ctx.payer], ctx.svm.latest_blockhash());
+    ctx.svm.send_transaction(tx0).unwrap();
+    let grandson_ata = spl_associated_token_account::get_associated_token_address(&grandson.pubkey(), &ctx.mint);
+
+    // A non-owner keypair attempts to withdraw from a personal vault it doesn't own.
+    let attacker = Keypair::new();
+    ctx.svm.airdrop(&attacker.pubkey(), 1_000_000_000).unwrap();
+
+    let accounts = family_vault::accounts::Withdraw {
+        signer: attacker.pubkey(), vault_token_account, recipient_token_account: grandson_ata,
+        vault, beneficiary_list, token_program: spl_token::id(),
+    };
+    let data = family_vault::instruction::Withdraw { amount: 10_000_000 };
+    let ix = Instruction { program_id: family_vault::ID, accounts: accounts.to_account_metas(None), data: data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &attacker], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected non-owner withdrawal to be rejected");
+
+    let vault_ata_account = ctx.svm.get_account(&vault_token_account).unwrap();
+    let vault_ata_data: spl_token::state::Account =
+        anchor_lang::solana_program::program_pack::Pack::unpack(&vault_ata_account.data).unwrap();
+    assert_eq!(vault_ata_data.amount, 100_000_000, "vault balance should be unchanged after rejected non-owner withdrawal");
+}
+
+#[test]
+fn rejects_withdrawal_with_substituted_vault_token_account() {
+    let mut ctx = setup();
+    let elder = Keypair::new();
+    ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
+    let (vault, _vault_token_account, beneficiary_list) = init_personal_vault_with_funds(&mut ctx, &elder, 100_000_000);
+
+    let grandson = Keypair::new();
+    ctx.svm.airdrop(&grandson.pubkey(), 1_000_000_000).unwrap();
+    add_beneficiary_now(&mut ctx, &elder, vault, beneficiary_list, grandson.pubkey());
+
+    let mut clock = ctx.svm.get_sysvar::<anchor_lang::solana_program::clock::Clock>();
+    clock.unix_timestamp += 172_801;
+    ctx.svm.set_sysvar(&clock);
+
+    let grandson_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(
+        &ctx.payer.pubkey(), &grandson.pubkey(), &ctx.mint, &spl_token::id(),
+    );
+    let tx0 = Transaction::new_signed_with_payer(&[grandson_ata_ix], Some(&ctx.payer.pubkey()), &[&ctx.payer], ctx.svm.latest_blockhash());
+    ctx.svm.send_transaction(tx0).unwrap();
+    let grandson_ata = spl_associated_token_account::get_associated_token_address(&grandson.pubkey(), &ctx.mint);
+
+    // Some OTHER token account (a different vault's), not vault.vault_token_account.
+    let other_elder = Keypair::new();
+    ctx.svm.airdrop(&other_elder.pubkey(), 1_000_000_000).unwrap();
+    let (_other_vault, other_vault_token_account, _other_beneficiary_list) =
+        init_personal_vault_with_funds(&mut ctx, &other_elder, 50_000_000);
+
+    let accounts = family_vault::accounts::Withdraw {
+        signer: elder.pubkey(), vault_token_account: other_vault_token_account, recipient_token_account: grandson_ata,
+        vault, beneficiary_list, token_program: spl_token::id(),
+    };
+    let data = family_vault::instruction::Withdraw { amount: 10_000_000 };
+    let ix = Instruction { program_id: family_vault::ID, accounts: accounts.to_account_metas(None), data: data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &elder], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected withdraw with substituted vault_token_account to be rejected");
+
+    let grandson_ata_account = ctx.svm.get_account(&grandson_ata).unwrap();
+    let grandson_ata_data: spl_token::state::Account =
+        anchor_lang::solana_program::program_pack::Pack::unpack(&grandson_ata_account.data).unwrap();
+    assert_eq!(grandson_ata_data.amount, 0, "no funds should have moved when vault_token_account is substituted");
 }

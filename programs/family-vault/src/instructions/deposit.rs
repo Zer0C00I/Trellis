@@ -30,6 +30,10 @@ pub struct Deposit<'info> {
     #[account(mut)]
     pub depositor_token_account: Account<'info, TokenAccount>,
 
+    // Mint-matching between `depositor_token_account` and `vault_token_account`
+    // is deliberately left to the SPL token program's own CPI-time check
+    // (both accounts must share the mint for `transfer` to succeed) rather
+    // than being duplicated here as an Anchor constraint.
     #[account(mut, address = vault.vault_token_account)]
     pub vault_token_account: Account<'info, TokenAccount>,
 

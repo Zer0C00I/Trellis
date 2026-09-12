@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum VaultError {
-    #[msg("Only the vault owner may deposit into a personal vault")]
+    #[msg("Only the vault owner may perform this action")]
     NotVaultOwner,
     #[msg("Beneficiary list is full")]
     BeneficiaryListFull,
@@ -16,4 +16,10 @@ pub enum VaultError {
     BeneficiaryCooldownActive,
     #[msg("Amount overflowed while adding to spent_today")]
     AmountOverflow,
+    #[msg("Withdrawal would exceed the vault's daily limit")]
+    DailyLimitExceeded,
+    #[msg("Pool vault daily_limit must be greater than zero")]
+    InvalidDailyLimit,
+    #[msg("Amount must be greater than zero")]
+    ZeroAmount,
 }

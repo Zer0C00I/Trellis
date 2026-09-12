@@ -19,7 +19,7 @@ fn init_personal_vault(ctx: &mut common::TestCtx, elder: &Keypair) -> (Pubkey, P
     };
     let data = family_vault::instruction::InitializeVault { is_pool: false, daily_limit: 0 };
     let ix = Instruction { program_id: family_vault::ID, accounts: accounts.to_account_metas(None), data: data.data() };
-    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer], ctx.svm.latest_blockhash());
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, elder], ctx.svm.latest_blockhash());
     ctx.svm.send_transaction(tx).unwrap();
     (vault, beneficiary_list)
 }
@@ -131,4 +131,56 @@ fn rejects_duplicate_beneficiary_address() {
     let list_data: family_vault::state::BeneficiaryList =
         anchor_lang::AccountDeserialize::try_deserialize(&mut list_account.data.as_slice()).unwrap();
     assert_eq!(list_data.count, 1, "beneficiary list should be unchanged after rejected duplicate call");
+}
+
+#[test]
+fn rejects_beneficiary_list_from_a_different_vault() {
+    let mut ctx = setup();
+    let elder = Keypair::new();
+    ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
+    let (vault, _beneficiary_list) = init_personal_vault(&mut ctx, &elder);
+
+    // A second, unrelated vault (and its beneficiary list).
+    let other_elder = Keypair::new();
+    ctx.svm.airdrop(&other_elder.pubkey(), 1_000_000_000).unwrap();
+    let (_other_vault, other_beneficiary_list) = init_personal_vault(&mut ctx, &other_elder);
+
+    let grandson = Pubkey::new_unique();
+    // Attempt to add a beneficiary to `vault` (elder's vault) while passing in
+    // `other_beneficiary_list`, which belongs to a different vault. This must
+    // be rejected by the `has_one = vault` constraint on `beneficiary_list`.
+    let accounts = family_vault::accounts::AddBeneficiary { signer: elder.pubkey(), vault, beneficiary_list: other_beneficiary_list };
+    let data = family_vault::instruction::AddBeneficiary { name: "Grandson Sasha".to_string(), address: grandson };
+    let ix = Instruction { program_id: family_vault::ID, accounts: accounts.to_account_metas(None), data: data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &elder], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected add_beneficiary with mismatched beneficiary_list to be rejected");
+
+    let list_account = ctx.svm.get_account(&other_beneficiary_list).unwrap();
+    let list_data: family_vault::state::BeneficiaryList =
+        anchor_lang::AccountDeserialize::try_deserialize(&mut list_account.data.as_slice()).unwrap();
+    assert_eq!(list_data.count, 0, "other vault's beneficiary list should be unchanged after rejected cross-vault call");
+}
+
+#[test]
+fn rejects_name_longer_than_max_length() {
+    let mut ctx = setup();
+    let elder = Keypair::new();
+    ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
+    let (vault, beneficiary_list) = init_personal_vault(&mut ctx, &elder);
+
+    let grandson = Pubkey::new_unique();
+    // BENEFICIARY_NAME_LEN is 32 bytes — use a name longer than that.
+    let long_name = "a".repeat(33);
+    let accounts = family_vault::accounts::AddBeneficiary { signer: elder.pubkey(), vault, beneficiary_list };
+    let data = family_vault::instruction::AddBeneficiary { name: long_name, address: grandson };
+    let ix = Instruction { program_id: family_vault::ID, accounts: accounts.to_account_metas(None), data: data.data() };
+    let tx = Transaction::new_signed_with_payer(&[ix], Some(&ctx.payer.pubkey()), &[&ctx.payer, &elder], ctx.svm.latest_blockhash());
+    let result = ctx.svm.send_transaction(tx);
+    assert!(result.is_err(), "expected name longer than max length to be rejected with NameTooLong");
+
+    let list_account = ctx.svm.get_account(&beneficiary_list).unwrap();
+    let list_data: family_vault::state::BeneficiaryList =
+        anchor_lang::AccountDeserialize::try_deserialize(&mut list_account.data.as_slice()).unwrap();
+    assert_eq!(list_data.count, 0, "beneficiary list should be unchanged after rejected over-length name");
 }
