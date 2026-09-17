@@ -91,6 +91,8 @@ export component MyWalletScreen inherits Rectangle {
         border-color: Theme.secondary-button-border;
         border-width: 2px;
         border-radius: 8px;
+        accessible-role: button;
+        accessible-label: "Помощь";
 
         TouchArea {
             clicked => { help-requested(); }
