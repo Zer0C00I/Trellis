@@ -1,0 +1,52 @@
+import { Theme } from "theme.slint";
+
+export component ResultScreen inherits Rectangle {
+    in property <bool> success: true;
+    in property <string> message-text: "";
+
+    callback ok-pressed();
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
+        alignment: center;
+
+        Text {
+            text: success ? "✓" : "✗";
+            color: success ? Theme.success-color : Theme.error-color;
+            font-size: 96px;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: message-text;
+            color: Theme.fg;
+            font-size: Theme.font-size-heading;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            height: Theme.target-size;
+            width: 200px;
+            background: Theme.button-bg;
+            border-radius: 8px;
+            accessible-role: button;
+            accessible-label: "Ок";
+
+            TouchArea {
+                clicked => { ok-pressed(); }
+            }
+
+            Text {
+                text: "Ок";
+                color: Theme.button-fg;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

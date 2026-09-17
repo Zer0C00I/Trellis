@@ -154,6 +154,69 @@ fn cancelling_confirmation_returns_to_my_wallet() {
     slint::run_event_loop().unwrap();
 }
 
+fn confirming_send_navigates_to_result_with_success_message() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_confirm_recipient_name("Внук Саша".into());
+        app.set_current_screen(Screen::Confirm);
+
+        {
+            let app_weak = app.as_weak();
+            app.on_send_confirmed(move || {
+                let app = app_weak.unwrap();
+                let recipient = app.get_confirm_recipient_name();
+                app.set_result_success(true);
+                app.set_result_message_text(
+                    format!("Готово! Деньги отправлены {recipient}").into(),
+                );
+                app.set_current_screen(Screen::Result);
+            });
+        }
+
+        let elem = ElementHandle::find_by_accessible_label(&app, "Отправить")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("send button not found");
+        elem.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::Result);
+        assert!(app.get_result_success());
+        assert_eq!(
+            app.get_result_message_text(),
+            slint::SharedString::from("Готово! Деньги отправлены Внук Саша")
+        );
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
+fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::Result);
+
+        {
+            let app_weak = app.as_weak();
+            app.on_ok_pressed(move || {
+                let app = app_weak.unwrap();
+                app.set_current_screen(Screen::MyWallet);
+            });
+        }
+
+        let elem = ElementHandle::find_by_accessible_label(&app, "Ок")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("ok button not found");
+        elem.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::MyWallet);
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -169,6 +232,12 @@ fn main() {
     cancelling_confirmation_returns_to_my_wallet();
     println!("test cancelling_confirmation_returns_to_my_wallet ... ok");
 
+    confirming_send_navigates_to_result_with_success_message();
+    println!("test confirming_send_navigates_to_result_with_success_message ... ok");
+
+    pressing_ok_on_result_returns_to_my_wallet_immediately();
+    println!("test pressing_ok_on_result_returns_to_my_wallet_immediately ... ok");
+
     println!();
-    println!("test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

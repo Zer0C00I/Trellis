@@ -2,10 +2,11 @@ import { Theme } from "theme.slint";
 import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
 import { AmountSelectScreen } from "amount-select.slint";
 import { ConfirmScreen } from "confirm.slint";
+import { ResultScreen } from "result.slint";
 
 export { BeneficiaryItem }
 
-export enum Screen { my-wallet, amount-select, confirm }
+export enum Screen { my-wallet, amount-select, confirm, result }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -20,6 +21,8 @@ export component AppWindow inherits Window {
     in property <[string]> presets <=> amount-select.presets;
     in property <string> confirm-recipient-name <=> confirm.recipient-name;
     in property <string> confirm-amount-text <=> confirm.amount-text;
+    in property <bool> result-success <=> result.success;
+    in property <string> result-message-text <=> result.message-text;
 
     callback beneficiary-selected <=> wallet.beneficiary-selected;
     callback family-wallet-requested <=> wallet.family-wallet-requested;
@@ -28,6 +31,7 @@ export component AppWindow inherits Window {
     callback back-requested <=> amount-select.back-requested;
     callback send-confirmed <=> confirm.send-confirmed;
     callback send-cancelled <=> confirm.send-cancelled;
+    callback ok-pressed <=> result.ok-pressed;
 
     wallet := MyWalletScreen {
         width: 100%;
@@ -45,5 +49,19 @@ export component AppWindow inherits Window {
         width: 100%;
         height: 100%;
         visible: current-screen == Screen.confirm;
+    }
+
+    result := ResultScreen {
+        width: 100%;
+        height: 100%;
+        visible: current-screen == Screen.result;
+    }
+
+    auto-return-timer := Timer {
+        interval: 6s;
+        running: current-screen == Screen.result;
+        triggered => {
+            current-screen = Screen.my-wallet;
+        }
     }
 }

@@ -59,9 +59,24 @@ fn main() -> Result<(), slint::PlatformError> {
             app.set_current_screen(Screen::MyWallet);
         });
     }
-    app.on_send_confirmed(|| {
-        println!("send confirmed — wired to real transactions in a later plan");
-    });
+    {
+        let app_weak = app.as_weak();
+        app.on_send_confirmed(move || {
+            let app = app_weak.unwrap();
+            // Mock: real transaction submission is a later plan.
+            let recipient = app.get_confirm_recipient_name();
+            app.set_result_success(true);
+            app.set_result_message_text(format!("Готово! Деньги отправлены {recipient}").into());
+            app.set_current_screen(Screen::Result);
+        });
+    }
+    {
+        let app_weak = app.as_weak();
+        app.on_ok_pressed(move || {
+            let app = app_weak.unwrap();
+            app.set_current_screen(Screen::MyWallet);
+        });
+    }
     app.on_family_wallet_requested(|| {
         println!("family wallet requested");
     });
