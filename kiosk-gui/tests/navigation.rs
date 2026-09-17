@@ -217,6 +217,45 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
     slint::run_event_loop().unwrap();
 }
 
+fn family_wallet_button_navigates_there_and_back_button_returns() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+
+        {
+            let app_weak = app.as_weak();
+            app.on_family_wallet_requested(move || {
+                let app = app_weak.unwrap();
+                app.set_current_screen(Screen::FamilyWallet);
+            });
+        }
+        {
+            let app_weak = app.as_weak();
+            app.on_back_to_my_wallet_requested(move || {
+                let app = app_weak.unwrap();
+                app.set_current_screen(Screen::MyWallet);
+            });
+        }
+
+        assert_eq!(app.get_current_screen(), Screen::MyWallet);
+
+        let to_family = ElementHandle::find_by_accessible_label(&app, "Семейный кошелёк")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("family wallet button not found");
+        to_family.single_click(PointerEventButton::Left).await;
+        assert_eq!(app.get_current_screen(), Screen::FamilyWallet);
+
+        let back = ElementHandle::find_by_accessible_label(&app, "Назад к моему кошельку")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("back button not found");
+        back.single_click(PointerEventButton::Left).await;
+        assert_eq!(app.get_current_screen(), Screen::MyWallet);
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -238,6 +277,9 @@ fn main() {
     pressing_ok_on_result_returns_to_my_wallet_immediately();
     println!("test pressing_ok_on_result_returns_to_my_wallet_immediately ... ok");
 
+    family_wallet_button_navigates_there_and_back_button_returns();
+    println!("test family_wallet_button_navigates_there_and_back_button_returns ... ok");
+
     println!();
-    println!("test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

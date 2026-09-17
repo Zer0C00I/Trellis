@@ -21,6 +21,14 @@ fn main() -> Result<(), slint::PlatformError> {
         .into(),
     );
 
+    app.set_family_balance_text("500 USDC".into());
+    let family_beneficiaries = vec![
+        BeneficiaryItem { name: "Внук Саша".into(), id: 1 },
+        BeneficiaryItem { name: "Дочка Маша".into(), id: 2 },
+    ];
+    let family_model = std::rc::Rc::new(slint::VecModel::from(family_beneficiaries));
+    app.set_family_beneficiaries(family_model.into());
+
     {
         let app_weak = app.as_weak();
         app.on_beneficiary_selected(move |id| {
@@ -77,8 +85,22 @@ fn main() -> Result<(), slint::PlatformError> {
             app.set_current_screen(Screen::MyWallet);
         });
     }
-    app.on_family_wallet_requested(|| {
-        println!("family wallet requested");
+    {
+        let app_weak = app.as_weak();
+        app.on_family_wallet_requested(move || {
+            let app = app_weak.unwrap();
+            app.set_current_screen(Screen::FamilyWallet);
+        });
+    }
+    {
+        let app_weak = app.as_weak();
+        app.on_back_to_my_wallet_requested(move || {
+            let app = app_weak.unwrap();
+            app.set_current_screen(Screen::MyWallet);
+        });
+    }
+    app.on_family_beneficiary_selected(|id| {
+        println!("family beneficiary selected: {id} — pool withdraw flow is a later plan");
     });
     app.on_help_requested(|| {
         println!("help requested");
