@@ -1,0 +1,13 @@
+[package]
+name = "kiosk-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slint = "1.18.0"
+
+[build-dependencies]
+slint-build = "1.18.0"
+
+[dev-dependencies]
+i-slint-backend-testing = "1.16.0"
