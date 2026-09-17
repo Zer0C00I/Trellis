@@ -105,6 +105,9 @@ fn main() -> Result<(), slint::PlatformError> {
     app.on_help_requested(|| {
         println!("help requested");
     });
+    app.on_family_help_requested(|| {
+        println!("help requested (family wallet)");
+    });
 
     app.run()
 }

@@ -271,6 +271,22 @@ fn help_button_on_my_wallet_is_accessibility_discoverable() {
     slint::run_event_loop().unwrap();
 }
 
+fn help_button_on_family_wallet_is_accessibility_discoverable() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::FamilyWallet);
+
+        let help = ElementHandle::find_by_accessible_label(&app, "Помощь")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("help button not found");
+        assert!(help.accessible_role() == Some(AccessibleRole::Button));
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -298,6 +314,9 @@ fn main() {
     help_button_on_my_wallet_is_accessibility_discoverable();
     println!("test help_button_on_my_wallet_is_accessibility_discoverable ... ok");
 
+    help_button_on_family_wallet_is_accessibility_discoverable();
+    println!("test help_button_on_family_wallet_is_accessibility_discoverable ... ok");
+
     println!();
-    println!("test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }
