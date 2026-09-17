@@ -1,22 +1,38 @@
 import { Theme } from "theme.slint";
 import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
+import { AmountSelectScreen } from "amount-select.slint";
 
 export { BeneficiaryItem }
+
+export enum Screen { my-wallet, amount-select }
 
 export component AppWindow inherits Window {
     width: 800px;
     height: 480px;
     background: Theme.bg;
 
+    in-out property <Screen> current-screen: Screen.my-wallet;
+
     in property <string> balance-text <=> wallet.balance-text;
     in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
+    in property <string> selected-recipient-name <=> amount-select.recipient-name;
+    in property <[string]> presets <=> amount-select.presets;
 
     callback beneficiary-selected <=> wallet.beneficiary-selected;
     callback family-wallet-requested <=> wallet.family-wallet-requested;
     callback help-requested <=> wallet.help-requested;
+    callback amount-selected <=> amount-select.amount-selected;
+    callback back-requested <=> amount-select.back-requested;
 
     wallet := MyWalletScreen {
         width: 100%;
         height: 100%;
+        visible: current-screen == Screen.my-wallet;
+    }
+
+    amount-select := AmountSelectScreen {
+        width: 100%;
+        height: 100%;
+        visible: current-screen == Screen.amount-select;
     }
 }

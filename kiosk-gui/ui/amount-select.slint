@@ -1,0 +1,68 @@
+import { Theme } from "theme.slint";
+
+export component AmountSelectScreen inherits Rectangle {
+    in property <string> recipient-name: "";
+    in property <[string]> presets: [];
+
+    callback amount-selected(int);
+    callback back-requested();
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
+
+        Text {
+            text: "Сколько отправить " + recipient-name + "?";
+            color: Theme.fg;
+            font-size: Theme.font-size-heading;
+            wrap: word-wrap;
+        }
+
+        for amount[i] in presets: Rectangle {
+            height: Theme.target-size;
+            background: Theme.button-bg;
+            border-radius: 8px;
+            accessible-role: button;
+            accessible-label: amount;
+
+            TouchArea {
+                clicked => { amount-selected(i); }
+            }
+
+            Text {
+                text: amount;
+                color: Theme.button-fg;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    Rectangle {
+        x: Theme.spacing;
+        y: parent.height - self.height - Theme.spacing;
+        width: 140px;
+        height: Theme.target-size;
+        background: Theme.secondary-button-bg;
+        border-color: Theme.secondary-button-border;
+        border-width: 2px;
+        border-radius: 8px;
+        accessible-role: button;
+        accessible-label: "Назад";
+
+        TouchArea {
+            clicked => { back-requested(); }
+        }
+
+        Text {
+            text: "Назад";
+            color: Theme.secondary-button-fg;
+            font-size: Theme.font-size-body;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

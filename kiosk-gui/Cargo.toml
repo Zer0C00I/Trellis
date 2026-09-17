@@ -11,3 +11,16 @@ slint-build = "1.18.0"
 
 [dev-dependencies]
 i-slint-backend-testing = "1.16.0"
+
+# `i-slint-backend-testing`'s platform can only be initialized once per
+# process (its own docs say so), and Rust's default `#[test]` harness runs
+# each test function on its own freshly spawned OS thread -- even under
+# `--test-threads=1` -- so a second test's thread never observes the
+# platform context bound to the first test's thread and fails with
+# NoEventLoopProvider. Disabling the harness lets tests/navigation.rs drive
+# both scenarios from one single-threaded `main()` instead, so the platform
+# is initialized exactly once and both scenarios run against it in sequence.
+[[test]]
+name = "navigation"
+path = "tests/navigation.rs"
+harness = false
