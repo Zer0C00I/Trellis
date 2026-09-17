@@ -88,6 +88,72 @@ fn selecting_a_beneficiary_navigates_to_amount_select_with_their_name() {
     slint::run_event_loop().unwrap();
 }
 
+fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_presets(
+            std::rc::Rc::new(slint::VecModel::from(vec![slint::SharedString::from(
+                "10 USDC",
+            )]))
+            .into(),
+        );
+        app.set_selected_recipient_name("Внук Саша".into());
+
+        {
+            let app_weak = app.as_weak();
+            app.on_amount_selected(move |index| {
+                let app = app_weak.unwrap();
+                let presets = ["10 USDC"];
+                let amount = presets.get(index as usize).copied().unwrap_or("0");
+                app.set_confirm_recipient_name(app.get_selected_recipient_name());
+                app.set_confirm_amount_text(amount.into());
+                app.set_current_screen(Screen::Confirm);
+            });
+        }
+
+        app.set_current_screen(Screen::AmountSelect);
+
+        let elem = ElementHandle::find_by_accessible_label(&app, "10 USDC")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("preset button not found");
+        elem.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::Confirm);
+        assert_eq!(app.get_confirm_recipient_name(), slint::SharedString::from("Внук Саша"));
+        assert_eq!(app.get_confirm_amount_text(), slint::SharedString::from("10 USDC"));
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
+fn cancelling_confirmation_returns_to_my_wallet() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::Confirm);
+
+        {
+            let app_weak = app.as_weak();
+            app.on_send_cancelled(move || {
+                let app = app_weak.unwrap();
+                app.set_current_screen(Screen::MyWallet);
+            });
+        }
+
+        let elem = ElementHandle::find_by_accessible_label(&app, "Отмена")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("cancel button not found");
+        elem.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::MyWallet);
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -97,6 +163,12 @@ fn main() {
     selecting_a_beneficiary_navigates_to_amount_select_with_their_name();
     println!("test selecting_a_beneficiary_navigates_to_amount_select_with_their_name ... ok");
 
+    choosing_an_amount_navigates_to_confirm_with_recipient_and_amount();
+    println!("test choosing_an_amount_navigates_to_confirm_with_recipient_and_amount ... ok");
+
+    cancelling_confirmation_returns_to_my_wallet();
+    println!("test cancelling_confirmation_returns_to_my_wallet ... ok");
+
     println!();
-    println!("test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }
