@@ -1,0 +1,105 @@
+import { Theme } from "theme.slint";
+
+export struct BeneficiaryItem {
+    name: string,
+    id: int,
+}
+
+export component MyWalletScreen inherits Rectangle {
+    in property <string> balance-text: "0";
+    in property <[BeneficiaryItem]> beneficiaries: [];
+
+    callback beneficiary-selected(int);
+    callback family-wallet-requested();
+    callback help-requested();
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
+
+        Text {
+            text: "Мой кошелёк";
+            color: Theme.fg;
+            font-size: Theme.font-size-heading;
+        }
+
+        Text {
+            text: balance-text;
+            color: Theme.fg;
+            font-size: Theme.font-size-heading;
+        }
+
+        for b in beneficiaries: Rectangle {
+            height: Theme.target-size;
+            background: Theme.button-bg;
+            border-radius: 8px;
+            accessible-role: button;
+            accessible-label: b.name;
+
+            TouchArea {
+                clicked => { beneficiary-selected(b.id); }
+            }
+
+            Text {
+                text: b.name;
+                color: Theme.button-fg;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    Rectangle {
+        // Family wallet button — top area, visually distinct from the
+        // beneficiary list (spec: not the same visual weight as sending
+        // money, since it navigates rather than moves funds).
+        x: parent.width - self.width - Theme.spacing;
+        y: Theme.spacing;
+        width: 180px;
+        height: Theme.target-size;
+        background: Theme.secondary-button-bg;
+        border-color: Theme.secondary-button-border;
+        border-width: 2px;
+        border-radius: 8px;
+
+        TouchArea {
+            clicked => { family-wallet-requested(); }
+        }
+
+        Text {
+            text: "Семейный кошелёк";
+            color: Theme.secondary-button-fg;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    Rectangle {
+        // Help button — fixed bottom-right on every screen (spec: 3.2.6).
+        x: parent.width - self.width - Theme.spacing;
+        y: parent.height - self.height - Theme.spacing;
+        width: Theme.target-size;
+        height: Theme.target-size;
+        background: Theme.secondary-button-bg;
+        border-color: Theme.secondary-button-border;
+        border-width: 2px;
+        border-radius: 8px;
+
+        TouchArea {
+            clicked => { help-requested(); }
+        }
+
+        Text {
+            text: "?";
+            color: Theme.secondary-button-fg;
+            font-size: Theme.font-size-heading;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

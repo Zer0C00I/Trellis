@@ -1,13 +1,22 @@
 import { Theme } from "theme.slint";
+import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
+
+export { BeneficiaryItem }
 
 export component AppWindow inherits Window {
     width: 800px;
     height: 480px;
     background: Theme.bg;
 
-    Text {
-        text: "Family Vault";
-        color: Theme.fg;
-        font-size: Theme.font-size-heading;
+    in property <string> balance-text <=> wallet.balance-text;
+    in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
+
+    callback beneficiary-selected <=> wallet.beneficiary-selected;
+    callback family-wallet-requested <=> wallet.family-wallet-requested;
+    callback help-requested <=> wallet.help-requested;
+
+    wallet := MyWalletScreen {
+        width: 100%;
+        height: 100%;
     }
 }
