@@ -125,7 +125,12 @@ i-slint-backend-testing = "1.16.0"
 
 ```rust
 fn main() {
-    slint_build::compile("ui/app.slint").unwrap();
+    // ElementHandle-based tests (Task 2+) require debug info in the
+    // generated code — without this, i-slint-backend-testing fails at
+    // runtime with "requires the presence of debug info". Emitting it
+    // unconditionally is harmless for the release build.
+    let config = slint_build::CompilerConfiguration::new().with_debug_info(true);
+    slint_build::compile_with_config("ui/app.slint", config).unwrap();
 }
 ```
 
@@ -404,7 +409,8 @@ Create `kiosk-gui/tests/navigation.rs`:
 ```rust
 slint::include_modules!();
 
-use i_slint_backend_testing::{ElementHandle, PointerEventButton};
+use i_slint_backend_testing::{AccessibleRole, ElementHandle};
+use slint::platform::PointerEventButton;
 
 #[test]
 fn tapping_a_beneficiary_fires_beneficiary_selected_with_its_id() {
@@ -427,7 +433,7 @@ fn tapping_a_beneficiary_fires_beneficiary_selected_with_its_id() {
         });
 
         let elem = ElementHandle::find_by_accessible_label(&app, "Внук Саша")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("beneficiary button for Внук Саша not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -718,7 +724,7 @@ fn selecting_a_beneficiary_navigates_to_amount_select_with_their_name() {
         assert_eq!(app.get_current_screen(), Screen::MyWallet);
 
         let elem = ElementHandle::find_by_accessible_label(&app, "Внук Саша")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("beneficiary button not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -964,7 +970,7 @@ fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
         app.set_current_screen(Screen::AmountSelect);
 
         let elem = ElementHandle::find_by_accessible_label(&app, "10 USDC")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("preset button not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -995,7 +1001,7 @@ fn cancelling_confirmation_returns_to_my_wallet() {
         }
 
         let elem = ElementHandle::find_by_accessible_label(&app, "Отмена")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("cancel button not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -1234,7 +1240,7 @@ fn confirming_send_navigates_to_result_with_success_message() {
         }
 
         let elem = ElementHandle::find_by_accessible_label(&app, "Отправить")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("send button not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -1268,7 +1274,7 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
         }
 
         let elem = ElementHandle::find_by_accessible_label(&app, "Ок")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("ok button not found");
         elem.single_click(PointerEventButton::Left).await;
 
@@ -1582,13 +1588,13 @@ fn family_wallet_button_navigates_there_and_back_button_returns() {
         assert_eq!(app.get_current_screen(), Screen::MyWallet);
 
         let to_family = ElementHandle::find_by_accessible_label(&app, "Семейный кошелёк")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("family wallet button not found");
         to_family.single_click(PointerEventButton::Left).await;
         assert_eq!(app.get_current_screen(), Screen::FamilyWallet);
 
         let back = ElementHandle::find_by_accessible_label(&app, "Назад к моему кошельку")
-            .next()
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("back button not found");
         back.single_click(PointerEventButton::Left).await;
         assert_eq!(app.get_current_screen(), Screen::MyWallet);
