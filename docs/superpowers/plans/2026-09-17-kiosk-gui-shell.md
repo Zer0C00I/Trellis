@@ -729,7 +729,7 @@ fn selecting_a_beneficiary_navigates_to_amount_select_with_their_name() {
         elem.single_click(PointerEventButton::Left).await;
 
         assert_eq!(app.get_current_screen(), Screen::AmountSelect);
-        assert_eq!(app.get_selected_recipient_name(), "Внук Саша".into());
+        assert_eq!(app.get_selected_recipient_name(), slint::SharedString::from("Внук Саша"));
 
         slint::quit_event_loop().unwrap();
     })
@@ -944,10 +944,7 @@ Expected: build succeeds
 Append to `kiosk-gui/tests/navigation.rs`:
 
 ```rust
-#[test]
 fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
-    i_slint_backend_testing::init_integration_test_with_system_time();
-
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
         app.set_presets(
@@ -975,8 +972,8 @@ fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
         elem.single_click(PointerEventButton::Left).await;
 
         assert_eq!(app.get_current_screen(), Screen::Confirm);
-        assert_eq!(app.get_confirm_recipient_name(), "Внук Саша".into());
-        assert_eq!(app.get_confirm_amount_text(), "10 USDC".into());
+        assert_eq!(app.get_confirm_recipient_name(), slint::SharedString::from("Внук Саша"));
+        assert_eq!(app.get_confirm_amount_text(), slint::SharedString::from("10 USDC"));
 
         slint::quit_event_loop().unwrap();
     })
@@ -984,10 +981,7 @@ fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
     slint::run_event_loop().unwrap();
 }
 
-#[test]
 fn cancelling_confirmation_returns_to_my_wallet() {
-    i_slint_backend_testing::init_integration_test_with_system_time();
-
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
         app.set_current_screen(Screen::Confirm);
@@ -1014,12 +1008,43 @@ fn cancelling_confirmation_returns_to_my_wallet() {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Wire the two new functions into `main()`**
+
+`tests/navigation.rs` runs with `harness = false` (set up in Task 3) —
+new scenarios are plain functions called from the file's single
+`fn main()`, never `#[test]`-attributed, and never call
+`init_integration_test_with_system_time()` themselves (it may only run
+once per process; `main()` already calls it once, before any scenario).
+Replace the existing `fn main() { ... }` at the bottom of
+`kiosk-gui/tests/navigation.rs` with:
+
+```rust
+fn main() {
+    i_slint_backend_testing::init_integration_test_with_system_time();
+
+    tapping_a_beneficiary_fires_beneficiary_selected_with_its_id();
+    println!("test tapping_a_beneficiary_fires_beneficiary_selected_with_its_id ... ok");
+
+    selecting_a_beneficiary_navigates_to_amount_select_with_their_name();
+    println!("test selecting_a_beneficiary_navigates_to_amount_select_with_their_name ... ok");
+
+    choosing_an_amount_navigates_to_confirm_with_recipient_and_amount();
+    println!("test choosing_an_amount_navigates_to_confirm_with_recipient_and_amount ... ok");
+
+    cancelling_confirmation_returns_to_my_wallet();
+    println!("test cancelling_confirmation_returns_to_my_wallet ... ok");
+
+    println!();
+    println!("test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+}
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `cargo test --manifest-path kiosk-gui/Cargo.toml --test navigation -- --nocapture`
-Expected: all 4 tests PASS
+Expected: all 4 scenarios print `... ok`, final line says `4 passed; 0 failed`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add kiosk-gui
@@ -1217,10 +1242,7 @@ Expected: build succeeds
 Append to `kiosk-gui/tests/navigation.rs`:
 
 ```rust
-#[test]
 fn confirming_send_navigates_to_result_with_success_message() {
-    i_slint_backend_testing::init_integration_test_with_system_time();
-
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
         app.set_confirm_recipient_name("Внук Саша".into());
@@ -1257,10 +1279,7 @@ fn confirming_send_navigates_to_result_with_success_message() {
     slint::run_event_loop().unwrap();
 }
 
-#[test]
 fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
-    i_slint_backend_testing::init_integration_test_with_system_time();
-
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
         app.set_current_screen(Screen::Result);
@@ -1287,12 +1306,47 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Wire the two new functions into `main()`**
+
+Same pattern as Task 4 — `tests/navigation.rs` runs with `harness =
+false`; new scenarios never get `#[test]` and never call
+`init_integration_test_with_system_time()` themselves. Replace the
+`fn main() { ... }` at the bottom of `kiosk-gui/tests/navigation.rs`
+with:
+
+```rust
+fn main() {
+    i_slint_backend_testing::init_integration_test_with_system_time();
+
+    tapping_a_beneficiary_fires_beneficiary_selected_with_its_id();
+    println!("test tapping_a_beneficiary_fires_beneficiary_selected_with_its_id ... ok");
+
+    selecting_a_beneficiary_navigates_to_amount_select_with_their_name();
+    println!("test selecting_a_beneficiary_navigates_to_amount_select_with_their_name ... ok");
+
+    choosing_an_amount_navigates_to_confirm_with_recipient_and_amount();
+    println!("test choosing_an_amount_navigates_to_confirm_with_recipient_and_amount ... ok");
+
+    cancelling_confirmation_returns_to_my_wallet();
+    println!("test cancelling_confirmation_returns_to_my_wallet ... ok");
+
+    confirming_send_navigates_to_result_with_success_message();
+    println!("test confirming_send_navigates_to_result_with_success_message ... ok");
+
+    pressing_ok_on_result_returns_to_my_wallet_immediately();
+    println!("test pressing_ok_on_result_returns_to_my_wallet_immediately ... ok");
+
+    println!();
+    println!("test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+}
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `cargo test --manifest-path kiosk-gui/Cargo.toml --test navigation -- --nocapture`
-Expected: all 6 tests PASS
+Expected: all 6 scenarios print `... ok`, final line says `6 passed; 0 failed`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add kiosk-gui
@@ -1563,10 +1617,7 @@ Expected: build succeeds
 Append to `kiosk-gui/tests/navigation.rs`:
 
 ```rust
-#[test]
 fn family_wallet_button_navigates_there_and_back_button_returns() {
-    i_slint_backend_testing::init_integration_test_with_system_time();
-
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
 
@@ -1606,17 +1657,54 @@ fn family_wallet_button_navigates_there_and_back_button_returns() {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Wire the new function into `main()`**
+
+Same pattern as Tasks 4 and 5 — one new scenario, no `#[test]`, no
+extra `init_integration_test_with_system_time()` call. Replace the
+`fn main() { ... }` at the bottom of `kiosk-gui/tests/navigation.rs`
+with:
+
+```rust
+fn main() {
+    i_slint_backend_testing::init_integration_test_with_system_time();
+
+    tapping_a_beneficiary_fires_beneficiary_selected_with_its_id();
+    println!("test tapping_a_beneficiary_fires_beneficiary_selected_with_its_id ... ok");
+
+    selecting_a_beneficiary_navigates_to_amount_select_with_their_name();
+    println!("test selecting_a_beneficiary_navigates_to_amount_select_with_their_name ... ok");
+
+    choosing_an_amount_navigates_to_confirm_with_recipient_and_amount();
+    println!("test choosing_an_amount_navigates_to_confirm_with_recipient_and_amount ... ok");
+
+    cancelling_confirmation_returns_to_my_wallet();
+    println!("test cancelling_confirmation_returns_to_my_wallet ... ok");
+
+    confirming_send_navigates_to_result_with_success_message();
+    println!("test confirming_send_navigates_to_result_with_success_message ... ok");
+
+    pressing_ok_on_result_returns_to_my_wallet_immediately();
+    println!("test pressing_ok_on_result_returns_to_my_wallet_immediately ... ok");
+
+    family_wallet_button_navigates_there_and_back_button_returns();
+    println!("test family_wallet_button_navigates_there_and_back_button_returns ... ok");
+
+    println!();
+    println!("test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+}
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `cargo test --manifest-path kiosk-gui/Cargo.toml --test navigation -- --nocapture`
-Expected: all 7 tests PASS
+Expected: all 7 scenarios print `... ok`, final line says `7 passed; 0 failed`
 
-- [ ] **Step 7: Run the full suite one final time**
+- [ ] **Step 8: Run the full suite one final time**
 
 Run: `cargo test --manifest-path kiosk-gui/Cargo.toml -- --nocapture`
-Expected: all 7 tests pass, nothing else regressed
+Expected: all 7 scenarios pass, nothing else regressed
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add kiosk-gui
