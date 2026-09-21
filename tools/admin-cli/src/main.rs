@@ -13,6 +13,8 @@
 //! `Pubkey` types from different generations of the Solana crate
 //! ecosystem), signs it, and sends it with `send_and_confirm_transaction`.
 
+mod registry;
+
 use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
 use solana_client::rpc_client::RpcClient;
 use solana_instruction::{AccountMeta, Instruction};
@@ -21,6 +23,8 @@ use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_token::solana_program::program_pack::Pack;
+
+use registry::{PersonEntry, VaultEntry};
 
 type AnchorPubkey = anchor_lang::prelude::Pubkey;
 
@@ -138,20 +142,126 @@ fn rpc_url(args: &[String]) -> String {
     arg(args, "--rpc-url").unwrap_or_else(|| "https://api.devnet.solana.com".to_string())
 }
 
+fn registry_path(args: &[String]) -> std::path::PathBuf {
+    arg(args, "--registry")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(registry::default_path)
+}
+
 fn system_program_id() -> Pubkey {
     Pubkey::new_from_array([0u8; 32])
 }
 
-fn cmd_init_vault(args: &[String]) {
-    let rpc = rpc_client(&rpc_url(args));
-    let payer = arg_keypair(args, "--payer");
-    let owner = arg_keypair(args, "--owner");
+/// Reads decimals live from the Mint account — different SPL tokens
+/// (real USDC, wrapped SOL, a custom demo token) declare different
+/// decimals, so this can't be a hardcoded constant. `send`/`deposit`
+/// accept whole-unit amounts (e.g. `--amount 10`) and convert to base
+/// units using this, so nobody using this tool has to do that math
+/// themselves. Matches `kiosk-gui/src/chain.rs`'s `fetch_mint_decimals`.
+fn fetch_mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> u32 {
+    let mint_bytes = rpc.get_account_data(mint).unwrap_or_else(|e| {
+        eprintln!("could not fetch mint {mint}: {e}");
+        std::process::exit(1);
+    });
+    spl_token::state::Mint::unpack(&mint_bytes)
+        .unwrap_or_else(|e| {
+            eprintln!("could not decode mint {mint}: {e}");
+            std::process::exit(1);
+        })
+        .decimals as u32
+}
+
+fn cmd_register_person(args: &[String]) {
+    let path = registry_path(args);
+    let mut reg = registry::load(&path);
+    let name = arg_req(args, "--name");
+    let keypair_path = arg(args, "--keypair");
+    let explicit_pubkey = arg(args, "--pubkey");
+
+    let (pubkey, keypair_path) = match (&keypair_path, &explicit_pubkey) {
+        (Some(kp), None) => {
+            let keypair = read_keypair_file(kp).unwrap_or_else(|e| {
+                eprintln!("--keypair ({kp}): could not read: {e}");
+                std::process::exit(1);
+            });
+            (keypair.pubkey().to_string(), Some(kp.clone()))
+        }
+        (None, Some(pk)) => {
+            pk.parse::<Pubkey>().unwrap_or_else(|_| {
+                eprintln!("--pubkey: not a valid pubkey");
+                std::process::exit(1);
+            });
+            (pk.clone(), None)
+        }
+        _ => {
+            eprintln!(
+                "register-person needs exactly one of --keypair <path> or --pubkey <address>"
+            );
+            std::process::exit(1);
+        }
+    };
+
+    reg.people.insert(
+        name.clone(),
+        PersonEntry {
+            keypair: keypair_path,
+            pubkey: pubkey.clone(),
+        },
+    );
+    registry::save(&path, &reg);
+    println!("registered person '{name}' -> {pubkey}");
+}
+
+fn cmd_register_vault(args: &[String]) {
+    let path = registry_path(args);
+    let mut reg = registry::load(&path);
+    let name = arg_req(args, "--name");
+    let pubkey = arg_pubkey(args, "--pubkey").to_string();
+    let mint = arg_pubkey(args, "--mint").to_string();
+    let owner = arg_req(args, "--owner");
+    reg.people.get(&owner).unwrap_or_else(|| {
+        eprintln!("--owner '{owner}': no such person — register them first");
+        std::process::exit(1);
+    });
+
+    reg.vaults.insert(
+        name.clone(),
+        VaultEntry {
+            pubkey: pubkey.clone(),
+            mint,
+            owner,
+        },
+    );
+    registry::save(&path, &reg);
+    println!("registered vault '{name}' -> {pubkey}");
+}
+
+/// Bank-style: "open an account for <owner>". Runs `initialize_vault`
+/// on-chain, then registers the resulting vault under `--name` so later
+/// commands (`send`, `deposit`, `add-beneficiary`) never need the raw
+/// vault pubkey again.
+fn cmd_create_vault(args: &[String]) {
+    let path = registry_path(args);
+    let mut reg = registry::load(&path);
+    let name = arg_req(args, "--name");
+    let owner_name = arg_req(args, "--owner");
     let mint = arg_pubkey(args, "--mint");
     let is_pool = args.iter().any(|a| a == "--pool");
     let daily_limit = arg(args, "--daily-limit")
         .map(|s| s.parse::<u64>().unwrap())
         .unwrap_or(0);
 
+    let payer = arg(args, "--payer")
+        .map(|p| {
+            read_keypair_file(&p).unwrap_or_else(|e| {
+                eprintln!("--payer ({p}): could not read: {e}");
+                std::process::exit(1);
+            })
+        })
+        .unwrap_or_else(|| reg.person_keypair(&owner_name));
+    let owner = reg.person_keypair(&owner_name);
+
+    let rpc = rpc_client(&rpc_url(args));
     let (vault, _) = vault_pda(owner.pubkey(), is_pool);
     let (beneficiary_list, _) = beneficiary_list_pda(vault);
     let vault_token_account =
@@ -177,46 +287,59 @@ fn cmd_init_vault(args: &[String]) {
 
     match send_ix(&rpc, accounts, data, &payer, &[&owner]) {
         Ok(sig) => {
-            println!("init-vault ok, signature: {sig}");
-            println!("vault: {vault}");
-            println!("beneficiary_list: {beneficiary_list}");
-            println!("vault_token_account: {vault_token_account}");
+            println!("create-vault ok, signature: {sig}");
+            reg.vaults.insert(
+                name.clone(),
+                VaultEntry {
+                    pubkey: vault.to_string(),
+                    mint: mint.to_string(),
+                    owner: owner_name,
+                },
+            );
+            registry::save(&path, &reg);
+            println!("account '{name}' is open (vault: {vault})");
         }
         Err(e) => {
-            eprintln!("init-vault failed: {e}");
+            eprintln!("create-vault failed: {e}");
             std::process::exit(1);
         }
     }
 }
 
 fn cmd_deposit(args: &[String]) {
-    let rpc = rpc_client(&rpc_url(args));
-    let depositor = arg_keypair(args, "--depositor");
-    let vault = arg_pubkey(args, "--vault");
-    let amount = arg_u64(args, "--amount");
+    let path = registry_path(args);
+    let reg = registry::load(&path);
+    let from_name = arg_req(args, "--from");
+    let to_name = arg_req(args, "--to");
+    let amount_whole_units = arg_u64(args, "--amount");
 
+    let depositor = reg.person_keypair(&from_name);
+    let vault = reg.vault_pubkey(&to_name);
+
+    let rpc = rpc_client(&rpc_url(args));
     let vault_bytes = rpc.get_account_data(&vault).unwrap_or_else(|e| {
-        eprintln!("could not fetch vault: {e}");
+        eprintln!("could not fetch account '{to_name}': {e}");
         std::process::exit(1);
     });
     let vault_data = family_vault::state::Vault::try_deserialize(&mut &vault_bytes[..])
         .unwrap_or_else(|e| {
-            eprintln!("could not decode vault: {e}");
+            eprintln!("could not decode account '{to_name}': {e}");
             std::process::exit(1);
         });
     let vault_token_account = to_client(vault_data.vault_token_account);
     let vta_bytes = rpc
         .get_account_data(&vault_token_account)
         .unwrap_or_else(|e| {
-            eprintln!("could not fetch vault_token_account: {e}");
+            eprintln!("could not fetch account '{to_name}' token account: {e}");
             std::process::exit(1);
         });
     let mint = spl_token::state::Account::unpack(&vta_bytes)
         .unwrap_or_else(|e| {
-            eprintln!("could not decode vault_token_account: {e}");
+            eprintln!("could not decode account '{to_name}' token account: {e}");
             std::process::exit(1);
         })
         .mint;
+    let amount = amount_whole_units * 10u64.pow(fetch_mint_decimals(&rpc, &mint));
 
     let depositor_token_account =
         spl_associated_token_account::get_associated_token_address(&depositor.pubkey(), &mint);
@@ -232,7 +355,7 @@ fn cmd_deposit(args: &[String]) {
     .to_account_metas(None);
 
     match send_ix(&rpc, accounts, data, &depositor, &[]) {
-        Ok(sig) => println!("deposit ok, signature: {sig}"),
+        Ok(sig) => println!("deposit ok ({from_name} -> {to_name}), signature: {sig}"),
         Err(e) => {
             eprintln!("deposit failed: {e}");
             std::process::exit(1);
@@ -240,16 +363,26 @@ fn cmd_deposit(args: &[String]) {
     }
 }
 
+/// Bank-style "send money": register the recipient as a beneficiary
+/// first (see `cmd_add_beneficiary`) — the program only ever pays out
+/// to its closed address book, by design (see the parent family-vault
+/// design spec's "closed address book" anti-scam rationale).
 fn cmd_add_beneficiary(args: &[String]) {
-    let rpc = rpc_client(&rpc_url(args));
-    let signer = arg_keypair(args, "--signer");
-    let vault = arg_pubkey(args, "--vault");
-    let name = arg_req(args, "--name");
-    let address = arg_pubkey(args, "--address");
+    let path = registry_path(args);
+    let reg = registry::load(&path);
+    let vault_name = arg_req(args, "--vault");
+    let person_name = arg_req(args, "--person");
+
+    let vault_entry = reg.vault(&vault_name);
+    let vault = vault_entry.pubkey.parse::<Pubkey>().unwrap();
+    let owner_name = vault_entry.owner.clone();
+    let signer = reg.person_keypair(&owner_name);
+    let address = reg.person_pubkey(&person_name);
     let (beneficiary_list, _) = beneficiary_list_pda(vault);
 
+    let rpc = rpc_client(&rpc_url(args));
     let data = family_vault::instruction::AddBeneficiary {
-        name,
+        name: person_name.clone(),
         address: to_anchor(address),
     }
     .data();
@@ -261,7 +394,9 @@ fn cmd_add_beneficiary(args: &[String]) {
     .to_account_metas(None);
 
     match send_ix(&rpc, accounts, data, &signer, &[]) {
-        Ok(sig) => println!("add-beneficiary ok, signature: {sig}"),
+        Ok(sig) => {
+            println!("added '{person_name}' as a payee on account '{vault_name}', signature: {sig}")
+        }
         Err(e) => {
             eprintln!("add-beneficiary failed: {e}");
             std::process::exit(1);
@@ -269,20 +404,30 @@ fn cmd_add_beneficiary(args: &[String]) {
     }
 }
 
-fn cmd_withdraw(args: &[String]) {
-    let rpc = rpc_client(&rpc_url(args));
-    let signer = arg_keypair(args, "--signer");
-    let vault = arg_pubkey(args, "--vault");
-    let recipient = arg_pubkey(args, "--recipient");
-    let amount = arg_u64(args, "--amount");
+/// Bank-style "send money from account to account". The recipient must
+/// already be an approved payee (`add-beneficiary`) — the program
+/// enforces this on-chain regardless of what this tool sends.
+fn cmd_send(args: &[String]) {
+    let path = registry_path(args);
+    let reg = registry::load(&path);
+    let from_name = arg_req(args, "--from");
+    let to_name = arg_req(args, "--to");
+    let amount_whole_units = arg_u64(args, "--amount");
 
+    let vault_entry = reg.vault(&from_name);
+    let vault = vault_entry.pubkey.parse::<Pubkey>().unwrap();
+    let owner_name = vault_entry.owner.clone();
+    let signer = reg.person_keypair(&owner_name);
+    let recipient = reg.person_pubkey(&to_name);
+
+    let rpc = rpc_client(&rpc_url(args));
     let vault_bytes = rpc.get_account_data(&vault).unwrap_or_else(|e| {
-        eprintln!("could not fetch vault: {e}");
+        eprintln!("could not fetch account '{from_name}': {e}");
         std::process::exit(1);
     });
     let vault_data = family_vault::state::Vault::try_deserialize(&mut &vault_bytes[..])
         .unwrap_or_else(|e| {
-            eprintln!("could not decode vault: {e}");
+            eprintln!("could not decode account '{from_name}': {e}");
             std::process::exit(1);
         });
     let vault_token_account = to_client(vault_data.vault_token_account);
@@ -290,12 +435,13 @@ fn cmd_withdraw(args: &[String]) {
     let vta_bytes = rpc
         .get_account_data(&vault_token_account)
         .unwrap_or_else(|e| {
-            eprintln!("could not fetch vault_token_account: {e}");
+            eprintln!("could not fetch account '{from_name}' token account: {e}");
             std::process::exit(1);
         });
     let mint = spl_token::state::Account::unpack(&vta_bytes).unwrap().mint;
     let recipient_token_account =
         spl_associated_token_account::get_associated_token_address(&recipient, &mint);
+    let amount = amount_whole_units * 10u64.pow(fetch_mint_decimals(&rpc, &mint));
 
     let data = family_vault::instruction::Withdraw { amount }.data();
     let accounts = family_vault::accounts::Withdraw {
@@ -309,9 +455,9 @@ fn cmd_withdraw(args: &[String]) {
     .to_account_metas(None);
 
     match send_ix(&rpc, accounts, data, &signer, &[]) {
-        Ok(sig) => println!("withdraw ok, signature: {sig}"),
+        Ok(sig) => println!("sent {amount} from '{from_name}' to '{to_name}', signature: {sig}"),
         Err(e) => {
-            eprintln!("withdraw failed: {e}");
+            eprintln!("send failed: {e}");
             std::process::exit(1);
         }
     }
@@ -546,19 +692,23 @@ fn cmd_execute_rotation(args: &[String]) {
 fn print_usage() {
     eprintln!(
         "admin-cli <command> [flags]\n\n\
-         commands:\n\
-         \x20 init-vault        --payer <kp> --owner <kp> --mint <pk> [--pool] [--daily-limit <u64>]\n\
-         \x20 deposit           --depositor <kp> --vault <pk> --amount <u64>\n\
-         \x20 add-beneficiary   --signer <kp> --vault <pk> --name <str> --address <pk>\n\
-         \x20 withdraw          --signer <kp> --vault <pk> --recipient <pk> --amount <u64>\n\
+         everyday commands (bank-style, use names — see the registry below):\n\
+         \x20 register-person   --name <n> (--keypair <path> | --pubkey <addr>)\n\
+         \x20 register-vault    --name <n> --pubkey <addr> --mint <addr> --owner <person-name>\n\
+         \x20 create-vault      --name <n> --owner <person-name> --mint <addr> [--pool] [--daily-limit <u64>] [--payer <path>]\n\
+         \x20 add-beneficiary   --vault <n> --person <person-name>\n\
+         \x20 deposit           --from <person-name> --to <vault-name> --amount <whole units, e.g. 10>\n\
+         \x20 send              --from <vault-name> --to <person-name> --amount <whole units, e.g. 10>\n\n\
+         advanced / raw-pubkey commands (approvers, requests, rotation):\n\
          \x20 init-approvers    --payer <kp> --vault <pk>\n\
          \x20 add-approver      --signer <kp> --vault <pk> --address <pk> [--existing-approver <kp>]\n\
-         \x20 request-withdrawal --signer <kp> --vault <pk> --recipient <pk> --amount <u64> --nonce <u64>\n\
+         \x20 request-withdrawal --signer <kp> --vault <pk> --recipient <pk> --amount <u64 base units> --nonce <u64>\n\
          \x20 approve-withdrawal --signer <kp> --vault <pk> --nonce <u64>\n\
          \x20 request-rotation  --signer <kp> --vault <pk> --new-owner <pk> --nonce <u64>\n\
          \x20 cancel-rotation   --signer <kp> --vault <pk> --nonce <u64>\n\
          \x20 execute-rotation  --signer <kp> --vault <pk> --nonce <u64>\n\n\
-         all commands accept --rpc-url <url> (default https://api.devnet.solana.com)"
+         all commands accept --rpc-url <url> (default https://api.devnet.solana.com)\n\
+         everyday commands also accept --registry <path> (default ~/.family-vault/accounts.json)"
     );
 }
 
@@ -571,10 +721,12 @@ fn main() {
     let rest = &all_args[2..];
 
     match command.as_str() {
-        "init-vault" => cmd_init_vault(rest),
+        "register-person" => cmd_register_person(rest),
+        "register-vault" => cmd_register_vault(rest),
+        "create-vault" => cmd_create_vault(rest),
         "deposit" => cmd_deposit(rest),
         "add-beneficiary" => cmd_add_beneficiary(rest),
-        "withdraw" => cmd_withdraw(rest),
+        "send" => cmd_send(rest),
         "init-approvers" => cmd_init_approvers(rest),
         "add-approver" => cmd_add_approver(rest),
         "request-withdrawal" => cmd_request_withdrawal(rest),

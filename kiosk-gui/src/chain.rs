@@ -2,11 +2,7 @@ use std::fmt;
 use std::path::Path;
 
 use serde::Deserialize;
-
-/// SPL token decimals for the demo token used on devnet. Fixed, not read
-/// from the Mint account — see the design spec's "Decimals" section.
-#[allow(dead_code)] // used starting in Task 2
-pub const TOKEN_DECIMALS: u32 = 6;
+use spl_token::solana_program::program_pack::Pack;
 
 #[derive(Debug, Deserialize)]
 struct RawConfig {
@@ -95,8 +91,22 @@ pub fn format_amount(whole_units: u64) -> String {
     format!("{whole_units} USDC")
 }
 
-pub fn parse_amount_to_base_units(whole_units: u64) -> u64 {
-    whole_units * 10u64.pow(TOKEN_DECIMALS)
+pub fn parse_amount_to_base_units(whole_units: u64, decimals: u32) -> u64 {
+    whole_units * 10u64.pow(decimals)
+}
+
+/// Reads decimals live from the Mint account rather than assuming a fixed
+/// value — different SPL tokens (real USDC, wrapped SOL, a custom demo
+/// token) declare different decimals, and hardcoding one would silently
+/// send the wrong amount for any mint that doesn't match.
+fn fetch_mint_decimals(
+    rpc: &solana_client::rpc_client::RpcClient,
+    mint: &solana_pubkey::Pubkey,
+) -> Result<u32, ChainError> {
+    let mint_bytes = rpc.get_account_data(mint).map_err(map_client_error)?;
+    let mint_data = spl_token::state::Mint::unpack(&mint_bytes)
+        .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
+    Ok(mint_data.decimals as u32)
 }
 
 pub fn decode_beneficiary_name(name: &[u8; 32], name_len: u8) -> String {
@@ -204,7 +214,8 @@ pub fn submit_withdraw(
     let beneficiary_list_pubkey_anchor =
         anchor_lang::prelude::Pubkey::new_from_array(beneficiary_list_pubkey.to_bytes());
 
-    let amount_base_units = parse_amount_to_base_units(amount_whole_units);
+    let decimals = fetch_mint_decimals(&rpc, &cfg.mint)?;
+    let amount_base_units = parse_amount_to_base_units(amount_whole_units, decimals);
 
     let ix_data: Vec<u8> = family_vault::instruction::Withdraw {
         amount: amount_base_units,
@@ -359,10 +370,15 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
     }
 
     #[test]
-    fn converts_whole_units_to_base_units_with_six_decimals() {
-        assert_eq!(parse_amount_to_base_units(1), 1_000_000);
-        assert_eq!(parse_amount_to_base_units(10), 10_000_000);
-        assert_eq!(parse_amount_to_base_units(0), 0);
+    fn converts_whole_units_to_base_units_using_the_given_decimals() {
+        assert_eq!(parse_amount_to_base_units(1, 6), 1_000_000);
+        assert_eq!(parse_amount_to_base_units(10, 6), 10_000_000);
+        assert_eq!(parse_amount_to_base_units(0, 6), 0);
+        // A different mint's decimals must actually change the result —
+        // this is the whole point of taking decimals as a parameter
+        // instead of a hardcoded constant.
+        assert_eq!(parse_amount_to_base_units(1, 9), 1_000_000_000);
+        assert_eq!(parse_amount_to_base_units(5, 0), 5);
     }
 
     #[test]

@@ -148,6 +148,8 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "family-vault",
+ "serde",
+ "serde_json",
  "solana-client",
  "solana-hash 3.1.0",
  "solana-instruction",
