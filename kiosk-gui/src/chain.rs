@@ -1,6 +1,3 @@
-#![forbid(unsafe_code)]
-#![deny(dead_code)]
-
 use std::fmt;
 use std::path::Path;
 
@@ -12,7 +9,7 @@ use serde::Deserialize;
 pub const TOKEN_DECIMALS: u32 = 6;
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // used starting in Task 2
+#[allow(dead_code)] // used starting in Task 5
 struct RawConfig {
     rpc_url: String,
     keypair_path: String,
@@ -25,7 +22,7 @@ struct RawConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 2
+#[allow(dead_code)] // used starting in Task 5
 pub struct ChainConfig {
     pub rpc_url: String,
     pub keypair_path: String,
@@ -38,7 +35,7 @@ pub struct ChainConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 2
+#[allow(dead_code)] // used starting in Task 5
 pub enum ConfigError {
     Io(std::io::Error),
     Parse(toml::de::Error),
@@ -59,7 +56,7 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-#[allow(dead_code)] // used starting in Task 2
+#[allow(dead_code)] // used starting in Task 5
 fn parse_client_pubkey(field: &'static str, value: &str) -> Result<solana_pubkey::Pubkey, ConfigError> {
     value.parse().map_err(|_| ConfigError::BadPubkey {
         field,
@@ -67,7 +64,7 @@ fn parse_client_pubkey(field: &'static str, value: &str) -> Result<solana_pubkey
     })
 }
 
-#[allow(dead_code)] // used starting in Task 2
+#[allow(dead_code)] // used starting in Task 5
 pub fn load_config(path: &Path) -> Result<ChainConfig, ConfigError> {
     let text = std::fs::read_to_string(path).map_err(ConfigError::Io)?;
     let raw: RawConfig = toml::from_str(&text).map_err(ConfigError::Parse)?;

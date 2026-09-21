@@ -21,6 +21,10 @@ spl-associated-token-account = "8.0.0"
 spl-token = "9.0.0"
 toml = "1.1.6"
 
+[lints.rust]
+unsafe_code = "deny"
+dead_code = "deny"
+
 [build-dependencies]
 slint-build = "1.18.0"
 

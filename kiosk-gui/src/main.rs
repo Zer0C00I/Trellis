@@ -1,3 +1,5 @@
+#![allow(unsafe_code)] // slint-generated code requires unsafe
+
 slint::include_modules!();
 
 mod chain;
