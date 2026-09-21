@@ -6,14 +6,11 @@ solana_version = "3.1.10"
 resolution = true
 skip-lint = false
 
+[programs.devnet]
+family_vault = "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ"
+
 [programs.localnet]
 family_vault = "FXFxTexyhpdjmb6s2kvjVeY2aJFD9jmW8PsfSUY6LF7m"
-
-[programs.devnet]
-family_vault = "FXFxTexyhpdjmb6s2kvjVeY2aJFD9jmW8PsfSUY6LF7m"
-
-[registry]
-url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"
@@ -21,3 +18,5 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "cargo test --manifest-path programs/family-vault/Cargo.toml -- --test-threads=1"
+
+[hooks]
