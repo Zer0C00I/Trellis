@@ -19,8 +19,14 @@ fn tapping_a_beneficiary_fires_beneficiary_selected_with_its_id() {
         let app = AppWindow::new().unwrap();
 
         let beneficiaries = vec![
-            BeneficiaryItem { name: "Внук Саша".into(), id: 1 },
-            BeneficiaryItem { name: "Дочка Маша".into(), id: 2 },
+            BeneficiaryItem {
+                name: "Внук Саша".into(),
+                id: 1,
+            },
+            BeneficiaryItem {
+                name: "Дочка Маша".into(),
+                id: 2,
+            },
         ];
         let model = std::rc::Rc::new(slint::VecModel::from(beneficiaries));
         app.set_beneficiaries(model.into());
@@ -55,7 +61,10 @@ fn selecting_a_beneficiary_navigates_to_amount_select_with_their_name() {
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
 
-        let beneficiaries = vec![BeneficiaryItem { name: "Внук Саша".into(), id: 1 }];
+        let beneficiaries = vec![BeneficiaryItem {
+            name: "Внук Саша".into(),
+            id: 1,
+        }];
         let model = std::rc::Rc::new(slint::VecModel::from(beneficiaries));
         app.set_beneficiaries(model.into());
 
@@ -119,8 +128,14 @@ fn choosing_an_amount_navigates_to_confirm_with_recipient_and_amount() {
         elem.single_click(PointerEventButton::Left).await;
 
         assert_eq!(app.get_current_screen(), Screen::Confirm);
-        assert_eq!(app.get_confirm_recipient_name(), slint::SharedString::from("Внук Саша"));
-        assert_eq!(app.get_confirm_amount_text(), slint::SharedString::from("10 USDC"));
+        assert_eq!(
+            app.get_confirm_recipient_name(),
+            slint::SharedString::from("Внук Саша")
+        );
+        assert_eq!(
+            app.get_confirm_amount_text(),
+            slint::SharedString::from("10 USDC")
+        );
 
         slint::quit_event_loop().unwrap();
     })
@@ -236,8 +251,14 @@ fn confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id() {
         // Two beneficiaries with the SAME display name but different ids —
         // family-vault's add_beneficiary does not enforce name uniqueness.
         let beneficiaries = vec![
-            BeneficiaryItem { name: "Иван".into(), id: 1 },
-            BeneficiaryItem { name: "Иван".into(), id: 2 },
+            BeneficiaryItem {
+                name: "Иван".into(),
+                id: 1,
+            },
+            BeneficiaryItem {
+                name: "Иван".into(),
+                id: 2,
+            },
         ];
         let model = std::rc::Rc::new(slint::VecModel::from(beneficiaries));
         app.set_beneficiaries(model.into());

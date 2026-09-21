@@ -53,7 +53,10 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-fn parse_client_pubkey(field: &'static str, value: &str) -> Result<solana_pubkey::Pubkey, ConfigError> {
+fn parse_client_pubkey(
+    field: &'static str,
+    value: &str,
+) -> Result<solana_pubkey::Pubkey, ConfigError> {
     value.parse().map_err(|_| ConfigError::BadPubkey {
         field,
         value: value.to_string(),
@@ -153,10 +156,7 @@ pub fn fetch_vault_snapshot(cfg: &ChainConfig, is_pool: bool) -> Result<VaultSna
     let balance = rpc
         .get_token_account_balance(&vault_token_pubkey)
         .map_err(map_client_error)?;
-    let whole_unit_balance: u64 = balance
-        .ui_amount
-        .map(|f| f.round() as u64)
-        .unwrap_or(0);
+    let whole_unit_balance: u64 = balance.ui_amount.map(|f| f.round() as u64).unwrap_or(0);
 
     decode_snapshot(&vault_bytes, &list_bytes, whole_unit_balance)
 }
@@ -174,14 +174,20 @@ pub fn submit_withdraw(
     let owner_keypair = solana_keypair::read_keypair_file(&cfg.keypair_path)
         .map_err(|e| ChainError::ProgramRejected(format!("could not read keypair: {e}")))?;
 
-    let vault_pubkey = if is_pool { cfg.pool_vault } else { cfg.personal_vault };
+    let vault_pubkey = if is_pool {
+        cfg.pool_vault
+    } else {
+        cfg.personal_vault
+    };
     let beneficiary_list_pubkey = if is_pool {
         cfg.pool_beneficiary_list
     } else {
         cfg.personal_beneficiary_list
     };
 
-    let vault_bytes = rpc.get_account_data(&vault_pubkey).map_err(map_client_error)?;
+    let vault_bytes = rpc
+        .get_account_data(&vault_pubkey)
+        .map_err(map_client_error)?;
     let vault = family_vault::state::Vault::try_deserialize(&mut &vault_bytes[..])
         .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
 
@@ -189,9 +195,8 @@ pub fn submit_withdraw(
         anchor_lang::prelude::Pubkey::new_from_array(vault.vault_token_account.to_bytes());
     let recipient_token_account_client =
         spl_associated_token_account::get_associated_token_address(&beneficiary_address, &cfg.mint);
-    let recipient_token_account = anchor_lang::prelude::Pubkey::new_from_array(
-        recipient_token_account_client.to_bytes(),
-    );
+    let recipient_token_account =
+        anchor_lang::prelude::Pubkey::new_from_array(recipient_token_account_client.to_bytes());
     let signer = anchor_lang::prelude::Pubkey::new_from_array(
         solana_signer::Signer::pubkey(&owner_keypair).to_bytes(),
     );
@@ -240,7 +245,8 @@ pub fn submit_withdraw(
         blockhash,
     );
 
-    rpc.send_and_confirm_transaction(&tx).map_err(map_client_error)?;
+    rpc.send_and_confirm_transaction(&tx)
+        .map_err(map_client_error)?;
     Ok(())
 }
 
@@ -364,10 +370,7 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         let mut name = [0u8; 32];
         let src = "Внук Саша".as_bytes();
         name[..src.len()].copy_from_slice(src);
-        assert_eq!(
-            decode_beneficiary_name(&name, src.len() as u8),
-            "Внук Саша"
-        );
+        assert_eq!(decode_beneficiary_name(&name, src.len() as u8), "Внук Саша");
     }
 
     #[test]
@@ -434,6 +437,9 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
     fn maps_io_errors_to_no_connection() {
         let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
         let client_err: solana_client::client_error::ClientError = io_err.into();
-        assert!(matches!(map_client_error(client_err), ChainError::NoConnection));
+        assert!(matches!(
+            map_client_error(client_err),
+            ChainError::NoConnection
+        ));
     }
 }

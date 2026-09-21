@@ -111,7 +111,9 @@ fn main() -> Result<(), slint::PlatformError> {
             let pool_addrs = fetch_beneficiary_addresses(&cfg, true);
 
             let _ = slint::invoke_from_event_loop(move || {
-                let Some(app) = app_weak.upgrade() else { return };
+                let Some(app) = app_weak.upgrade() else {
+                    return;
+                };
                 match personal_result {
                     Ok(snapshot) => apply_snapshot(&app, false, snapshot),
                     Err(e) => app.set_balance_text(error_message_text(&e).into()),
@@ -223,7 +225,9 @@ fn main() -> Result<(), slint::PlatformError> {
             std::thread::spawn(move || {
                 let result = chain::submit_withdraw(&cfg, false, addr, amount);
                 let _ = slint::invoke_from_event_loop(move || {
-                    let Some(app) = app_weak.upgrade() else { return };
+                    let Some(app) = app_weak.upgrade() else {
+                        return;
+                    };
                     match result {
                         Ok(()) => {
                             app.set_result_success(true);
@@ -298,7 +302,9 @@ fn main() -> Result<(), slint::PlatformError> {
             std::thread::spawn(move || {
                 let result = chain::submit_withdraw(&cfg, true, addr, amount);
                 let _ = slint::invoke_from_event_loop(move || {
-                    let Some(app) = app_weak.upgrade() else { return };
+                    let Some(app) = app_weak.upgrade() else {
+                        return;
+                    };
                     match result {
                         Ok(()) => {
                             app.set_result_success(true);
