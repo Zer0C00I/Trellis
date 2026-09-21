@@ -97,7 +97,6 @@ pub fn format_amount(whole_units: u64) -> String {
     format!("{whole_units} USDC")
 }
 
-#[allow(dead_code)] // used starting in Task 4
 pub fn parse_amount_to_base_units(whole_units: u64) -> u64 {
     whole_units * 10u64.pow(TOKEN_DECIMALS)
 }
@@ -168,6 +167,90 @@ pub fn fetch_vault_snapshot(cfg: &ChainConfig, is_pool: bool) -> Result<VaultSna
         .unwrap_or(0);
 
     decode_snapshot(&vault_bytes, &list_bytes, whole_unit_balance)
+}
+
+#[allow(dead_code)] // used starting in Task 5
+pub fn submit_withdraw(
+    cfg: &ChainConfig,
+    is_pool: bool,
+    beneficiary_address: solana_pubkey::Pubkey,
+    amount_whole_units: u64,
+) -> Result<(), ChainError> {
+    use anchor_lang::{AccountDeserialize, InstructionData, ToAccountMetas};
+
+    let rpc = solana_client::rpc_client::RpcClient::new(cfg.rpc_url.clone());
+
+    let owner_keypair = solana_keypair::read_keypair_file(&cfg.keypair_path)
+        .map_err(|e| ChainError::ProgramRejected(format!("could not read keypair: {e}")))?;
+
+    let vault_pubkey = if is_pool { cfg.pool_vault } else { cfg.personal_vault };
+    let beneficiary_list_pubkey = if is_pool {
+        cfg.pool_beneficiary_list
+    } else {
+        cfg.personal_beneficiary_list
+    };
+
+    let vault_bytes = rpc.get_account_data(&vault_pubkey).map_err(map_client_error)?;
+    let vault = family_vault::state::Vault::try_deserialize(&mut &vault_bytes[..])
+        .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
+
+    let vault_token_account =
+        anchor_lang::prelude::Pubkey::new_from_array(vault.vault_token_account.to_bytes());
+    let recipient_token_account_client =
+        spl_associated_token_account::get_associated_token_address(&beneficiary_address, &cfg.mint);
+    let recipient_token_account = anchor_lang::prelude::Pubkey::new_from_array(
+        recipient_token_account_client.to_bytes(),
+    );
+    let signer = anchor_lang::prelude::Pubkey::new_from_array(
+        solana_signer::Signer::pubkey(&owner_keypair).to_bytes(),
+    );
+    let vault_pubkey_anchor = anchor_lang::prelude::Pubkey::new_from_array(vault_pubkey.to_bytes());
+    let beneficiary_list_pubkey_anchor =
+        anchor_lang::prelude::Pubkey::new_from_array(beneficiary_list_pubkey.to_bytes());
+
+    let amount_base_units = parse_amount_to_base_units(amount_whole_units);
+
+    let ix_data: Vec<u8> = family_vault::instruction::Withdraw {
+        amount: amount_base_units,
+    }
+    .data();
+    let anchor_metas = family_vault::accounts::Withdraw {
+        signer,
+        vault_token_account,
+        recipient_token_account,
+        vault: vault_pubkey_anchor,
+        beneficiary_list: beneficiary_list_pubkey_anchor,
+        token_program: spl_token::ID,
+    }
+    .to_account_metas(None);
+
+    let client_metas: Vec<solana_instruction::AccountMeta> = anchor_metas
+        .iter()
+        .map(|m| solana_instruction::AccountMeta {
+            pubkey: solana_pubkey::Pubkey::new_from_array(m.pubkey.to_bytes()),
+            is_signer: m.is_signer,
+            is_writable: m.is_writable,
+        })
+        .collect();
+    let client_program_id = solana_pubkey::Pubkey::new_from_array(cfg.program_id.to_bytes());
+
+    let ix = solana_instruction::Instruction {
+        program_id: client_program_id,
+        accounts: client_metas,
+        data: ix_data,
+    };
+
+    let blockhash = rpc.get_latest_blockhash().map_err(map_client_error)?;
+    let payer_pubkey = solana_signer::Signer::pubkey(&owner_keypair);
+    let tx = solana_transaction::Transaction::new_signed_with_payer(
+        &[ix],
+        Some(&payer_pubkey),
+        &[&owner_keypair],
+        blockhash,
+    );
+
+    rpc.send_and_confirm_transaction(&tx).map_err(map_client_error)?;
+    Ok(())
 }
 
 fn map_client_error(err: solana_client::client_error::ClientError) -> ChainError {
@@ -340,5 +423,22 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         let snapshot = decode_snapshot(&vault_bytes, &list_bytes, 3).unwrap();
         assert_eq!(snapshot.balance_text, "3 USDC");
         assert_eq!(snapshot.beneficiaries, vec![(1u8, "Внук Саша".to_string())]);
+    }
+
+    #[test]
+    fn derives_the_same_ata_for_the_same_wallet_and_mint() {
+        let wallet = solana_pubkey::Pubkey::new_unique();
+        let mint = solana_pubkey::Pubkey::new_unique();
+        let ata1 = spl_associated_token_account::get_associated_token_address(&wallet, &mint);
+        let ata2 = spl_associated_token_account::get_associated_token_address(&wallet, &mint);
+        assert_eq!(ata1, ata2);
+        assert_ne!(ata1, wallet);
+    }
+
+    #[test]
+    fn maps_io_errors_to_no_connection() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        let client_err: solana_client::client_error::ClientError = io_err.into();
+        assert!(matches!(map_client_error(client_err), ChainError::NoConnection));
     }
 }
