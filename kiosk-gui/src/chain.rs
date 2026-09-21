@@ -9,7 +9,6 @@ use serde::Deserialize;
 pub const TOKEN_DECIMALS: u32 = 6;
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // used starting in Task 5
 struct RawConfig {
     rpc_url: String,
     keypair_path: String,
@@ -22,7 +21,6 @@ struct RawConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 5
 pub struct ChainConfig {
     pub rpc_url: String,
     pub keypair_path: String,
@@ -35,7 +33,6 @@ pub struct ChainConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 5
 pub enum ConfigError {
     Io(std::io::Error),
     Parse(toml::de::Error),
@@ -56,7 +53,6 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-#[allow(dead_code)] // used starting in Task 5
 fn parse_client_pubkey(field: &'static str, value: &str) -> Result<solana_pubkey::Pubkey, ConfigError> {
     value.parse().map_err(|_| ConfigError::BadPubkey {
         field,
@@ -64,7 +60,6 @@ fn parse_client_pubkey(field: &'static str, value: &str) -> Result<solana_pubkey
     })
 }
 
-#[allow(dead_code)] // used starting in Task 5
 pub fn load_config(path: &Path) -> Result<ChainConfig, ConfigError> {
     let text = std::fs::read_to_string(path).map_err(ConfigError::Io)?;
     let raw: RawConfig = toml::from_str(&text).map_err(ConfigError::Parse)?;
@@ -107,14 +102,12 @@ pub fn decode_beneficiary_name(name: &[u8; 32], name_len: u8) -> String {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[allow(dead_code)] // used starting in Task 5
 pub struct VaultSnapshot {
     pub balance_text: String,
     pub beneficiaries: Vec<(u8, String)>,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 5
 pub enum ChainError {
     /// RPC endpoint unreachable — maps to "Нет связи" on Экран 4.
     NoConnection,
@@ -134,7 +127,6 @@ impl fmt::Display for ChainError {
 
 impl std::error::Error for ChainError {}
 
-#[allow(dead_code)] // used starting in Task 5
 pub fn fetch_vault_snapshot(cfg: &ChainConfig, is_pool: bool) -> Result<VaultSnapshot, ChainError> {
     let rpc = solana_client::rpc_client::RpcClient::new(cfg.rpc_url.clone());
 
@@ -169,7 +161,6 @@ pub fn fetch_vault_snapshot(cfg: &ChainConfig, is_pool: bool) -> Result<VaultSna
     decode_snapshot(&vault_bytes, &list_bytes, whole_unit_balance)
 }
 
-#[allow(dead_code)] // used starting in Task 5
 pub fn submit_withdraw(
     cfg: &ChainConfig,
     is_pool: bool,
@@ -251,6 +242,10 @@ pub fn submit_withdraw(
 
     rpc.send_and_confirm_transaction(&tx).map_err(map_client_error)?;
     Ok(())
+}
+
+pub fn map_client_error_pub(err: solana_client::client_error::ClientError) -> ChainError {
+    map_client_error(err)
 }
 
 fn map_client_error(err: solana_client::client_error::ClientError) -> ChainError {
