@@ -1,5 +1,7 @@
 slint::include_modules!();
 
+mod chain;
+
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
 

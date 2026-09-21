@@ -4,7 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anchor-lang = "1.2.0"
+family-vault = { version = "0.1.0", path = "../programs/family-vault", features = ["cpi"] }
+serde = { version = "1.0.229", features = ["derive"] }
 slint = "1.18.0"
+solana-client = "=4.2.2"
+solana-hash = "3.0.0"
+solana-instruction = "3.0.0"
+solana-keypair = "3.0.1"
+solana-message = { version = "4.1.0", features = ["wincode"] }
+solana-pubkey = "=4.2.1"
+solana-signature = "=3.4.1"
+solana-signer = "3.0.0"
+solana-transaction = { version = "4.1.6", features = ["wincode"] }
+spl-associated-token-account = "8.0.0"
+spl-token = "9.0.0"
+toml = "1.1.6"
 
 [build-dependencies]
 slint-build = "1.18.0"
