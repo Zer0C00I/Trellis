@@ -1,6 +1,10 @@
-#![allow(unsafe_code)] // slint-generated code requires unsafe
+// Slint-generated code requires unsafe; allow it only in this module
+mod slint_ui {
+    #![allow(unsafe_code)]
+    slint::include_modules!();
+}
 
-slint::include_modules!();
+use slint_ui::*;
 
 mod chain;
 
