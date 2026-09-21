@@ -93,6 +93,22 @@ pub fn load_config(path: &Path) -> Result<ChainConfig, ConfigError> {
     })
 }
 
+#[allow(dead_code)] // used starting in Task 3
+pub fn format_amount(whole_units: u64) -> String {
+    format!("{whole_units} USDC")
+}
+
+#[allow(dead_code)] // used starting in Task 4
+pub fn parse_amount_to_base_units(whole_units: u64) -> u64 {
+    whole_units * 10u64.pow(TOKEN_DECIMALS)
+}
+
+#[allow(dead_code)] // used starting in Task 3
+pub fn decode_beneficiary_name(name: &[u8; 32], name_len: u8) -> String {
+    let len = name_len as usize;
+    String::from_utf8_lossy(&name[..len.min(32)]).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +160,36 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         let err = load_config(&path).unwrap_err();
         assert!(matches!(err, ConfigError::BadPubkey { field: "mint", .. }));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn formats_whole_units_as_usdc_string() {
+        assert_eq!(format_amount(10), "10 USDC");
+        assert_eq!(format_amount(0), "0 USDC");
+        assert_eq!(format_amount(120), "120 USDC");
+    }
+
+    #[test]
+    fn converts_whole_units_to_base_units_with_six_decimals() {
+        assert_eq!(parse_amount_to_base_units(1), 1_000_000);
+        assert_eq!(parse_amount_to_base_units(10), 10_000_000);
+        assert_eq!(parse_amount_to_base_units(0), 0);
+    }
+
+    #[test]
+    fn decodes_a_beneficiary_name_from_fixed_size_buffer() {
+        let mut name = [0u8; 32];
+        let src = "Внук Саша".as_bytes();
+        name[..src.len()].copy_from_slice(src);
+        assert_eq!(
+            decode_beneficiary_name(&name, src.len() as u8),
+            "Внук Саша"
+        );
+    }
+
+    #[test]
+    fn decodes_an_empty_beneficiary_name() {
+        let name = [0u8; 32];
+        assert_eq!(decode_beneficiary_name(&name, 0), "");
     }
 }
