@@ -143,6 +143,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "admin-cli"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "family-vault",
+ "solana-client",
+ "solana-hash 3.1.0",
+ "solana-instruction",
+ "solana-keypair",
+ "solana-message 4.4.1",
+ "solana-pubkey 4.2.1",
+ "solana-signature",
+ "solana-signer",
+ "solana-transaction 4.1.6",
+ "spl-associated-token-account",
+ "spl-token",
+]
+
+[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
