@@ -130,8 +130,15 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // Currently-selected My Wallet beneficiary id, carried through the
+    // AmountSelect -> Confirm screen transition (which only round-trips
+    // the display name via selected-recipient-name/confirm-recipient-name)
+    // so `on_send_confirmed` can resolve the wallet address by id rather
+    // than by re-matching on the (not-guaranteed-unique) display name.
+    let selected_beneficiary_id: Rc<RefCell<i32>> = Rc::new(RefCell::new(0));
     {
         let app_weak = app.as_weak();
+        let selected_beneficiary_id = selected_beneficiary_id.clone();
         app.on_beneficiary_selected(move |id| {
             let app = app_weak.unwrap();
             let model = app.get_beneficiaries();
@@ -144,6 +151,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     }
                 }
             }
+            *selected_beneficiary_id.borrow_mut() = id;
             app.set_selected_recipient_name(found_name);
             app.set_current_screen(Screen::AmountSelect);
         });
@@ -182,23 +190,17 @@ fn main() -> Result<(), slint::PlatformError> {
         let cfg = cfg.clone();
         let personal_beneficiaries = personal_beneficiaries.clone();
         let selected_amount = selected_amount.clone();
+        let selected_beneficiary_id = selected_beneficiary_id.clone();
         app.on_send_confirmed(move || {
             let app = app_weak.unwrap();
             let recipient_name = app.get_confirm_recipient_name();
 
-            // Resolve the wallet pubkey for the currently-selected
-            // beneficiary id by scanning the model for its id, then
-            // looking that id up in the addresses map fetched at startup.
-            let model = app.get_beneficiaries();
-            let mut recipient_id: i32 = 0;
-            for i in 0..model.row_count() {
-                if let Some(item) = model.row_data(i) {
-                    if item.name == recipient_name {
-                        recipient_id = item.id;
-                        break;
-                    }
-                }
-            }
+            // Resolve the wallet pubkey for the beneficiary the user
+            // actually tapped, using the id stored by on_beneficiary_selected
+            // rather than re-matching on the display name (names are not
+            // guaranteed unique on-chain, so name-matching could resolve to
+            // the wrong beneficiary).
+            let recipient_id = *selected_beneficiary_id.borrow();
             let addr = personal_beneficiaries
                 .lock()
                 .unwrap()

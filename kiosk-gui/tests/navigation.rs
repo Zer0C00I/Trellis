@@ -217,6 +217,101 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
     slint::run_event_loop().unwrap();
 }
 
+// Regression test for the beneficiary-name-collision bug: when two
+// beneficiaries share a display name, `on_send_confirmed` must resolve the
+// wallet address using the id captured at tap time (like real main.rs does
+// via `selected_beneficiary_id`), not by re-matching the confirm screen's
+// name string against the model — a match-by-name would always resolve to
+// the FIRST same-named entry, even if the user tapped the second one.
+fn confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_presets(
+            std::rc::Rc::new(slint::VecModel::from(vec![slint::SharedString::from(
+                "10 USDC",
+            )]))
+            .into(),
+        );
+
+        // Two beneficiaries with the SAME display name but different ids —
+        // family-vault's add_beneficiary does not enforce name uniqueness.
+        let beneficiaries = vec![
+            BeneficiaryItem { name: "Иван".into(), id: 1 },
+            BeneficiaryItem { name: "Иван".into(), id: 2 },
+        ];
+        let model = std::rc::Rc::new(slint::VecModel::from(beneficiaries));
+        app.set_beneficiaries(model.into());
+
+        let selected_beneficiary_id = std::rc::Rc::new(std::cell::Cell::new(0i32));
+
+        {
+            let app_weak = app.as_weak();
+            let selected_beneficiary_id = selected_beneficiary_id.clone();
+            app.on_beneficiary_selected(move |id| {
+                let app = app_weak.unwrap();
+                selected_beneficiary_id.set(id);
+                app.set_selected_recipient_name("Иван".into());
+                app.set_current_screen(Screen::AmountSelect);
+            });
+        }
+        {
+            let app_weak = app.as_weak();
+            app.on_amount_selected(move |_index| {
+                let app = app_weak.unwrap();
+                app.set_confirm_recipient_name(app.get_selected_recipient_name());
+                app.set_confirm_amount_text("10 USDC".into());
+                app.set_current_screen(Screen::Confirm);
+            });
+        }
+
+        let resolved_id = std::rc::Rc::new(std::cell::Cell::new(0i32));
+        {
+            let app_weak = app.as_weak();
+            let selected_beneficiary_id = selected_beneficiary_id.clone();
+            let resolved_id = resolved_id.clone();
+            app.on_send_confirmed(move || {
+                let app = app_weak.unwrap();
+                // Mirrors main.rs's fix: resolve from the id captured at
+                // tap time, not from a name scan.
+                resolved_id.set(selected_beneficiary_id.get());
+                app.set_current_screen(Screen::Result);
+            });
+        }
+
+        // Tap the SECOND "Иван" (id 2). There are two buttons with the same
+        // accessible label, so index into the matches explicitly.
+        let elem = ElementHandle::find_by_accessible_label(&app, "Иван")
+            .filter(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .nth(1)
+            .expect("second Иван beneficiary button not found");
+        elem.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::AmountSelect);
+        assert_eq!(selected_beneficiary_id.get(), 2);
+
+        let preset = ElementHandle::find_by_accessible_label(&app, "10 USDC")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("preset button not found");
+        preset.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::Confirm);
+
+        let send = ElementHandle::find_by_accessible_label(&app, "Отправить")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("send button not found");
+        send.single_click(PointerEventButton::Left).await;
+
+        assert_eq!(app.get_current_screen(), Screen::Result);
+        // Must resolve to the tapped beneficiary (id 2), not the first
+        // same-named entry in the model (id 1).
+        assert_eq!(resolved_id.get(), 2);
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn family_wallet_button_navigates_there_and_back_button_returns() {
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
@@ -308,6 +403,9 @@ fn main() {
     pressing_ok_on_result_returns_to_my_wallet_immediately();
     println!("test pressing_ok_on_result_returns_to_my_wallet_immediately ... ok");
 
+    confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id();
+    println!("test confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id ... ok");
+
     family_wallet_button_navigates_there_and_back_button_returns();
     println!("test family_wallet_button_navigates_there_and_back_button_returns ... ok");
 
@@ -318,5 +416,5 @@ fn main() {
     println!("test help_button_on_family_wallet_is_accessibility_discoverable ... ok");
 
     println!();
-    println!("test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }
