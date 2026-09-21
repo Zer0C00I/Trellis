@@ -20,10 +20,8 @@ fn initializes_a_personal_vault_with_unlimited_daily_limit() {
     );
     let (beneficiary_list, _) =
         Pubkey::find_program_address(&[b"beneficiaries", vault.as_ref()], &family_vault::ID);
-    let vault_token_account = spl_associated_token_account::get_associated_token_address(
-        &vault,
-        &ctx.mint,
-    );
+    let vault_token_account =
+        spl_associated_token_account::get_associated_token_address(&vault, &ctx.mint);
 
     let accounts = family_vault::accounts::InitializeVault {
         payer: ctx.payer.pubkey(),
@@ -63,7 +61,7 @@ fn initializes_a_personal_vault_with_unlimited_daily_limit() {
             .unwrap();
 
     assert_eq!(vault_data.owner, elder.pubkey());
-    assert_eq!(vault_data.is_pool, false);
+    assert!(!vault_data.is_pool);
     assert_eq!(vault_data.daily_limit, u64::MAX);
     assert_eq!(vault_data.spent_today, 0);
 }
@@ -80,10 +78,8 @@ fn rejects_initialization_without_owner_signature() {
     );
     let (beneficiary_list, _) =
         Pubkey::find_program_address(&[b"beneficiaries", vault.as_ref()], &family_vault::ID);
-    let vault_token_account = spl_associated_token_account::get_associated_token_address(
-        &vault,
-        &ctx.mint,
-    );
+    let vault_token_account =
+        spl_associated_token_account::get_associated_token_address(&vault, &ctx.mint);
 
     let accounts = family_vault::accounts::InitializeVault {
         payer: ctx.payer.pubkey(),
@@ -117,5 +113,8 @@ fn rejects_initialization_without_owner_signature() {
     let mut tx = Transaction::new_with_payer(&[ix], Some(&ctx.payer.pubkey()));
     tx.partial_sign_unchecked(&[&ctx.payer], vec![0], ctx.svm.latest_blockhash());
     let result = ctx.svm.send_transaction(tx);
-    assert!(result.is_err(), "expected initialize_vault without owner signature to be rejected");
+    assert!(
+        result.is_err(),
+        "expected initialize_vault without owner signature to be rejected"
+    );
 }

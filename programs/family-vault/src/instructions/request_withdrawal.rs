@@ -18,7 +18,10 @@ pub fn request_withdrawal(ctx: Context<RequestWithdrawal>, amount: u64, _nonce: 
     for i in 0..(list.count as usize) {
         let b = &list.entries[i];
         if b.address == to_key {
-            require!(clock.unix_timestamp >= b.active_after, VaultError::BeneficiaryCooldownActive);
+            require!(
+                clock.unix_timestamp >= b.active_after,
+                VaultError::BeneficiaryCooldownActive
+            );
             found = true;
             break;
         }
@@ -40,7 +43,10 @@ pub fn request_withdrawal(ctx: Context<RequestWithdrawal>, amount: u64, _nonce: 
         .spent_today
         .checked_add(amount)
         .ok_or(VaultError::AmountOverflow)?;
-    require!(would_be_spent > vault.daily_limit, VaultError::AmountDoesNotExceedDailyLimit);
+    require!(
+        would_be_spent > vault.daily_limit,
+        VaultError::AmountDoesNotExceedDailyLimit
+    );
 
     let request = &mut ctx.accounts.pending_withdrawal;
     request.vault = vault.key();

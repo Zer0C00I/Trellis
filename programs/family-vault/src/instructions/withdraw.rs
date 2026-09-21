@@ -15,7 +15,10 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
     for i in 0..(list.count as usize) {
         let b = &list.entries[i];
         if b.address == to_key {
-            require!(clock.unix_timestamp >= b.active_after, VaultError::BeneficiaryCooldownActive);
+            require!(
+                clock.unix_timestamp >= b.active_after,
+                VaultError::BeneficiaryCooldownActive
+            );
             found = true;
             break;
         }
@@ -33,7 +36,10 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
             .spent_today
             .checked_add(amount)
             .ok_or(VaultError::AmountOverflow)?;
-        require!(new_spent <= vault.daily_limit, VaultError::DailyLimitExceeded); // over-limit path: family-vault-approvals plan
+        require!(
+            new_spent <= vault.daily_limit,
+            VaultError::DailyLimitExceeded
+        ); // over-limit path: family-vault-approvals plan
         vault.spent_today = new_spent;
     }
 
@@ -48,11 +54,8 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         to: ctx.accounts.recipient_token_account.to_account_info(),
         authority: vault.to_account_info(),
     };
-    let cpi_ctx = CpiContext::new_with_signer(
-        ctx.accounts.token_program.key(),
-        cpi_accounts,
-        signer_seeds,
-    );
+    let cpi_ctx =
+        CpiContext::new_with_signer(ctx.accounts.token_program.key(), cpi_accounts, signer_seeds);
     token::transfer(cpi_ctx, amount)
 }
 

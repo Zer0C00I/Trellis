@@ -9,7 +9,10 @@ pub fn execute_owner_rotation(ctx: Context<ExecuteOwnerRotation>) -> Result<()> 
     require!(!rotation.executed, VaultError::RequestAlreadyExecuted);
 
     let now = Clock::get()?.unix_timestamp;
-    require!(now >= rotation.executes_at, VaultError::RotationTimelockNotElapsed);
+    require!(
+        now >= rotation.executes_at,
+        VaultError::RotationTimelockNotElapsed
+    );
 
     let new_owner = rotation.new_owner;
     ctx.accounts.vault.owner = new_owner;

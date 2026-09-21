@@ -4,14 +4,26 @@ use crate::errors::VaultError;
 use crate::state::{TrustedApprovers, Vault, MAX_APPROVERS};
 
 pub fn add_trusted_approver(ctx: Context<AddTrustedApprover>, address: Pubkey) -> Result<()> {
-    require!(address != Pubkey::default(), VaultError::InvalidApproverAddress);
-    require!(address != ctx.accounts.vault.owner, VaultError::CannotApproveOwnWithdrawals);
+    require!(
+        address != Pubkey::default(),
+        VaultError::InvalidApproverAddress
+    );
+    require!(
+        address != ctx.accounts.vault.owner,
+        VaultError::CannotApproveOwnWithdrawals
+    );
 
     let approvers = &mut ctx.accounts.approvers;
-    require!((approvers.count as usize) < MAX_APPROVERS, VaultError::ApproverListFull);
+    require!(
+        (approvers.count as usize) < MAX_APPROVERS,
+        VaultError::ApproverListFull
+    );
 
     for i in 0..(approvers.count as usize) {
-        require!(approvers.entries[i] != address, VaultError::ApproverAlreadyExists);
+        require!(
+            approvers.entries[i] != address,
+            VaultError::ApproverAlreadyExists
+        );
     }
 
     // Anti-takeover control: on a personal vault, once at least one approver

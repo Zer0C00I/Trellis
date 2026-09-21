@@ -1,11 +1,15 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::errors::VaultError;
 use crate::state::*;
 
-pub fn initialize_vault(ctx: Context<InitializeVault>, is_pool: bool, daily_limit: u64) -> Result<()> {
+pub fn initialize_vault(
+    ctx: Context<InitializeVault>,
+    is_pool: bool,
+    daily_limit: u64,
+) -> Result<()> {
     if is_pool {
         require!(daily_limit > 0, VaultError::InvalidDailyLimit);
     }

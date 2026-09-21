@@ -11,6 +11,16 @@ name = "family_vault"
 no-entrypoint = []
 cpi = ["no-entrypoint"]
 default = []
+# Anchor's #[program]/#[derive(Accounts)] macros unconditionally emit
+# cfg(feature = "anchor-debug")/cfg(feature = "no-log-ix-name") checks even
+# when neither feature is declared, which trips rustc's unexpected_cfgs
+# lint. Declaring them as empty, unused features is Anchor's documented fix
+# (https://www.anchor-lang.com/docs) — this silences the warning without
+# suppressing the lint crate-wide.
+anchor-debug = []
+no-log-ix-name = []
+custom-heap = []
+custom-panic = []
 
 [dependencies]
 anchor-lang = "1.2.0"

@@ -5,7 +5,10 @@ use crate::errors::VaultError;
 use crate::state::{PendingWithdrawal, TrustedApprovers, Vault};
 
 pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
-    require!(!ctx.accounts.pending_withdrawal.executed, VaultError::RequestAlreadyExecuted);
+    require!(
+        !ctx.accounts.pending_withdrawal.executed,
+        VaultError::RequestAlreadyExecuted
+    );
 
     let signer_key = ctx.accounts.signer.key();
     let approvers = &ctx.accounts.approvers;
@@ -33,11 +36,8 @@ pub fn approve_withdrawal(ctx: Context<ApproveWithdrawal>) -> Result<()> {
         to: ctx.accounts.recipient_token_account.to_account_info(),
         authority: vault_info,
     };
-    let cpi_ctx = CpiContext::new_with_signer(
-        ctx.accounts.token_program.key(),
-        cpi_accounts,
-        signer_seeds,
-    );
+    let cpi_ctx =
+        CpiContext::new_with_signer(ctx.accounts.token_program.key(), cpi_accounts, signer_seeds);
     token::transfer(cpi_ctx, amount)?;
 
     // Keep daily outflow accounting accurate regardless of which channel

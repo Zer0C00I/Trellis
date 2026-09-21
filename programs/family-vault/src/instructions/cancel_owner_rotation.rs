@@ -4,7 +4,10 @@ use crate::errors::VaultError;
 use crate::state::{PendingRotation, TrustedApprovers, Vault};
 
 pub fn cancel_owner_rotation(ctx: Context<CancelOwnerRotation>) -> Result<()> {
-    require!(!ctx.accounts.rotation.cancelled, VaultError::RotationAlreadyCancelled);
+    require!(
+        !ctx.accounts.rotation.cancelled,
+        VaultError::RotationAlreadyCancelled
+    );
 
     let signer_key = ctx.accounts.signer.key();
     let vault = &ctx.accounts.vault;

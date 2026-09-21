@@ -33,7 +33,8 @@ pub fn setup() -> TestCtx {
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
 
     let mint_authority = Keypair::new();
-    svm.airdrop(&mint_authority.pubkey(), 1_000_000_000).unwrap();
+    svm.airdrop(&mint_authority.pubkey(), 1_000_000_000)
+        .unwrap();
 
     let mint = Keypair::new();
     let rent = svm.minimum_balance_for_rent_exemption(SplMint::LEN);
@@ -60,5 +61,10 @@ pub fn setup() -> TestCtx {
     );
     svm.send_transaction(tx).unwrap();
 
-    TestCtx { svm, payer, mint: mint.pubkey(), mint_authority }
+    TestCtx {
+        svm,
+        payer,
+        mint: mint.pubkey(),
+        mint_authority,
+    }
 }
