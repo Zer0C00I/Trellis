@@ -90,6 +90,48 @@ pub fn generate_or_load_owner_keypair(path: &Path) -> Result<Keypair, Provisioni
 /// nicety — most scanners fail without it). No anti-aliasing: QR
 /// modules must stay pure black/white to stay machine-readable.
 #[allow(dead_code)] // used starting in Task 6
+pub struct KioskConfigValues {
+    pub rpc_url: String,
+    pub keypair_path: String,
+    pub program_id: String,
+    pub mint: String,
+    pub personal_vault: String,
+    pub personal_beneficiary_list: String,
+}
+
+#[allow(dead_code)] // used starting in Task 6
+pub fn write_kiosk_config(
+    path: &Path,
+    values: &KioskConfigValues,
+) -> Result<(), ProvisioningError> {
+    let text = format!(
+        "rpc_url = \"{}\"\n\
+         keypair_path = \"{}\"\n\
+         program_id = \"{}\"\n\
+         mint = \"{}\"\n\
+         personal_vault = \"{}\"\n\
+         personal_beneficiary_list = \"{}\"\n\
+         pool_vault = \"{}\"\n\
+         pool_beneficiary_list = \"{}\"\n",
+        values.rpc_url,
+        values.keypair_path,
+        values.program_id,
+        values.mint,
+        values.personal_vault,
+        values.personal_beneficiary_list,
+        // Placeholder pattern (design spec, "Фандинг и самостоятельная
+        // инициализация" step 4): pool fields equal the personal
+        // vault's own addresses until a family app creates a real pool
+        // vault. Family Wallet will show the same data as My Wallet
+        // until then — the same graceful-degradation path already
+        // exercised manually with this exact placeholder trick.
+        values.personal_vault,
+        values.personal_beneficiary_list,
+    );
+    std::fs::write(path, text).map_err(ProvisioningError::Io)
+}
+
+#[allow(dead_code)] // used starting in Task 6
 pub fn render_qr(data: &str) -> slint::Image {
     let code = qrcode::QrCode::new(data.as_bytes()).expect("QR encoding failed");
     let width = code.width();
@@ -210,5 +252,41 @@ mint = "not-a-pubkey"
         // (a real QR code, not a 1x1 placeholder).
         assert_eq!(size.width, size.height);
         assert!(size.width > 100, "expected a real QR raster, got {size:?}");
+    }
+
+    #[test]
+    fn written_config_round_trips_through_chain_load_config() {
+        let path = std::env::temp_dir().join(format!(
+            "kiosk-setup-test-write-config-{}.toml",
+            std::process::id()
+        ));
+        let values = KioskConfigValues {
+            rpc_url: "https://api.devnet.solana.com".to_string(),
+            keypair_path: "/etc/family-vault/owner-keypair.json".to_string(),
+            program_id: "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ".to_string(),
+            mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB".to_string(),
+            personal_vault: "KziPLWvcZnYnt2ZhR7ACGHocBvgx2qX8jMExuxpFTQZ".to_string(),
+            personal_beneficiary_list: "AbPLQhfRK16zi9vqUH1KutFDN8cU1bne4RXgRtKrEd3P".to_string(),
+        };
+        write_kiosk_config(&path, &values).unwrap();
+
+        let loaded = crate::chain::load_config(&path).unwrap();
+        assert_eq!(loaded.rpc_url, values.rpc_url);
+        assert_eq!(loaded.keypair_path, values.keypair_path);
+        // Pool fields must fall back to the personal vault's own
+        // addresses (the placeholder pattern from the design spec's
+        // "Фандинг и самостоятельная инициализация" step 4) until a
+        // family app creates a real pool vault later.
+        assert_eq!(
+            loaded.pool_vault.to_string(),
+            values.personal_vault,
+            "pool_vault must default to personal_vault as a placeholder"
+        );
+        assert_eq!(
+            loaded.pool_beneficiary_list.to_string(),
+            values.personal_beneficiary_list
+        );
+
+        std::fs::remove_file(&path).unwrap();
     }
 }
