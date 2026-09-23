@@ -93,43 +93,41 @@ fn main() -> Result<(), slint::PlatformError> {
     let pool_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
         Arc::new(Mutex::new(Vec::new()));
 
-    // Startup fetch, on a background thread so the UI shows immediately.
+    // Initial fetch, on a background thread so the UI shows immediately.
+    refresh_vault_state(
+        app.as_weak(),
+        cfg.clone(),
+        personal_beneficiaries.clone(),
+        pool_beneficiaries.clone(),
+    );
+
+    // A family member using a separate family app can add a beneficiary
+    // (or change a balance) at any time, independent of this device — the
+    // on-chain BeneficiaryList/Vault accounts are the only source of truth
+    // kiosk-gui has, there's no push notification from chain to this
+    // device. Re-fetch periodically so a newly-added payee's button shows
+    // up here without requiring the app to be restarted. 30s is frequent
+    // enough that "just added, why isn't it here" doesn't happen, and
+    // cheap enough (a couple of RPC reads) not to matter for a device that
+    // is otherwise idle almost all the time.
+    let refresh_timer = slint::Timer::default();
     {
         let app_weak = app.as_weak();
         let cfg = cfg.clone();
         let personal_beneficiaries = personal_beneficiaries.clone();
         let pool_beneficiaries = pool_beneficiaries.clone();
-        std::thread::spawn(move || {
-            let personal_result = chain::fetch_vault_snapshot(&cfg, false);
-            let pool_result = chain::fetch_vault_snapshot(&cfg, true);
-
-            // Re-derive wallet pubkeys for beneficiary-id resolution. The
-            // snapshot only carries (id, name) for display, so beneficiary
-            // list bytes are re-fetched here to also capture (id, address)
-            // for later withdraw calls.
-            let personal_addrs = fetch_beneficiary_addresses(&cfg, false);
-            let pool_addrs = fetch_beneficiary_addresses(&cfg, true);
-
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(app) = app_weak.upgrade() else {
-                    return;
-                };
-                match personal_result {
-                    Ok(snapshot) => apply_snapshot(&app, false, snapshot),
-                    Err(e) => app.set_balance_text(error_message_text(&e).into()),
-                }
-                match pool_result {
-                    Ok(snapshot) => apply_snapshot(&app, true, snapshot),
-                    Err(e) => app.set_family_balance_text(error_message_text(&e).into()),
-                }
-                if let Ok(addrs) = personal_addrs {
-                    *personal_beneficiaries.lock().unwrap() = addrs;
-                }
-                if let Ok(addrs) = pool_addrs {
-                    *pool_beneficiaries.lock().unwrap() = addrs;
-                }
-            });
-        });
+        refresh_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_secs(30),
+            move || {
+                refresh_vault_state(
+                    app_weak.clone(),
+                    cfg.clone(),
+                    personal_beneficiaries.clone(),
+                    pool_beneficiaries.clone(),
+                );
+            },
+        );
     }
 
     // Currently-selected My Wallet beneficiary id, carried through the
@@ -247,9 +245,22 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let app_weak = app.as_weak();
+        let cfg = cfg.clone();
+        let personal_beneficiaries = personal_beneficiaries.clone();
+        let pool_beneficiaries = pool_beneficiaries.clone();
         app.on_ok_pressed(move || {
             let app = app_weak.unwrap();
             app.set_current_screen(Screen::MyWallet);
+            // A send just happened — refresh right away rather than
+            // waiting for the 30s timer, so the balance the user sees
+            // immediately reflects it (and picks up anything a family
+            // member changed in the meantime too).
+            refresh_vault_state(
+                app.as_weak(),
+                cfg.clone(),
+                personal_beneficiaries.clone(),
+                pool_beneficiaries.clone(),
+            );
         });
     }
     {
@@ -330,6 +341,50 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     app.run()
+}
+
+/// Fetches both vaults' current balance/beneficiary state on a background
+/// thread and applies it to the UI once done. Used both for the initial
+/// load and the periodic refresh (see the timer in `main`) — a family
+/// member's separate app can change on-chain state at any time, and this
+/// is how that eventually becomes visible here.
+fn refresh_vault_state(
+    app_weak: slint::Weak<AppWindow>,
+    cfg: Arc<ChainConfig>,
+    personal_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>>,
+    pool_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>>,
+) {
+    std::thread::spawn(move || {
+        let personal_result = chain::fetch_vault_snapshot(&cfg, false);
+        let pool_result = chain::fetch_vault_snapshot(&cfg, true);
+
+        // Re-derive wallet pubkeys for beneficiary-id resolution. The
+        // snapshot only carries (id, name) for display, so beneficiary
+        // list bytes are re-fetched here to also capture (id, address)
+        // for later withdraw calls.
+        let personal_addrs = fetch_beneficiary_addresses(&cfg, false);
+        let pool_addrs = fetch_beneficiary_addresses(&cfg, true);
+
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(app) = app_weak.upgrade() else {
+                return;
+            };
+            match personal_result {
+                Ok(snapshot) => apply_snapshot(&app, false, snapshot),
+                Err(e) => app.set_balance_text(error_message_text(&e).into()),
+            }
+            match pool_result {
+                Ok(snapshot) => apply_snapshot(&app, true, snapshot),
+                Err(e) => app.set_family_balance_text(error_message_text(&e).into()),
+            }
+            if let Ok(addrs) = personal_addrs {
+                *personal_beneficiaries.lock().unwrap() = addrs;
+            }
+            if let Ok(addrs) = pool_addrs {
+                *pool_beneficiaries.lock().unwrap() = addrs;
+            }
+        });
+    });
 }
 
 fn fetch_beneficiary_addresses(
