@@ -1,0 +1,14 @@
+[package]
+name = "family-vault-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-lang = "1.2.0"
+solana-client = "=4.2.2"
+solana-pubkey = "=4.2.1"
+spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
+
+[lints.rust]
+unsafe_code = "deny"
+dead_code = "deny"

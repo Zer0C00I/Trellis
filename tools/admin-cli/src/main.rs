@@ -25,20 +25,7 @@ use solana_transaction::Transaction;
 use spl_token::solana_program::program_pack::Pack;
 
 use registry::{PersonEntry, VaultEntry};
-
-type AnchorPubkey = anchor_lang::prelude::Pubkey;
-
-fn to_anchor(p: Pubkey) -> AnchorPubkey {
-    AnchorPubkey::new_from_array(p.to_bytes())
-}
-
-fn to_client(p: AnchorPubkey) -> Pubkey {
-    Pubkey::new_from_array(p.to_bytes())
-}
-
-fn find_pda(seeds: &[&[u8]], program_id: &Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(seeds, program_id)
-}
+use family_vault_client::{to_anchor, to_client};
 
 /// `family-vault` only exports its declared id as `anchor_lang::prelude::Pubkey`
 /// (via `declare_id!`) — this tool needs it in the client-era `solana_pubkey`
@@ -48,30 +35,23 @@ fn program_id() -> Pubkey {
 }
 
 fn vault_pda(owner: Pubkey, is_pool: bool) -> (Pubkey, u8) {
-    let kind: &[u8] = if is_pool { b"pool" } else { b"personal" };
-    find_pda(&[b"vault", owner.as_ref(), kind], &program_id())
+    family_vault_client::vault_pda(&program_id(), &owner, is_pool)
 }
 
 fn beneficiary_list_pda(vault: Pubkey) -> (Pubkey, u8) {
-    find_pda(&[b"beneficiaries", vault.as_ref()], &program_id())
+    family_vault_client::beneficiary_list_pda(&program_id(), &vault)
 }
 
 fn approvers_pda(vault: Pubkey) -> (Pubkey, u8) {
-    find_pda(&[b"approvers", vault.as_ref()], &program_id())
+    family_vault_client::approvers_pda(&program_id(), &vault)
 }
 
 fn request_pda(vault: Pubkey, nonce: u64) -> (Pubkey, u8) {
-    find_pda(
-        &[b"request", vault.as_ref(), &nonce.to_le_bytes()],
-        &program_id(),
-    )
+    family_vault_client::request_pda(&program_id(), &vault, nonce)
 }
 
 fn rotation_pda(vault: Pubkey, nonce: u64) -> (Pubkey, u8) {
-    find_pda(
-        &[b"rotation", vault.as_ref(), &nonce.to_le_bytes()],
-        &program_id(),
-    )
+    family_vault_client::rotation_pda(&program_id(), &vault, nonce)
 }
 
 fn rpc_client(rpc_url: &str) -> RpcClient {
@@ -152,23 +132,14 @@ fn system_program_id() -> Pubkey {
     Pubkey::new_from_array([0u8; 32])
 }
 
-/// Reads decimals live from the Mint account — different SPL tokens
-/// (real USDC, wrapped SOL, a custom demo token) declare different
-/// decimals, so this can't be a hardcoded constant. `send`/`deposit`
-/// accept whole-unit amounts (e.g. `--amount 10`) and convert to base
-/// units using this, so nobody using this tool has to do that math
-/// themselves. Matches `kiosk-gui/src/chain.rs`'s `fetch_mint_decimals`.
+/// `send`/`deposit` accept whole-unit amounts (e.g. `--amount 10`) and
+/// convert to base units using this, so nobody using this tool has to do
+/// that math themselves.
 fn fetch_mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> u32 {
-    let mint_bytes = rpc.get_account_data(mint).unwrap_or_else(|e| {
-        eprintln!("could not fetch mint {mint}: {e}");
+    family_vault_client::fetch_mint_decimals(rpc, mint).unwrap_or_else(|e| {
+        eprintln!("{e}");
         std::process::exit(1);
-    });
-    spl_token::state::Mint::unpack(&mint_bytes)
-        .unwrap_or_else(|e| {
-            eprintln!("could not decode mint {mint}: {e}");
-            std::process::exit(1);
-        })
-        .decimals as u32
+    })
 }
 
 fn cmd_register_person(args: &[String]) {

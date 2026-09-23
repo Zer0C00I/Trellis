@@ -2,7 +2,6 @@ use std::fmt;
 use std::path::Path;
 
 use serde::Deserialize;
-use spl_token::solana_program::program_pack::Pack;
 
 #[derive(Debug, Deserialize)]
 struct RawConfig {
@@ -103,10 +102,7 @@ fn fetch_mint_decimals(
     rpc: &solana_client::rpc_client::RpcClient,
     mint: &solana_pubkey::Pubkey,
 ) -> Result<u32, ChainError> {
-    let mint_bytes = rpc.get_account_data(mint).map_err(map_client_error)?;
-    let mint_data = spl_token::state::Mint::unpack(&mint_bytes)
-        .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
-    Ok(mint_data.decimals as u32)
+    family_vault_client::fetch_mint_decimals(rpc, mint).map_err(ChainError::ProgramRejected)
 }
 
 pub fn decode_beneficiary_name(name: &[u8; 32], name_len: u8) -> String {
@@ -201,18 +197,15 @@ pub fn submit_withdraw(
     let vault = family_vault::state::Vault::try_deserialize(&mut &vault_bytes[..])
         .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
 
-    let vault_token_account =
-        anchor_lang::prelude::Pubkey::new_from_array(vault.vault_token_account.to_bytes());
+    let vault_token_account = family_vault_client::to_anchor(solana_pubkey::Pubkey::new_from_array(
+        vault.vault_token_account.to_bytes(),
+    ));
     let recipient_token_account_client =
         spl_associated_token_account::get_associated_token_address(&beneficiary_address, &cfg.mint);
-    let recipient_token_account =
-        anchor_lang::prelude::Pubkey::new_from_array(recipient_token_account_client.to_bytes());
-    let signer = anchor_lang::prelude::Pubkey::new_from_array(
-        solana_signer::Signer::pubkey(&owner_keypair).to_bytes(),
-    );
-    let vault_pubkey_anchor = anchor_lang::prelude::Pubkey::new_from_array(vault_pubkey.to_bytes());
-    let beneficiary_list_pubkey_anchor =
-        anchor_lang::prelude::Pubkey::new_from_array(beneficiary_list_pubkey.to_bytes());
+    let recipient_token_account = family_vault_client::to_anchor(recipient_token_account_client);
+    let signer = family_vault_client::to_anchor(solana_signer::Signer::pubkey(&owner_keypair));
+    let vault_pubkey_anchor = family_vault_client::to_anchor(vault_pubkey);
+    let beneficiary_list_pubkey_anchor = family_vault_client::to_anchor(beneficiary_list_pubkey);
 
     let decimals = fetch_mint_decimals(&rpc, &cfg.mint)?;
     let amount_base_units = parse_amount_to_base_units(amount_whole_units, decimals);
@@ -234,12 +227,12 @@ pub fn submit_withdraw(
     let client_metas: Vec<solana_instruction::AccountMeta> = anchor_metas
         .iter()
         .map(|m| solana_instruction::AccountMeta {
-            pubkey: solana_pubkey::Pubkey::new_from_array(m.pubkey.to_bytes()),
+            pubkey: family_vault_client::to_client(m.pubkey),
             is_signer: m.is_signer,
             is_writable: m.is_writable,
         })
         .collect();
-    let client_program_id = solana_pubkey::Pubkey::new_from_array(cfg.program_id.to_bytes());
+    let client_program_id = family_vault_client::to_client(cfg.program_id);
 
     let ix = solana_instruction::Instruction {
         program_id: client_program_id,

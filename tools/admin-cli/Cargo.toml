@@ -12,6 +12,7 @@ anchor-lang = "1.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"
 family-vault = { version = "0.1.0", path = "../../programs/family-vault", features = ["cpi"] }
+family-vault-client = { version = "0.1.0", path = "../family-vault-client" }
 solana-client = "=4.2.2"
 solana-hash = "3.0.0"
 solana-instruction = "3.0.0"

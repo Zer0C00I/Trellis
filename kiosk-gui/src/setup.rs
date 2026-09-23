@@ -191,17 +191,11 @@ pub fn self_initialize_personal_vault(
     use solana_signer::Signer;
 
     let owner_pubkey_client = owner.pubkey();
-    let program_id_client =
-        solana_pubkey::Pubkey::new_from_array(cfg.program_id.to_bytes());
+    let program_id_client = family_vault_client::to_client(cfg.program_id);
 
-    let (vault, _) = solana_pubkey::Pubkey::find_program_address(
-        &[b"vault", owner_pubkey_client.as_ref(), b"personal"],
-        &program_id_client,
-    );
-    let (beneficiary_list, _) = solana_pubkey::Pubkey::find_program_address(
-        &[b"beneficiaries", vault.as_ref()],
-        &program_id_client,
-    );
+    let (vault, _) = family_vault_client::vault_pda(&program_id_client, &owner_pubkey_client, false);
+    let (beneficiary_list, _) =
+        family_vault_client::beneficiary_list_pda(&program_id_client, &vault);
 
     // Idempotency by existence check, not error-string matching — see
     // this function's doc comment.
@@ -212,9 +206,7 @@ pub fn self_initialize_personal_vault(
     let vault_token_account =
         spl_associated_token_account::get_associated_token_address(&vault, &cfg.mint);
 
-    let to_anchor = |p: solana_pubkey::Pubkey| {
-        anchor_lang::prelude::Pubkey::new_from_array(p.to_bytes())
-    };
+    let to_anchor = family_vault_client::to_anchor;
 
     let data = family_vault::instruction::InitializeVault {
         is_pool: false,
@@ -237,7 +229,7 @@ pub fn self_initialize_personal_vault(
     let client_metas: Vec<solana_instruction::AccountMeta> = accounts
         .iter()
         .map(|m| solana_instruction::AccountMeta {
-            pubkey: solana_pubkey::Pubkey::new_from_array(m.pubkey.to_bytes()),
+            pubkey: family_vault_client::to_client(m.pubkey),
             is_signer: m.is_signer,
             is_writable: m.is_writable,
         })

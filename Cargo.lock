@@ -148,6 +148,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "family-vault",
+ "family-vault-client",
  "serde",
  "serde_json",
  "solana-client",
@@ -2765,6 +2766,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "family-vault-client"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "solana-client",
+ "solana-pubkey 4.2.1",
+ "spl-token",
+]
+
+[[package]]
 name = "fastbloom"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4411,6 +4422,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "family-vault",
+ "family-vault-client",
  "i-slint-backend-testing",
  "qrcode",
  "serde",
