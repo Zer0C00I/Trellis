@@ -69,15 +69,32 @@ attack the original restriction defends against.
 Concretely, this spec requires one addition to `kiosk-gui`'s existing
 first-run setup flow (`kiosk-gui/src/setup.rs`,
 `docs/superpowers/specs/2026-09-23-kiosk-first-run-setup-design.md`):
-after `self_initialize_personal_vault` succeeds, the setup flow accepts
-one family member's pubkey (typed/pasted on-screen, or scanned — exact
-input mechanism is an implementation-plan decision, not fixed by this
-spec) and calls `add_beneficiary` + `add_trusted_approver` for it, signed
-by the device's own owner key (which the device already holds locally at
-this point). This is the *only* place in the whole system where the
-kiosk device signs an "add a person" instruction. All later additions
-(second, third family member) go through family-app itself, using the
-`add-beneficiary` / `add-approver` pattern already proven in `admin-cli`.
+after `self_initialize_personal_vault` succeeds, the setup flow receives
+one family member's pubkey over **Bluetooth Low Energy** and calls
+`add_beneficiary` + `add_trusted_approver` for it, signed by the device's
+own owner key (which the device already holds locally at this point).
+This is the *only* place in the whole system where the kiosk device
+signs an "add a person" instruction. All later additions (second, third
+family member) go through family-app itself, using the `add-beneficiary`
+/ `add-approver` pattern already proven in `admin-cli`.
+
+**Why BLE, not the kiosk's normal RPC network / a camera / manual
+entry:** the kiosk has no camera (ruling out QR-scan-in), and typing a
+44-character base58 pubkey on a touchscreen is a last resort, not a
+primary path. BLE doesn't require kiosk and phone to share a WiFi
+network (unlike an HTTP-over-LAN approach) — only physical proximity
+(a few meters), which is itself a reasonable trust signal during a
+one-time setup step nobody else should be near. Rust side: `btleplug`
+(cross-platform BLE central/peripheral, covering Windows/Linux/Android)
+is the natural fit given this spec's target platform matrix.
+
+Mechanism: during this step, the kiosk advertises a BLE GATT service
+scoped to setup only (torn down once the step completes or times out);
+family-app scans, connects, and writes its pubkey to a characteristic.
+The setup screen shows a short confirmation code so the person can
+visually verify the device that connected is the one in front of them,
+guarding against an unrelated BLE device answering the advertisement
+during the setup window.
 
 ## Vault Discovery
 
@@ -132,10 +149,11 @@ logic.
 
 ## Screens
 
-1. **First launch** — generate keypair locally → show own pubkey (as
-   text and/or QR, TBD in the plan) → "ждём, пока вас добавят" status,
-   matching the plain-language, no-jargon tone kiosk already uses for its
-   own first-run screen.
+1. **First launch** — generate keypair locally → during a kiosk's own
+   first-run setup, hand the pubkey over via BLE (see "Identity &
+   Bootstrap") with a short on-screen confirmation code → "ждём, пока вас
+   добавят" status, matching the plain-language, no-jargon tone kiosk
+   already uses for its own first-run screen.
 2. **Discovery** — silent on every launch/refresh; once a vault is found,
    go straight to the main screen. No user-visible "searching" step
    needed if it completes in normal RPC latency; if it doesn't, reuse the
