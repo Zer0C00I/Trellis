@@ -236,10 +236,34 @@ fn cmd_register_vault(args: &[String]) {
     println!("registered vault '{name}' -> {pubkey}");
 }
 
+/// Splits a `--approvers a,b,c` / `--beneficiaries a,b,c` flag into
+/// registry names, ignoring a missing flag or empty entries (so trailing
+/// commas or an unset flag don't produce phantom names).
+fn arg_name_list(args: &[String], flag: &str) -> Vec<String> {
+    arg(args, flag)
+        .map(|s| {
+            s.split(',')
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Bank-style: "open an account for <owner>". Runs `initialize_vault`
 /// on-chain, then registers the resulting vault under `--name` so later
 /// commands (`send`, `deposit`, `add-beneficiary`) never need the raw
 /// vault pubkey again.
+///
+/// For `--pool` vaults, also runs the rest of the family-vault opening
+/// flow in one command: `initialize_approvers`, then one
+/// `add_trusted_approver` per `--approvers` name and one `add_beneficiary`
+/// per `--beneficiaries` name — so a family member never has to chain six
+/// separate raw-pubkey commands by hand. Each step is its own transaction,
+/// sent in order; a failure partway through leaves everything up to that
+/// point on-chain (the vault, approvers list, and any approvers/payees
+/// already added are all real and can be inspected/retried individually
+/// with the existing single-purpose commands).
 fn cmd_create_vault(args: &[String]) {
     let path = registry_path(args);
     let mut reg = registry::load(&path);
@@ -250,6 +274,12 @@ fn cmd_create_vault(args: &[String]) {
     let daily_limit = arg(args, "--daily-limit")
         .map(|s| s.parse::<u64>().unwrap())
         .unwrap_or(0);
+    let approver_names = arg_name_list(args, "--approvers");
+    let beneficiary_names = arg_name_list(args, "--beneficiaries");
+    if !is_pool && (!approver_names.is_empty() || !beneficiary_names.is_empty()) {
+        eprintln!("--approvers / --beneficiaries only apply to --pool vaults");
+        std::process::exit(1);
+    }
 
     let payer = arg(args, "--payer")
         .map(|p| {
@@ -293,7 +323,7 @@ fn cmd_create_vault(args: &[String]) {
                 VaultEntry {
                     pubkey: vault.to_string(),
                     mint: mint.to_string(),
-                    owner: owner_name,
+                    owner: owner_name.clone(),
                 },
             );
             registry::save(&path, &reg);
@@ -304,6 +334,73 @@ fn cmd_create_vault(args: &[String]) {
             std::process::exit(1);
         }
     }
+
+    if !is_pool {
+        return;
+    }
+
+    let (approvers, _) = approvers_pda(vault);
+    let init_approvers_data = family_vault::instruction::InitializeApprovers {}.data();
+    let init_approvers_accounts = family_vault::accounts::InitializeApprovers {
+        payer: to_anchor(owner.pubkey()),
+        vault: to_anchor(vault),
+        approvers: to_anchor(approvers),
+        system_program: to_anchor(system_program_id()),
+    }
+    .to_account_metas(None);
+    match send_ix(&rpc, init_approvers_accounts, init_approvers_data, &owner, &[]) {
+        Ok(sig) => println!("  approvers list initialized, signature: {sig}"),
+        Err(e) => {
+            eprintln!("init-approvers (during create-vault) failed: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    for approver_name in &approver_names {
+        let address = reg.person_pubkey(approver_name);
+        let data = family_vault::instruction::AddTrustedApprover {
+            address: to_anchor(address),
+        }
+        .data();
+        let accounts = family_vault::accounts::AddTrustedApprover {
+            signer: to_anchor(owner.pubkey()),
+            vault: to_anchor(vault),
+            approvers: to_anchor(approvers),
+            existing_approver: None,
+        }
+        .to_account_metas(None);
+        match send_ix(&rpc, accounts, data, &owner, &[]) {
+            Ok(sig) => println!("  approver '{approver_name}' added, signature: {sig}"),
+            Err(e) => {
+                eprintln!("add-approver '{approver_name}' (during create-vault) failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    for beneficiary_name in &beneficiary_names {
+        let address = reg.person_pubkey(beneficiary_name);
+        let data = family_vault::instruction::AddBeneficiary {
+            name: beneficiary_name.clone(),
+            address: to_anchor(address),
+        }
+        .data();
+        let accounts = family_vault::accounts::AddBeneficiary {
+            signer: to_anchor(owner.pubkey()),
+            vault: to_anchor(vault),
+            beneficiary_list: to_anchor(beneficiary_list),
+        }
+        .to_account_metas(None);
+        match send_ix(&rpc, accounts, data, &owner, &[]) {
+            Ok(sig) => println!("  payee '{beneficiary_name}' added, signature: {sig}"),
+            Err(e) => {
+                eprintln!("add-beneficiary '{beneficiary_name}' (during create-vault) failed: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    println!("account '{name}' fully opened (pool vault, {} approver(s), {} payee(s))", approver_names.len(), beneficiary_names.len());
 }
 
 fn cmd_deposit(args: &[String]) {
@@ -740,7 +837,8 @@ fn print_usage() {
          everyday commands (bank-style, use names — see the registry below):\n\
          \x20 register-person   --name <n> (--keypair <path> | --pubkey <addr>)\n\
          \x20 register-vault    --name <n> --pubkey <addr> --mint <addr> --owner <person-name>\n\
-         \x20 create-vault      --name <n> --owner <person-name> --mint <addr> [--pool] [--daily-limit <u64>] [--payer <path>]\n\
+         \x20 create-vault      --name <n> --owner <person-name> --mint <addr> [--pool] [--daily-limit <u64>] [--payer <path>] [--approvers p1,p2,...] [--beneficiaries b1,b2,...]\n\
+         \x20                   (--approvers/--beneficiaries require --pool; opens approvers list + adds each in one call)\n\
          \x20 add-beneficiary   --vault <n> --person <person-name>\n\
          \x20 add-beneficiary-urgent --vault <n> --person <person-name> --approver1 <name> --approver2 <name>  (two distinct approvers, skips the 48h cooldown)\n\
          \x20 deposit           --from <person-name> --to <vault-name> --amount <whole units, e.g. 10>\n\
