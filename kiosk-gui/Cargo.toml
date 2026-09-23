@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anchor-lang = "1.2.0"
 family-vault = { version = "0.1.0", path = "../programs/family-vault", features = ["cpi"] }
+qrcode = { version = "0.14.1", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 slint = "1.18.0"
 solana-client = "=4.2.2"

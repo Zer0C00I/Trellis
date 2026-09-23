@@ -7,6 +7,7 @@ mod slint_ui {
 use slint_ui::*;
 
 mod chain;
+mod setup;
 
 use std::cell::RefCell;
 use std::rc::Rc;
