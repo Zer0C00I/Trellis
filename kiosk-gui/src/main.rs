@@ -453,6 +453,8 @@ fn run_setup_flow(
             }
         };
 
+        set_setup_status(&app_weak, "Ожидаем подтверждение...".to_string());
+
         loop {
             match rpc.get_balance(&owner_pubkey_client) {
                 Ok(balance) if balance >= min_lamports => break,
