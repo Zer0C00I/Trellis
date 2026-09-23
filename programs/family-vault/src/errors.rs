@@ -48,4 +48,6 @@ pub enum VaultError {
     CannotRotateToSelf,
     #[msg("Approver address may not be the default (all-zeros) pubkey")]
     InvalidApproverAddress,
+    #[msg("The two approvers co-signing an urgent beneficiary add must be different people")]
+    DuplicateApprover,
 }

@@ -32,6 +32,14 @@ pub mod family_vault {
         instructions::add_beneficiary(ctx, name, address)
     }
 
+    pub fn add_beneficiary_urgent(
+        ctx: Context<AddBeneficiaryUrgent>,
+        name: String,
+        address: Pubkey,
+    ) -> Result<()> {
+        instructions::add_beneficiary_urgent(ctx, name, address)
+    }
+
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         instructions::withdraw(ctx, amount)
     }

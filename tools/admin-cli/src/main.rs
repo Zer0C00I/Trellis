@@ -404,6 +404,51 @@ fn cmd_add_beneficiary(args: &[String]) {
     }
 }
 
+/// Two-approver fast lane: adds a payee immediately, skipping the normal
+/// 48h cooldown — see `family_vault::instructions::add_beneficiary_urgent`
+/// for why this needs two distinct trusted approvers, not the owner.
+fn cmd_add_beneficiary_urgent(args: &[String]) {
+    let path = registry_path(args);
+    let reg = registry::load(&path);
+    let vault_name = arg_req(args, "--vault");
+    let person_name = arg_req(args, "--person");
+    let approver1_name = arg_req(args, "--approver1");
+    let approver2_name = arg_req(args, "--approver2");
+
+    let vault_entry = reg.vault(&vault_name);
+    let vault = vault_entry.pubkey.parse::<Pubkey>().unwrap();
+    let approver_one = reg.person_keypair(&approver1_name);
+    let approver_two = reg.person_keypair(&approver2_name);
+    let address = reg.person_pubkey(&person_name);
+    let (approvers, _) = approvers_pda(vault);
+    let (beneficiary_list, _) = beneficiary_list_pda(vault);
+
+    let rpc = rpc_client(&rpc_url(args));
+    let data = family_vault::instruction::AddBeneficiaryUrgent {
+        name: person_name.clone(),
+        address: to_anchor(address),
+    }
+    .data();
+    let accounts = family_vault::accounts::AddBeneficiaryUrgent {
+        approver_one: to_anchor(approver_one.pubkey()),
+        approver_two: to_anchor(approver_two.pubkey()),
+        vault: to_anchor(vault),
+        approvers: to_anchor(approvers),
+        beneficiary_list: to_anchor(beneficiary_list),
+    }
+    .to_account_metas(None);
+
+    match send_ix(&rpc, accounts, data, &approver_one, &[&approver_two]) {
+        Ok(sig) => println!(
+            "urgently added '{person_name}' as a payee on account '{vault_name}' (immediately active), signature: {sig}"
+        ),
+        Err(e) => {
+            eprintln!("add-beneficiary-urgent failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// Bank-style "send money from account to account". The recipient must
 /// already be an approved payee (`add-beneficiary`) — the program
 /// enforces this on-chain regardless of what this tool sends.
@@ -697,6 +742,7 @@ fn print_usage() {
          \x20 register-vault    --name <n> --pubkey <addr> --mint <addr> --owner <person-name>\n\
          \x20 create-vault      --name <n> --owner <person-name> --mint <addr> [--pool] [--daily-limit <u64>] [--payer <path>]\n\
          \x20 add-beneficiary   --vault <n> --person <person-name>\n\
+         \x20 add-beneficiary-urgent --vault <n> --person <person-name> --approver1 <name> --approver2 <name>  (two distinct approvers, skips the 48h cooldown)\n\
          \x20 deposit           --from <person-name> --to <vault-name> --amount <whole units, e.g. 10>\n\
          \x20 send              --from <vault-name> --to <person-name> --amount <whole units, e.g. 10>\n\n\
          advanced / raw-pubkey commands (approvers, requests, rotation):\n\
@@ -726,6 +772,7 @@ fn main() {
         "create-vault" => cmd_create_vault(rest),
         "deposit" => cmd_deposit(rest),
         "add-beneficiary" => cmd_add_beneficiary(rest),
+        "add-beneficiary-urgent" => cmd_add_beneficiary_urgent(rest),
         "send" => cmd_send(rest),
         "init-approvers" => cmd_init_approvers(rest),
         "add-approver" => cmd_add_approver(rest),

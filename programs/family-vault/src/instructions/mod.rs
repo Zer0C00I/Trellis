@@ -4,6 +4,8 @@ pub mod deposit;
 pub use deposit::*;
 pub mod add_beneficiary;
 pub use add_beneficiary::*;
+pub mod add_beneficiary_urgent;
+pub use add_beneficiary_urgent::*;
 pub mod withdraw;
 pub use withdraw::*;
 pub mod initialize_approvers;
