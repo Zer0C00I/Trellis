@@ -1,0 +1,198 @@
+# family-app Design
+
+## Purpose
+
+`kiosk-gui` (grandma's device) and `admin-cli` (developer's terminal
+stand-in) exist. The third piece of the system — the app a family member
+actually uses on their own phone/laptop to open the family account,
+add payees, add trusted people, and approve large transfers — does not
+exist yet. This spec designs it.
+
+Like `kiosk-gui`, this is not a custodial app: the device generates and
+holds its own Solana keypair locally, and never sends it anywhere. All
+state lives on-chain in the `family-vault` program; `family-app` and
+`kiosk-gui` never talk to each other directly, only through the chain
+(see `docs/superpowers/specs/2026-09-21-kiosk-blockchain-wiring-design.md`
+for that principle, established for kiosk and equally binding here).
+
+## Platform & Stack
+
+Targets: **Android, Windows, Linux (including mobile Linux distros like
+postmarketOS), and best-effort Sailfish OS**. iOS is explicitly out of
+scope (see "Notifications", below, for why that's the one platform this
+decision actually matters for).
+
+**Stack: Rust core + Tauri 2 shell.**
+
+- Tauri 2 has official Android and Windows/Linux desktop targets, so one
+  shell covers four of the five target platforms out of the box. Sailfish
+  isn't an official Tauri target, but as a Linux/Wayland system the
+  desktop build is the most likely path to work there, best-effort.
+- The core (keypair handling, chain I/O, PDA derivation, instruction
+  building) is Rust and reuses `family-vault-client`
+  (`tools/family-vault-client`) directly — the same crate `admin-cli` and
+  `kiosk-gui` were just migrated onto. No fourth reimplementation of PDA
+  derivation or pubkey conversion.
+- UI layer is HTML/CSS/JS inside Tauri's webview, not Slint. Slint was
+  the right choice for kiosk-gui's fixed-hardware, no-text-input,
+  single-purpose screen; family-app needs conventional mobile/desktop UI
+  patterns (scrollable lists, text entry, multiple windows/tabs) that a
+  webview-based UI serves better, and Tauri's Android support is more
+  mature than Slint's for this kind of general-purpose app shell.
+
+## Identity & Bootstrap
+
+Same principle as kiosk: **the app generates its own keypair on first
+launch, locally, and never shows or exports it as a seed phrase.** No
+import-existing-wallet flow in MVP (that would reintroduce seed phrases,
+which this whole project exists to avoid).
+
+**The bootstrap problem:** a fresh keypair has no on-chain history. For
+the app to show anything, that pubkey must already be listed as a
+beneficiary and/or trusted approver on some vault — and `kiosk-gui`
+deliberately never lets the vault owner (grandma) add people from her own
+device (see the kiosk wiring spec's out-of-scope section — that
+restriction exists to stop a scammer walking grandma through adding
+their own address).
+
+**Resolution: the first family member is added during the kiosk's own
+first-run setup**, not from family-app's side. This is a deliberate,
+narrow exception to "kiosk never adds people": at first-run time, nothing
+exists yet — no vault, no beneficiaries, no approvers — and the person
+physically holding and setting up the device *is* establishing the
+initial chain of trust by definition (the same physical-possession trust
+already implicit in "whoever funds the QR code owns the setup"). This is
+categorically different from a scammer walking grandma through adding a
+stranger from her *normal, everyday* wallet screen weeks later — the
+attack the original restriction defends against.
+
+Concretely, this spec requires one addition to `kiosk-gui`'s existing
+first-run setup flow (`kiosk-gui/src/setup.rs`,
+`docs/superpowers/specs/2026-09-23-kiosk-first-run-setup-design.md`):
+after `self_initialize_personal_vault` succeeds, the setup flow accepts
+one family member's pubkey (typed/pasted on-screen, or scanned — exact
+input mechanism is an implementation-plan decision, not fixed by this
+spec) and calls `add_beneficiary` + `add_trusted_approver` for it, signed
+by the device's own owner key (which the device already holds locally at
+this point). This is the *only* place in the whole system where the
+kiosk device signs an "add a person" instruction. All later additions
+(second, third family member) go through family-app itself, using the
+`add-beneficiary` / `add-approver` pattern already proven in `admin-cli`.
+
+## Vault Discovery
+
+No config file points family-app at "its" vault — unlike kiosk, which is
+provisioned once and always serves one specific device's own vault.
+family-app instead discovers, on every launch (or refresh), every vault
+its pubkey participates in:
+
+```
+getProgramAccounts(family_vault_program_id, filters: [
+  memcmp(offset of BeneficiaryList.entries[].address, == my_pubkey),
+  memcmp(offset of TrustedApprovers.entries[], == my_pubkey),
+])
+```
+
+This is architecturally already multi-vault-capable — one pubkey can
+appear in any number of vaults' beneficiary/approver lists — with no
+extra design needed. **MVP scope decision: the UI itself only supports
+one vault at a time** (no vault switcher); if discovery finds more than
+one, the MVP simply opens the first one found. Adding a switcher later is
+a UI-only change, not an architecture change — the discovery layer
+already returns the full list.
+
+`getProgramAccounts` with memcmp filters is a single RPC call with no
+extra indexing infrastructure needed at MVP scale. A future off-chain
+indexer (mentioned in earlier session discussion as a possible future
+component) would only ever be a read-through cache in front of this same
+call, added if/when `getProgramAccounts` scan cost becomes a real
+problem — not needed for a hackathon MVP.
+
+## MVP Scope
+
+Full parity with `admin-cli`'s everyday command set, translated into
+plain bank language — no "vault", "PDA", "mint", "approver" anywhere in
+the UI:
+
+| Screen / action | admin-cli equivalent |
+|---|---|
+| Открыть семейный счёт | `create-vault --pool` |
+| Пополнить | `deposit` |
+| Отправить | `send` / `withdraw` |
+| Добавить получателя | `add-beneficiary` |
+| Добавить получателя срочно | `add-beneficiary-urgent` (needs 2 distinct trusted people) |
+| Доверенные лица (список + добавление) | `add-approver` |
+| Одобрить перевод | `approve-withdrawal` (needed once a transfer exceeds the pool vault's daily limit) |
+| История операций | read-only: decode past instructions/events for this vault |
+
+Every one of these already has a working, devnet-verified instruction
+path in `family-vault` and a reference implementation in `admin-cli` —
+family-app's job is a UI and identity layer on top, not new on-chain
+logic.
+
+## Screens
+
+1. **First launch** — generate keypair locally → show own pubkey (as
+   text and/or QR, TBD in the plan) → "ждём, пока вас добавят" status,
+   matching the plain-language, no-jargon tone kiosk already uses for its
+   own first-run screen.
+2. **Discovery** — silent on every launch/refresh; once a vault is found,
+   go straight to the main screen. No user-visible "searching" step
+   needed if it completes in normal RPC latency; if it doesn't, reuse the
+   same "Нет связи" / "Не получилось" states as kiosk's `ChainError`.
+3. **Счёт** (main/home) — balance, recent history, buttons for the
+   actions above.
+4. **Перевод** — amount, pick recipient from the payee list (never a
+   free-text address field — same closed-address-book principle as
+   kiosk).
+5. **Доверенные лица** — list, add (normal or urgent-two-approver path).
+6. **Одобрения** — list of pending withdrawals awaiting this person's
+   signature, if any.
+
+## Data Flow & Error Handling
+
+Same polling pattern as kiosk: periodic refresh (interval TBD in the
+plan — kiosk uses 30s) plus refresh-on-return-to-foreground, no push, no
+websocket. Reuses `kiosk-gui/src/chain.rs`'s two-state `ChainError` model
+(`NoConnection` vs `ProgramRejected`) directly rather than inventing a
+third error taxonomy — extract it to `family-vault-client` if/when the
+plan needs it in both crates without a `kiosk-gui` dependency, since
+`family-app` shouldn't need to depend on the kiosk binary crate for an
+error enum.
+
+## Notifications — explicitly out of scope for this spec
+
+Discussed at length in this session: real-time push notifications
+require either a background service (viable on Android/Linux/Windows,
+architecturally impossible on iOS without a push relay server) or the
+user simply opening the app to see new state. Since iOS is out of scope
+for this app entirely, MVP relies on **open-the-app-to-see-it** polling.
+A background watcher/notification service remains a possible future
+addition (a separate component, not touched by this spec) if
+"approval needed" latency becomes a real problem — not needed to ship a
+working MVP.
+
+## Explicitly Out of Scope (MVP)
+
+- Multi-vault switcher UI (architecture supports it; UI doesn't in MVP).
+- Push notifications / background watcher service.
+- Importing an existing wallet / seed phrase (contradicts the project's
+  core no-seed-phrase principle).
+- Owner-rotation flows (`request-rotation`/`execute-rotation`) — rare,
+  high-stakes, and not part of the everyday "how does a family use this"
+  loop; can be added later using the same pattern as everything else
+  here.
+- Sailfish OS as a fully-supported target (best-effort only, not tested
+  as part of this plan's acceptance criteria).
+
+## Testing
+
+Same standard as the rest of the workspace: `family-vault`'s on-chain
+logic is already covered by its own litesvm tests — this spec adds no
+new on-chain behavior, so no new program tests. New Rust core logic
+(discovery-query construction, error mapping, any new pure functions)
+gets unit tests the same way `family-vault-client` and `kiosk-gui`
+already do. UI/webview behavior is verified manually (Tauri's webview
+testing story is less mature than `kiosk-gui`'s Slint test harness) —
+this spec accepts that gap rather than inventing new test infrastructure
+under a hackathon deadline; call this out explicitly in the plan.
