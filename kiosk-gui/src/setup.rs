@@ -163,6 +163,119 @@ pub fn render_qr(data: &str) -> slint::Image {
     slint::Image::from_rgb8(buffer)
 }
 
+/// Headroom above the raw rent-exemption sum, covering transaction fees
+/// across a few submission attempts (each `initialize_vault` costs one
+/// signature-verification fee; a handful of retries stay well under
+/// this). Not rent — rent is computed live below, never guessed.
+#[allow(dead_code)] // used starting in Task 6
+pub const MIN_FUNDING_LAMPORTS_BUFFER: u64 = 50_000;
+
+#[allow(dead_code)] // used starting in Task 6
+pub fn compute_min_funding_lamports(
+    rpc: &solana_client::rpc_client::RpcClient,
+) -> Result<u64, crate::chain::ChainError> {
+    let vault_rent = rpc
+        .get_minimum_balance_for_rent_exemption(family_vault::state::Vault::SPACE)
+        .map_err(crate::chain::map_client_error_pub)?;
+    let list_rent = rpc
+        .get_minimum_balance_for_rent_exemption(family_vault::state::BeneficiaryList::SPACE)
+        .map_err(crate::chain::map_client_error_pub)?;
+    let ata_rent = rpc
+        .get_minimum_balance_for_rent_exemption(165) // spl_token::state::Account::LEN
+        .map_err(crate::chain::map_client_error_pub)?;
+    Ok(vault_rent + list_rent + ata_rent + MIN_FUNDING_LAMPORTS_BUFFER)
+}
+
+/// Self-initializes the device's own personal vault, paid for and signed
+/// by the device's own owner keypair. Idempotent by existence check, not
+/// by catching an "already exists" error: this first derives the vault
+/// PDA and tries to read it; if that read succeeds, the vault already
+/// exists (a prior attempt got the transaction through before a
+/// crash/retry) and this returns immediately without sending anything —
+/// cheap and unambiguous, versus parsing a program error string.
+#[allow(dead_code)] // used starting in Task 6
+pub fn self_initialize_personal_vault(
+    rpc: &solana_client::rpc_client::RpcClient,
+    owner: &solana_keypair::Keypair,
+    cfg: &ProvisioningConfig,
+) -> Result<(solana_pubkey::Pubkey, solana_pubkey::Pubkey), crate::chain::ChainError> {
+    use anchor_lang::{InstructionData, ToAccountMetas};
+    use solana_signer::Signer;
+
+    let owner_pubkey_client = owner.pubkey();
+    let program_id_client =
+        solana_pubkey::Pubkey::new_from_array(cfg.program_id.to_bytes());
+
+    let (vault, _) = solana_pubkey::Pubkey::find_program_address(
+        &[b"vault", owner_pubkey_client.as_ref(), b"personal"],
+        &program_id_client,
+    );
+    let (beneficiary_list, _) = solana_pubkey::Pubkey::find_program_address(
+        &[b"beneficiaries", vault.as_ref()],
+        &program_id_client,
+    );
+
+    // Idempotency by existence check, not error-string matching — see
+    // this function's doc comment.
+    if rpc.get_account_data(&vault).is_ok() {
+        return Ok((vault, beneficiary_list));
+    }
+
+    let vault_token_account =
+        spl_associated_token_account::get_associated_token_address(&vault, &cfg.mint);
+
+    let to_anchor = |p: solana_pubkey::Pubkey| {
+        anchor_lang::prelude::Pubkey::new_from_array(p.to_bytes())
+    };
+
+    let data = family_vault::instruction::InitializeVault {
+        is_pool: false,
+        daily_limit: 0,
+    }
+    .data();
+    let accounts = family_vault::accounts::InitializeVault {
+        payer: to_anchor(owner_pubkey_client),
+        owner: to_anchor(owner_pubkey_client),
+        vault: to_anchor(vault),
+        beneficiary_list: to_anchor(beneficiary_list),
+        mint: to_anchor(cfg.mint),
+        vault_token_account: to_anchor(vault_token_account),
+        token_program: to_anchor(spl_token::ID),
+        associated_token_program: to_anchor(spl_associated_token_account::ID),
+        system_program: to_anchor(solana_pubkey::Pubkey::new_from_array([0u8; 32])),
+    }
+    .to_account_metas(None);
+
+    let client_metas: Vec<solana_instruction::AccountMeta> = accounts
+        .iter()
+        .map(|m| solana_instruction::AccountMeta {
+            pubkey: solana_pubkey::Pubkey::new_from_array(m.pubkey.to_bytes()),
+            is_signer: m.is_signer,
+            is_writable: m.is_writable,
+        })
+        .collect();
+
+    let ix = solana_instruction::Instruction {
+        program_id: program_id_client,
+        accounts: client_metas,
+        data,
+    };
+
+    let blockhash = rpc
+        .get_latest_blockhash()
+        .map_err(crate::chain::map_client_error_pub)?;
+    let tx = solana_transaction::Transaction::new_signed_with_payer(
+        &[ix],
+        Some(&owner_pubkey_client),
+        &[owner],
+        blockhash,
+    );
+    rpc.send_and_confirm_transaction(&tx)
+        .map_err(crate::chain::map_client_error_pub)?;
+
+    Ok((vault, beneficiary_list))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +401,55 @@ mint = "not-a-pubkey"
         );
 
         std::fs::remove_file(&path).unwrap();
+    }
+
+    // Requires a live RPC endpoint — run manually with
+    // `cargo test --package kiosk-gui setup::tests::computes_a_real_minimum_funding_amount -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn computes_a_real_minimum_funding_amount() {
+        let rpc = solana_client::rpc_client::RpcClient::new(
+            "https://api.devnet.solana.com".to_string(),
+        );
+        let lamports = compute_min_funding_lamports(&rpc).unwrap();
+        println!("min funding lamports: {lamports}");
+        // Sanity bound: must cover at minimum {Vault + BeneficiaryList +
+        // an ATA}'s rent, which on devnet today is on the order of a few
+        // million lamports (a few thousandths of a SOL) — not zero, not
+        // absurdly large (which would indicate a units bug, e.g. reading
+        // SOL instead of lamports).
+        assert!(lamports > 1_000_000, "suspiciously low: {lamports}");
+        assert!(lamports < 100_000_000, "suspiciously high: {lamports}");
+    }
+
+    // Requires a live RPC endpoint AND a funded throwaway owner keypair
+    // (needs at least compute_min_funding_lamports(&rpc) lamports before
+    // running). Run manually with
+    // `cargo test --package kiosk-gui setup::tests::self_init_is_idempotent -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn self_init_is_idempotent() {
+        let rpc = solana_client::rpc_client::RpcClient::new(
+            "https://api.devnet.solana.com".to_string(),
+        );
+        let owner = solana_keypair::read_keypair_file("/tmp/setup-test-owner.json")
+            .expect("fund /tmp/setup-test-owner.json before running this test");
+        let cfg = ProvisioningConfig {
+            rpc_url: "https://api.devnet.solana.com".to_string(),
+            program_id: "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ"
+                .parse()
+                .unwrap(),
+            mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+                .parse()
+                .unwrap(),
+        };
+
+        let (vault1, list1) = self_initialize_personal_vault(&rpc, &owner, &cfg).unwrap();
+        // Second call must not error and must return the SAME addresses
+        // — this is the crash-mid-setup resumability the design spec
+        // requires.
+        let (vault2, list2) = self_initialize_personal_vault(&rpc, &owner, &cfg).unwrap();
+        assert_eq!(vault1, vault2);
+        assert_eq!(list1, list2);
     }
 }
