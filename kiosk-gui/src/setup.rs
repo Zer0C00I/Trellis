@@ -11,7 +11,6 @@ struct RawProvisioningConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 6
 pub struct ProvisioningConfig {
     pub rpc_url: String,
     pub program_id: anchor_lang::prelude::Pubkey,
@@ -19,7 +18,6 @@ pub struct ProvisioningConfig {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // used starting in Task 6
 pub enum ProvisioningError {
     Io(std::io::Error),
     Parse(toml::de::Error),
@@ -40,17 +38,14 @@ impl fmt::Display for ProvisioningError {
 
 impl std::error::Error for ProvisioningError {}
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn needs_setup(config_path: &Path) -> bool {
     !config_path.exists()
 }
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn owner_keypair_path(config_dir: &Path) -> PathBuf {
     config_dir.join("owner-keypair.json")
 }
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn load_provisioning_config(path: &Path) -> Result<ProvisioningConfig, ProvisioningError> {
     let text = std::fs::read_to_string(path).map_err(ProvisioningError::Io)?;
     let raw: RawProvisioningConfig = toml::from_str(&text).map_err(ProvisioningError::Parse)?;
@@ -73,7 +68,6 @@ pub fn load_provisioning_config(path: &Path) -> Result<ProvisioningConfig, Provi
     })
 }
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn generate_or_load_owner_keypair(path: &Path) -> Result<Keypair, ProvisioningError> {
     if path.exists() {
         return solana_keypair::read_keypair_file(path)
@@ -89,7 +83,6 @@ pub fn generate_or_load_owner_keypair(path: &Path) -> Result<Keypair, Provisioni
 /// border (required for real-world scanability, not just a visual
 /// nicety — most scanners fail without it). No anti-aliasing: QR
 /// modules must stay pure black/white to stay machine-readable.
-#[allow(dead_code)] // used starting in Task 6
 pub struct KioskConfigValues {
     pub rpc_url: String,
     pub keypair_path: String,
@@ -99,7 +92,6 @@ pub struct KioskConfigValues {
     pub personal_beneficiary_list: String,
 }
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn write_kiosk_config(
     path: &Path,
     values: &KioskConfigValues,
@@ -131,7 +123,6 @@ pub fn write_kiosk_config(
     std::fs::write(path, text).map_err(ProvisioningError::Io)
 }
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn render_qr(data: &str) -> slint::Image {
     let code = qrcode::QrCode::new(data.as_bytes()).expect("QR encoding failed");
     let width = code.width();
@@ -167,10 +158,8 @@ pub fn render_qr(data: &str) -> slint::Image {
 /// across a few submission attempts (each `initialize_vault` costs one
 /// signature-verification fee; a handful of retries stay well under
 /// this). Not rent — rent is computed live below, never guessed.
-#[allow(dead_code)] // used starting in Task 6
 pub const MIN_FUNDING_LAMPORTS_BUFFER: u64 = 50_000;
 
-#[allow(dead_code)] // used starting in Task 6
 pub fn compute_min_funding_lamports(
     rpc: &solana_client::rpc_client::RpcClient,
 ) -> Result<u64, crate::chain::ChainError> {
@@ -193,7 +182,6 @@ pub fn compute_min_funding_lamports(
 /// exists (a prior attempt got the transaction through before a
 /// crash/retry) and this returns immediately without sending anything —
 /// cheap and unambiguous, versus parsing a program error string.
-#[allow(dead_code)] // used starting in Task 6
 pub fn self_initialize_personal_vault(
     rpc: &solana_client::rpc_client::RpcClient,
     owner: &solana_keypair::Keypair,

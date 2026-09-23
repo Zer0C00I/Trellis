@@ -64,6 +64,27 @@ fn apply_snapshot(app: &AppWindow, is_pool: bool, snapshot: VaultSnapshot) {
 
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
+    let config_path = config_path();
+
+    let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
+
+    if setup::needs_setup(&config_path) {
+        let cfg_slot = cfg.clone();
+        run_setup_flow(app.as_weak(), config_path.clone(), cfg_slot);
+    } else {
+        match chain::load_config(&config_path) {
+            Ok(loaded) => {
+                *cfg.lock().unwrap() = Some(Arc::new(loaded));
+            }
+            Err(e) => {
+                eprintln!("[kiosk-gui] failed to load config: {e}");
+                app.set_balance_text("Нет связи. Попробуй ещё раз позже".into());
+                app.set_family_balance_text("Нет связи. Попробуй ещё раз позже".into());
+                app.run()?;
+                return Ok(());
+            }
+        }
+    }
 
     app.set_presets(
         Rc::new(slint::VecModel::from(vec![
@@ -73,17 +94,6 @@ fn main() -> Result<(), slint::PlatformError> {
         ]))
         .into(),
     );
-
-    let cfg = match chain::load_config(&config_path()) {
-        Ok(cfg) => Arc::new(cfg),
-        Err(e) => {
-            eprintln!("[kiosk-gui] failed to load config: {e}");
-            app.set_balance_text("Нет связи. Попробуй ещё раз позже".into());
-            app.set_family_balance_text("Нет связи. Попробуй ещё раз позже".into());
-            app.run()?;
-            return Ok(());
-        }
-    };
 
     // Last-fetched snapshots, kept around so a beneficiary tap (which only
     // carries a small integer `id`) can be resolved back to the wallet
@@ -95,9 +105,9 @@ fn main() -> Result<(), slint::PlatformError> {
         Arc::new(Mutex::new(Vec::new()));
 
     // Initial fetch, on a background thread so the UI shows immediately.
-    refresh_vault_state(
+    refresh_vault_state_if_ready(
         app.as_weak(),
-        cfg.clone(),
+        &cfg,
         personal_beneficiaries.clone(),
         pool_beneficiaries.clone(),
     );
@@ -121,9 +131,9 @@ fn main() -> Result<(), slint::PlatformError> {
             slint::TimerMode::Repeated,
             std::time::Duration::from_secs(30),
             move || {
-                refresh_vault_state(
+                refresh_vault_state_if_ready(
                     app_weak.clone(),
-                    cfg.clone(),
+                    &cfg,
                     personal_beneficiaries.clone(),
                     pool_beneficiaries.clone(),
                 );
@@ -194,6 +204,16 @@ fn main() -> Result<(), slint::PlatformError> {
         let selected_beneficiary_id = selected_beneficiary_id.clone();
         app.on_send_confirmed(move || {
             let app = app_weak.unwrap();
+
+            let Some(cfg) = cfg.lock().unwrap().clone() else {
+                app.set_result_success(false);
+                app.set_result_message_text(
+                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
+                );
+                app.set_current_screen(Screen::Result);
+                return;
+            };
+
             let recipient_name = app.get_confirm_recipient_name();
 
             // Resolve the wallet pubkey for the beneficiary the user
@@ -219,7 +239,6 @@ fn main() -> Result<(), slint::PlatformError> {
             };
 
             let amount = *selected_amount.borrow();
-            let cfg = cfg.clone();
             let app_weak = app.as_weak();
             std::thread::spawn(move || {
                 let result = chain::submit_withdraw(&cfg, false, addr, amount);
@@ -256,9 +275,9 @@ fn main() -> Result<(), slint::PlatformError> {
             // waiting for the 30s timer, so the balance the user sees
             // immediately reflects it (and picks up anything a family
             // member changed in the meantime too).
-            refresh_vault_state(
+            refresh_vault_state_if_ready(
                 app.as_weak(),
-                cfg.clone(),
+                &cfg,
                 personal_beneficiaries.clone(),
                 pool_beneficiaries.clone(),
             );
@@ -284,6 +303,16 @@ fn main() -> Result<(), slint::PlatformError> {
         let pool_beneficiaries = pool_beneficiaries.clone();
         app.on_family_beneficiary_selected(move |id| {
             let app = app_weak.unwrap();
+
+            let Some(cfg) = cfg.lock().unwrap().clone() else {
+                app.set_result_success(false);
+                app.set_result_message_text(
+                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
+                );
+                app.set_current_screen(Screen::Result);
+                return;
+            };
+
             let model = app.get_family_beneficiaries();
             let mut found_name: slint::SharedString = "Получатель".into();
             for i in 0..model.row_count() {
@@ -342,6 +371,195 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     app.run()
+}
+
+/// Drives the entire first-run setup flow on a background thread: load
+/// provisioning config, generate-or-load the owner keypair, show its QR,
+/// poll for funding, self-initialize the vault, write kiosk.toml, then
+/// switch to the normal My Wallet flow — all without restarting the
+/// process. See the design spec's "Фандинг и самостоятельная
+/// инициализация" section for the exact sequence this implements.
+fn run_setup_flow(
+    app_weak: slint::Weak<AppWindow>,
+    config_path: std::path::PathBuf,
+    cfg_slot: Arc<Mutex<Option<Arc<ChainConfig>>>>,
+) {
+    let app_weak_for_screen = app_weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = app_weak_for_screen.upgrade() {
+            app.set_current_screen(Screen::Setup);
+        }
+    });
+
+    std::thread::spawn(move || {
+        let config_dir = config_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let provisioning_path = config_dir.join("provisioning.toml");
+
+        let provisioning = match setup::load_provisioning_config(&provisioning_path) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("[kiosk-gui] setup: failed to load provisioning.toml: {e}");
+                set_setup_status(
+                    &app_weak,
+                    "Не получилось. Обратитесь в поддержку".to_string(),
+                );
+                return;
+            }
+        };
+
+        let keypair_path = setup::owner_keypair_path(&config_dir);
+        let owner = match setup::generate_or_load_owner_keypair(&keypair_path) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("[kiosk-gui] setup: failed to generate/load keypair: {e}");
+                set_setup_status(
+                    &app_weak,
+                    "Не получилось. Обратитесь в поддержку".to_string(),
+                );
+                return;
+            }
+        };
+
+        let owner_pubkey_str = solana_signer::Signer::pubkey(&owner).to_string();
+        {
+            // `slint::Image` is not `Send`, so it can't be built on this
+            // background thread and moved into the UI-thread closure —
+            // render it inside the closure instead, from the (Send)
+            // pubkey string.
+            let app_weak = app_weak.clone();
+            let owner_pubkey_str = owner_pubkey_str.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(app) = app_weak.upgrade() {
+                    let qr = setup::render_qr(&owner_pubkey_str);
+                    app.set_setup_qr_image(qr);
+                    app.set_setup_status_text(
+                        "Покажите этот код родственнику, у которого будет доступ к приложению семьи"
+                            .into(),
+                    );
+                }
+            });
+        }
+
+        let rpc = solana_client::rpc_client::RpcClient::new(provisioning.rpc_url.clone());
+        let owner_pubkey_client = solana_signer::Signer::pubkey(&owner);
+
+        let min_lamports = loop {
+            match setup::compute_min_funding_lamports(&rpc) {
+                Ok(v) => break v,
+                Err(_) => std::thread::sleep(std::time::Duration::from_secs(4)),
+            }
+        };
+
+        loop {
+            match rpc.get_balance(&owner_pubkey_client) {
+                Ok(balance) if balance >= min_lamports => break,
+                _ => std::thread::sleep(std::time::Duration::from_secs(4)),
+            }
+        }
+
+        set_setup_status(&app_weak, "Почти готово...".to_string());
+
+        let mut vault_result = None;
+        for attempt in 0..5u32 {
+            match setup::self_initialize_personal_vault(&rpc, &owner, &provisioning) {
+                Ok(v) => {
+                    vault_result = Some(v);
+                    break;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[kiosk-gui] setup: initialize_vault attempt {attempt} failed: {e:?}"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            }
+        }
+
+        let Some((vault, beneficiary_list)) = vault_result else {
+            set_setup_status(
+                &app_weak,
+                "Не получилось. Обратитесь в поддержку".to_string(),
+            );
+            return;
+        };
+
+        let values = setup::KioskConfigValues {
+            rpc_url: provisioning.rpc_url.clone(),
+            keypair_path: keypair_path.to_string_lossy().into_owned(),
+            program_id: provisioning.program_id.to_string(),
+            mint: provisioning.mint.to_string(),
+            personal_vault: vault.to_string(),
+            personal_beneficiary_list: beneficiary_list.to_string(),
+        };
+        if let Err(e) = setup::write_kiosk_config(&config_path, &values) {
+            eprintln!("[kiosk-gui] setup: failed to write kiosk.toml: {e}");
+            set_setup_status(
+                &app_weak,
+                "Не получилось. Обратитесь в поддержку".to_string(),
+            );
+            return;
+        }
+
+        // Load the config we just wrote (exercises the exact same code
+        // path a normal boot uses) and switch straight into the normal
+        // flow in this same process — no restart.
+        let cfg = match chain::load_config(&config_path) {
+            Ok(cfg) => std::sync::Arc::new(cfg),
+            Err(e) => {
+                eprintln!("[kiosk-gui] setup: wrote kiosk.toml but failed to reload it: {e}");
+                set_setup_status(
+                    &app_weak,
+                    "Не получилось. Обратитесь в поддержку".to_string(),
+                );
+                return;
+            }
+        };
+
+        *cfg_slot.lock().unwrap() = Some(cfg.clone());
+
+        let personal_beneficiaries: std::sync::Arc<
+            std::sync::Mutex<Vec<(u8, solana_pubkey::Pubkey)>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pool_beneficiaries: std::sync::Arc<
+            std::sync::Mutex<Vec<(u8, solana_pubkey::Pubkey)>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let app_weak_for_transition = app_weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(app) = app_weak_for_transition.upgrade() {
+                app.set_current_screen(Screen::MyWallet);
+            }
+        });
+        refresh_vault_state(app_weak, cfg, personal_beneficiaries, pool_beneficiaries);
+    });
+}
+
+fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
+    let app_weak = app_weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_setup_status_text(text.into());
+        }
+    });
+}
+
+/// Wraps `refresh_vault_state` so it becomes a no-op when `cfg` hasn't
+/// been populated yet — i.e. setup mode is still in progress. Used at
+/// every call site in `main()` instead of calling `refresh_vault_state`
+/// directly, since `cfg` may not exist yet on a fresh first boot.
+fn refresh_vault_state_if_ready(
+    app_weak: slint::Weak<AppWindow>,
+    cfg: &Arc<Mutex<Option<Arc<ChainConfig>>>>,
+    personal_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>>,
+    pool_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>>,
+) {
+    let Some(cfg) = cfg.lock().unwrap().clone() else {
+        return;
+    };
+    refresh_vault_state(app_weak, cfg, personal_beneficiaries, pool_beneficiaries);
 }
 
 /// Fetches both vaults' current balance/beneficiary state on a background
