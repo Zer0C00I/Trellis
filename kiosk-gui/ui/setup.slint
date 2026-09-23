@@ -1,0 +1,36 @@
+import { Theme } from "theme.slint";
+
+export component SetupScreen inherits Rectangle {
+    in property <image> qr-image;
+    in property <string> status-text: "";
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
+        alignment: center;
+
+        Text {
+            text: "Настройка устройства";
+            color: Theme.fg;
+            font-size: Theme.font-size-heading;
+            horizontal-alignment: center;
+        }
+
+        Image {
+            source: qr-image;
+            width: 280px;
+            height: 280px;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: status-text;
+            color: Theme.fg;
+            font-size: Theme.font-size-body;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

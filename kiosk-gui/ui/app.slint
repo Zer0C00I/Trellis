@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { SetupScreen } from "setup.slint";
 import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
 import { AmountSelectScreen } from "amount-select.slint";
 import { ConfirmScreen } from "confirm.slint";
@@ -7,7 +8,7 @@ import { FamilyWalletScreen } from "family-wallet.slint";
 
 export { BeneficiaryItem }
 
-export enum Screen { my-wallet, amount-select, confirm, result, family-wallet }
+export enum Screen { setup, my-wallet, amount-select, confirm, result, family-wallet }
 
 export component AppWindow inherits Window {
     width: 800px;
@@ -16,6 +17,8 @@ export component AppWindow inherits Window {
 
     in-out property <Screen> current-screen: Screen.my-wallet;
 
+    in property <image> setup-qr-image <=> setup.qr-image;
+    in property <string> setup-status-text <=> setup.status-text;
     in property <string> balance-text <=> wallet.balance-text;
     in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
     in property <string> selected-recipient-name <=> amount-select.recipient-name;
@@ -38,6 +41,12 @@ export component AppWindow inherits Window {
     callback ok-pressed <=> result.ok-pressed;
     callback family-beneficiary-selected <=> family-wallet.beneficiary-selected;
     callback back-to-my-wallet-requested <=> family-wallet.back-to-my-wallet-requested;
+
+    setup := SetupScreen {
+        width: 100%;
+        height: 100%;
+        visible: current-screen == Screen.setup;
+    }
 
     wallet := MyWalletScreen {
         width: 100%;
