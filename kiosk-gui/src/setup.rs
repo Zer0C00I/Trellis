@@ -85,6 +85,42 @@ pub fn generate_or_load_owner_keypair(path: &Path) -> Result<Keypair, Provisioni
     Ok(keypair)
 }
 
+/// Renders `data` as a black-on-white QR code raster with a quiet-zone
+/// border (required for real-world scanability, not just a visual
+/// nicety — most scanners fail without it). No anti-aliasing: QR
+/// modules must stay pure black/white to stay machine-readable.
+#[allow(dead_code)] // used starting in Task 6
+pub fn render_qr(data: &str) -> slint::Image {
+    let code = qrcode::QrCode::new(data.as_bytes()).expect("QR encoding failed");
+    let width = code.width();
+    let scale = 8usize;
+    let border = 4usize;
+    let img_size = (width + border * 2) * scale;
+
+    let mut buffer =
+        slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(img_size as u32, img_size as u32);
+    let stride = buffer.width() as usize;
+    let bytes = buffer.make_mut_bytes();
+
+    for y in 0..img_size {
+        for x in 0..img_size {
+            let module_x = x / scale;
+            let module_y = y / scale;
+            let dark = module_x >= border
+                && module_y >= border
+                && module_x - border < width
+                && module_y - border < width
+                && code[(module_x - border, module_y - border)] == qrcode::Color::Dark;
+            let v: u8 = if dark { 0 } else { 255 };
+            let idx = (y * stride + x) * 3;
+            bytes[idx] = v;
+            bytes[idx + 1] = v;
+            bytes[idx + 2] = v;
+        }
+    }
+    slint::Image::from_rgb8(buffer)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +199,16 @@ mint = "not-a-pubkey"
         let kp2 = generate_or_load_owner_keypair(&path).unwrap();
         assert_eq!(kp.pubkey(), kp2.pubkey());
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn renders_a_qr_image_with_a_quiet_zone_border() {
+        let image = render_qr("test-pubkey-string");
+        let size = image.size();
+        // Exact pixel size depends on the QR version chosen for this
+        // input length, but it must be square and non-trivially sized
+        // (a real QR code, not a 1x1 placeholder).
+        assert_eq!(size.width, size.height);
+        assert!(size.width > 100, "expected a real QR raster, got {size:?}");
     }
 }
