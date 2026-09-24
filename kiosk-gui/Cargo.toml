@@ -22,6 +22,9 @@ solana-transaction = { version = "4.1.6", features = ["wincode"] }
 spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
 spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
 toml = "1.1.6"
+bluer = { version = "0.17.4", features = ["bluetoothd"] }
+tokio = { version = "1", features = ["rt", "time", "macros", "sync"] }
+futures = "0.3"
 
 [lints.rust]
 unsafe_code = "deny"

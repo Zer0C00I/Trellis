@@ -12,6 +12,8 @@ mod setup;
 mod pairing;
 #[allow(dead_code)] // used starting in Task 6
 mod family_member;
+#[allow(dead_code)] // used starting in Task 6
+mod ble;
 
 use std::cell::RefCell;
 use std::rc::Rc;
