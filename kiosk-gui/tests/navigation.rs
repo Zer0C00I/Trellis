@@ -403,6 +403,55 @@ fn help_button_on_family_wallet_is_accessibility_discoverable() {
     slint::run_event_loop().unwrap();
 }
 
+fn skip_button_exists_only_while_pairing_is_active() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::Setup);
+
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Пропустить")
+                .next()
+                .is_none(),
+            "skip button must not exist outside pairing mode"
+        );
+
+        app.set_setup_pairing_active(true);
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Пропустить")
+                .any(|e| e.accessible_role() == Some(AccessibleRole::Button)),
+            "skip button must exist as a button in pairing mode"
+        );
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
+fn tapping_skip_fires_skip_pairing_requested() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::Setup);
+        app.set_setup_pairing_active(true);
+        app.set_setup_pin_text("482 913".into());
+
+        let fired = std::rc::Rc::new(std::cell::Cell::new(false));
+        let fired_clone = fired.clone();
+        app.on_skip_pairing_requested(move || fired_clone.set(true));
+
+        let button = ElementHandle::find_by_accessible_label(&app, "Пропустить")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .expect("skip button not found");
+        button.single_click(PointerEventButton::Left).await;
+
+        assert!(fired.get());
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -436,6 +485,12 @@ fn main() {
     help_button_on_family_wallet_is_accessibility_discoverable();
     println!("test help_button_on_family_wallet_is_accessibility_discoverable ... ok");
 
+    skip_button_exists_only_while_pairing_is_active();
+    println!("test skip_button_exists_only_while_pairing_is_active ... ok");
+
+    tapping_skip_fires_skip_pairing_requested();
+    println!("test tapping_skip_fires_skip_pairing_requested ... ok");
+
     println!();
-    println!("test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

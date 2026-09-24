@@ -19,6 +19,8 @@ export component AppWindow inherits Window {
 
     in property <image> setup-qr-image <=> setup.qr-image;
     in property <string> setup-status-text <=> setup.status-text;
+    in property <bool> setup-pairing-active <=> setup.pairing-active;
+    in property <string> setup-pin-text <=> setup.pin-text;
     in property <string> balance-text <=> wallet.balance-text;
     in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
     in property <string> selected-recipient-name <=> amount-select.recipient-name;
@@ -30,6 +32,7 @@ export component AppWindow inherits Window {
     in property <string> family-balance-text <=> family-wallet.balance-text;
     in property <[BeneficiaryItem]> family-beneficiaries <=> family-wallet.beneficiaries;
 
+    callback skip-pairing-requested <=> setup.skip-pairing-requested;
     callback beneficiary-selected <=> wallet.beneficiary-selected;
     callback family-wallet-requested <=> wallet.family-wallet-requested;
     callback help-requested <=> wallet.help-requested;

@@ -1,8 +1,19 @@
 import { Theme } from "theme.slint";
 
 export component SetupScreen inherits Rectangle {
+    // In funding mode this is the funding QR; in pairing mode Rust swaps in
+    // the pairing QR (the same property, so the Image element is shared).
     in property <image> qr-image;
     in property <string> status-text: "";
+
+    // Pairing mode: QR on the left, and on the right the instruction, the
+    // fallback code for people who cannot scan, and a way to skip. The
+    // kiosk has no input device for this step, so skipping is the only
+    // control. See the family-app design spec, "Identity & Bootstrap".
+    in property <bool> pairing-active: false;
+    in property <string> pin-text: "";
+
+    callback skip-pairing-requested();
 
     background: Theme.bg;
 
@@ -18,19 +29,74 @@ export component SetupScreen inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        Image {
-            source: qr-image;
-            width: 280px;
-            height: 280px;
-            horizontal-alignment: center;
+        if !pairing-active : VerticalLayout {
+            spacing: Theme.spacing;
+
+            Image {
+                source: qr-image;
+                width: 280px;
+                height: 280px;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: status-text;
+                color: Theme.fg;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
         }
 
-        Text {
-            text: status-text;
-            color: Theme.fg;
-            font-size: Theme.font-size-body;
-            horizontal-alignment: center;
-            wrap: word-wrap;
+        if pairing-active : HorizontalLayout {
+            spacing: Theme.spacing;
+
+            Image {
+                source: qr-image;
+                width: 280px;
+                height: 280px;
+            }
+
+            VerticalLayout {
+                spacing: Theme.spacing;
+                alignment: center;
+
+                Text {
+                    text: status-text;
+                    color: Theme.fg;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: pin-text;
+                    color: Theme.fg;
+                    font-size: Theme.font-size-code;
+                    font-weight: 700;
+                }
+
+                Rectangle {
+                    height: Theme.target-size;
+                    background: Theme.secondary-button-bg;
+                    border-color: Theme.secondary-button-border;
+                    border-width: 2px;
+                    border-radius: 8px;
+                    accessible-role: button;
+                    accessible-label: "Пропустить";
+
+                    TouchArea {
+                        clicked => { skip-pairing-requested(); }
+                    }
+
+                    Text {
+                        text: "Пропустить";
+                        color: Theme.secondary-button-fg;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
         }
     }
 }
