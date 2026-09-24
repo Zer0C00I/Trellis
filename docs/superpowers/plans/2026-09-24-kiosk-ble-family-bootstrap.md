@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** During the kiosk's first-run setup, after its personal vault exists, let one family member hand the kiosk their pubkey and name over Bluetooth LE (authenticated by a PIN the kiosk shows on screen) and register them on-chain as that vault's first trusted approver and payee.
+**Goal:** During the kiosk's first-run setup, after its personal vault exists, let one family member hand the kiosk their pubkey and name over Bluetooth LE — authenticated by scanning a QR code the kiosk shows (with a typed 6-digit fallback code) — and register them on-chain as that vault's first trusted approver and payee.
 
-**Architecture:** A shared wire-format module in `family-vault-client` (used later by family-app too), kiosk-only PIN/session logic (`kiosk-gui/src/pairing.rs`), the on-chain side (`kiosk-gui/src/family_member.rs`: idempotent, one atomic transaction), and a thin BLE peripheral adapter (`kiosk-gui/src/ble.rs`, `bluer`). `run_setup_flow` gains one step between vault initialisation and writing `kiosk.toml`, so it resumes cleanly after power loss. BLE-unavailable or skipped means setup simply continues.
+**Architecture:** A shared wire-format module in `family-vault-client` (used later by family-app too), kiosk-only credential/session logic (`kiosk-gui/src/pairing.rs`), the on-chain side (`kiosk-gui/src/family_member.rs`: idempotent, one atomic transaction), and a thin BLE peripheral adapter (`kiosk-gui/src/ble.rs`, `bluer`). `run_setup_flow` gains one step between vault initialisation and writing `kiosk.toml`, so it resumes cleanly after power loss. BLE-unavailable or skipped means setup simply continues.
 
-**Tech Stack:** Rust, `bluer 0.17.4` (BlueZ bindings, peripheral role), `tokio` (current-thread runtime inside the setup thread), Slint UI, existing `family-vault` Anchor program, existing `family-vault-client` crate.
+**Tech Stack:** Rust, `bluer 0.17.4` (BlueZ bindings, peripheral role), `tokio` (current-thread runtime inside the setup thread), Slint UI, existing `family-vault` Anchor program, existing `family-vault-client` crate, existing `setup::render_qr`.
 
-**Spec:** `docs/superpowers/specs/2026-09-23-family-app-design.md` — sections "Identity & Bootstrap" (protocol, wire format, failure behaviour). Related: `docs/superpowers/specs/2026-09-23-kiosk-first-run-setup-design.md`.
+**Spec:** `docs/superpowers/specs/2026-09-23-family-app-design.md` — sections "Identity & Bootstrap" (mechanism, fallback code, wire format, failure behaviour). Related: `docs/superpowers/specs/2026-09-23-kiosk-first-run-setup-design.md`.
 
 ## Global Constraints
 
@@ -17,16 +17,16 @@
 - Two incompatible Solana `Pubkey` generations coexist: `anchor_lang::prelude::Pubkey` (Anchor bindings, `ProvisioningConfig.program_id`) and `solana_pubkey::Pubkey` (client side). Convert ONLY with `family_vault_client::{to_anchor, to_client}`; never hand-roll `new_from_array(x.to_bytes())` in new code.
 - Exact dependency pins, empirically verified to compile together in `kiosk-gui` with `solana-client =4.2.2` and no duplicate `tokio`: `bluer = { version = "0.17.4", features = ["bluetoothd"] }`, `tokio = { version = "1", features = ["rt", "time", "macros", "sync"] }`, `futures = "0.3"`. Do not change versions or features.
 - `kiosk-gui` becomes Linux-only (`bluer` is BlueZ-only). Accepted: the kiosk is Linux hardware.
-- The UI thread never does I/O. Background work talks to Slint only via `slint::invoke_from_event_loop`. `slint::Image` is not `Send`.
-- **Never log the PIN.** Logging the pubkey and name is fine.
+- The UI thread never does I/O. Background work talks to Slint only via `slint::invoke_from_event_loop`. `slint::Image` is not `Send`: build it (`setup::render_qr`) inside the UI-thread closure from a `String`.
+- **Never log the secret or the 6-digit code.** Logging the pubkey and name is fine.
 - UI copy is plain Russian, no jargon (no "BLE", "GATT", "pubkey", "vault" on screen). Use `Theme` tokens only, 60px minimum touch targets, no animation or blinking (project WCAG 2.2 AAA / ETSI EG 203 350 conventions).
 - Tests use real logic, not mocks. Hardware-dependent tests are `#[ignore = "..."]` and run manually.
 
 ## File Structure
 
-- Create `tools/family-vault-client/src/pairing.rs` — shared wire format: constants, `PairingRequest`, `FrameError`, `encode_frame`, `FrameAssembler`.
+- Create `tools/family-vault-client/src/pairing.rs` — shared wire format: constants, `AuthField`, `PairingRequest`, `FrameError`, `auth_from_pin`, `encode_qr_payload`/`decode_qr_payload`, `encode_frame`, `FrameAssembler`.
 - Modify `tools/family-vault-client/src/lib.rs` (`pub mod pairing;`, `to_client_metas`), `tools/family-vault-client/Cargo.toml`.
-- Create `kiosk-gui/src/pairing.rs` — kiosk-side PIN generation/gating and `PairingSession`.
+- Create `kiosk-gui/src/pairing.rs` — kiosk-side `PairingCredentials`, `AuthGate`, `PairingSession`.
 - Create `kiosk-gui/src/family_member.rs` — membership planning, instruction building, RPC glue.
 - Create `kiosk-gui/src/ble.rs` — `bluer` peripheral adapter.
 - Modify `kiosk-gui/src/setup.rs` (funding floor), `kiosk-gui/src/chain.rs` (use `to_client_metas`), `kiosk-gui/src/main.rs`, `kiosk-gui/Cargo.toml`.
@@ -45,9 +45,12 @@
 - Consumes: `solana_pubkey::Pubkey`.
 - Produces (all `pub`, module `family_vault_client::pairing`):
   - `SERVICE_UUID_U128: u128`, `PAIRING_CHARACTERISTIC_UUID_U128: u128`
-  - `PIN_LEN: usize = 6`, `PUBKEY_LEN: usize = 32`, `MAX_NAME_LEN: usize = 32`, `STALE_AFTER: Duration`
-  - `struct PairingRequest { pin: String, pubkey: Pubkey, name: String }` (`Debug, Clone, PartialEq, Eq`)
+  - `AUTH_LEN: usize = 16`, `PIN_LEN: usize = 6`, `PUBKEY_LEN: usize = 32`, `MAX_NAME_LEN: usize = 32`, `STALE_AFTER: Duration`, `QR_PREFIX: &str = "fvpair1:"`
+  - `type AuthField = [u8; AUTH_LEN]`
+  - `struct PairingRequest { auth: AuthField, pubkey: Pubkey, name: String }` (`Debug, Clone, PartialEq, Eq`)
   - `enum FrameError { BadPin, NameEmpty, NameTooLong, NameNotUtf8, TooLong }` (`Debug, Clone, Copy, PartialEq, Eq`)
+  - `fn auth_from_pin(&str) -> Result<AuthField, FrameError>` (6 ASCII digits, zero-padded to 16 bytes)
+  - `fn encode_qr_payload(&AuthField) -> String` (`"fvpair1:" + 32 lowercase hex chars`), `fn decode_qr_payload(&str) -> Option<AuthField>`
   - `fn encode_frame(&PairingRequest) -> Result<Vec<u8>, FrameError>`
   - `struct FrameAssembler` (`Debug, Default`) with `fn push(&mut self, chunk: &[u8], now: std::time::Instant) -> Result<Option<PairingRequest>, FrameError>`
 
@@ -79,7 +82,7 @@ mod tests {
 
     fn sample() -> PairingRequest {
         PairingRequest {
-            pin: "482913".to_string(),
+            auth: [0xAB; AUTH_LEN],
             pubkey: Pubkey::new_from_array([7u8; 32]),
             name: "Внук Саша".to_string(),
         }
@@ -88,6 +91,8 @@ mod tests {
     fn valid_frame() -> Vec<u8> {
         encode_frame(&sample()).unwrap()
     }
+
+    // --- frame assembly -------------------------------------------------
 
     #[test]
     fn a_frame_delivered_in_one_write_round_trips() {
@@ -150,39 +155,28 @@ mod tests {
         assert_eq!(assembler.push(&frame[10..], soon).unwrap(), Some(sample()));
     }
 
-    #[test]
-    fn a_non_digit_pin_is_rejected() {
-        let mut frame = valid_frame();
-        frame[5] = b'x';
-        let mut assembler = FrameAssembler::default();
-        assert_eq!(
-            assembler.push(&frame, Instant::now()),
-            Err(FrameError::BadPin)
-        );
+    fn header_with_name_len(n: u8) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&[0xAB; AUTH_LEN]);
+        frame.extend_from_slice(&[7u8; 32]);
+        frame.push(n);
+        frame
     }
 
     #[test]
     fn a_zero_length_name_is_rejected() {
-        let mut frame = Vec::new();
-        frame.extend_from_slice(b"482913");
-        frame.extend_from_slice(&[7u8; 32]);
-        frame.push(0);
         let mut assembler = FrameAssembler::default();
         assert_eq!(
-            assembler.push(&frame, Instant::now()),
+            assembler.push(&header_with_name_len(0), Instant::now()),
             Err(FrameError::NameEmpty)
         );
     }
 
     #[test]
     fn a_name_longer_than_32_bytes_is_rejected_as_soon_as_the_header_is_complete() {
-        let mut frame = Vec::new();
-        frame.extend_from_slice(b"482913");
-        frame.extend_from_slice(&[7u8; 32]);
-        frame.push(33);
         let mut assembler = FrameAssembler::default();
         assert_eq!(
-            assembler.push(&frame, Instant::now()),
+            assembler.push(&header_with_name_len(33), Instant::now()),
             Err(FrameError::NameTooLong)
         );
     }
@@ -200,10 +194,7 @@ mod tests {
 
     #[test]
     fn a_name_that_is_not_utf8_is_rejected() {
-        let mut frame = Vec::new();
-        frame.extend_from_slice(b"482913");
-        frame.extend_from_slice(&[7u8; 32]);
-        frame.push(2);
+        let mut frame = header_with_name_len(2);
         frame.extend_from_slice(&[0xff, 0xfe]);
         let mut assembler = FrameAssembler::default();
         assert_eq!(
@@ -223,15 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_rejects_bad_input() {
-        let mut req = sample();
-        req.pin = "12345".to_string();
-        assert_eq!(encode_frame(&req), Err(FrameError::BadPin));
-
-        let mut req = sample();
-        req.pin = "12345x".to_string();
-        assert_eq!(encode_frame(&req), Err(FrameError::BadPin));
-
+    fn encode_rejects_bad_names() {
         let mut req = sample();
         req.name = String::new();
         assert_eq!(encode_frame(&req), Err(FrameError::NameEmpty));
@@ -241,20 +224,98 @@ mod tests {
         assert_eq!(encode_frame(&req), Err(FrameError::NameTooLong));
     }
 
+    // --- fallback code as an auth field ---------------------------------
+
+    #[test]
+    fn auth_from_pin_is_the_six_digits_zero_padded() {
+        let field = auth_from_pin("482913").unwrap();
+        assert_eq!(&field[..6], b"482913");
+        assert!(field[6..].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn auth_from_pin_rejects_anything_but_six_ascii_digits() {
+        assert_eq!(auth_from_pin("12345"), Err(FrameError::BadPin));
+        assert_eq!(auth_from_pin("1234567"), Err(FrameError::BadPin));
+        assert_eq!(auth_from_pin("12345x"), Err(FrameError::BadPin));
+        assert_eq!(auth_from_pin("١٢٣٤٥٦"), Err(FrameError::BadPin));
+        assert_eq!(auth_from_pin(""), Err(FrameError::BadPin));
+    }
+
+    // --- QR payload -----------------------------------------------------
+
+    #[test]
+    fn a_qr_payload_round_trips() {
+        let secret: AuthField = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd,
+            0xfe, 0xff,
+        ];
+        let text = encode_qr_payload(&secret);
+        assert_eq!(text, "fvpair1:0001020304050607f8f9fafbfcfdfeff");
+        assert_eq!(decode_qr_payload(&text), Some(secret));
+    }
+
+    #[test]
+    fn decode_accepts_uppercase_hex() {
+        let secret: AuthField = [0xAB; AUTH_LEN];
+        let upper = format!("fvpair1:{}", "AB".repeat(16));
+        assert_eq!(decode_qr_payload(&upper), Some(secret));
+    }
+
+    #[test]
+    fn decode_rejects_malformed_payloads() {
+        let good = format!("fvpair1:{}", "ab".repeat(16));
+        assert!(decode_qr_payload(&good).is_some());
+
+        assert_eq!(decode_qr_payload(&"ab".repeat(16)), None, "missing prefix");
+        assert_eq!(
+            decode_qr_payload(&format!("fvpair2:{}", "ab".repeat(16))),
+            None,
+            "unknown version"
+        );
+        assert_eq!(decode_qr_payload("fvpair1:abcd"), None, "too short");
+        assert_eq!(
+            decode_qr_payload(&format!("fvpair1:{}", "ab".repeat(17))),
+            None,
+            "too long"
+        );
+        assert_eq!(
+            decode_qr_payload(&format!("fvpair1:{}", "g".repeat(32))),
+            None,
+            "not hex"
+        );
+        // `u8::from_str_radix` alone would accept a leading '+'.
+        assert_eq!(
+            decode_qr_payload(&format!("fvpair1:{}", "+f".repeat(16))),
+            None,
+            "sign characters are not hex digits"
+        );
+    }
+
+    // --- misc -----------------------------------------------------------
+
     #[test]
     fn max_name_len_matches_the_on_chain_limit() {
         assert_eq!(MAX_NAME_LEN, family_vault::state::BENEFICIARY_NAME_LEN);
     }
 
     // Manual helper for testing the kiosk with a phone BLE tool (e.g. nRF
-    // Connect): prints the hex of a frame to paste into a write. Run with
+    // Connect): prints the hex of a frame to paste into a write. Give it
+    // EITHER the text scanned from the kiosk's QR OR the fallback code:
+    //   PAIR_QR='fvpair1:…' PAIR_PUBKEY=<base58> PAIR_NAME="Внук Саша" \
+    //   cargo test -p family-vault-client print_frame_hex -- --ignored --nocapture
     //   PAIR_PIN=123456 PAIR_PUBKEY=<base58> PAIR_NAME="Внук Саша" \
     //   cargo test -p family-vault-client print_frame_hex -- --ignored --nocapture
     #[test]
-    #[ignore = "manual helper: reads PAIR_PIN, PAIR_PUBKEY, PAIR_NAME from the environment"]
+    #[ignore = "manual helper: reads PAIR_QR or PAIR_PIN, plus PAIR_PUBKEY and PAIR_NAME"]
     fn print_frame_hex() {
+        let auth = match std::env::var("PAIR_QR") {
+            Ok(text) => decode_qr_payload(&text).expect("PAIR_QR is not a valid pairing QR text"),
+            Err(_) => auth_from_pin(&std::env::var("PAIR_PIN").expect("set PAIR_QR or PAIR_PIN"))
+                .expect("PAIR_PIN must be six digits"),
+        };
         let request = PairingRequest {
-            pin: std::env::var("PAIR_PIN").expect("set PAIR_PIN"),
+            auth,
             pubkey: std::env::var("PAIR_PUBKEY")
                 .expect("set PAIR_PUBKEY")
                 .parse()
@@ -271,7 +332,7 @@ mod tests {
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `cargo test --package family-vault-client pairing::tests 2>&1 | tail -20`
-Expected: compile FAIL — unresolved names `PairingRequest`, `encode_frame`, `FrameAssembler`, `FrameError`, `STALE_AFTER`, `MAX_NAME_LEN`, `Pubkey`.
+Expected: compile FAIL — unresolved names `PairingRequest`, `encode_frame`, `FrameAssembler`, `FrameError`, `AUTH_LEN`, `STALE_AFTER`, `MAX_NAME_LEN`, `auth_from_pin`, `encode_qr_payload`, `decode_qr_payload`, `AuthField`, `Pubkey`.
 
 - [ ] **Step 4: Write the implementation**
 
@@ -286,11 +347,15 @@ Insert this at the TOP of `tools/family-vault-client/src/pairing.rs`, above the 
 //! One writable characteristic carries a single frame:
 //!
 //! ```text
-//! [ 6 bytes: ASCII digits, the PIN shown on the kiosk ]
+//! [ 16 bytes: auth field ]
 //! [ 32 bytes: the family member's pubkey ]
 //! [ 1 byte: N, the name length in bytes, 1..=32 ]
 //! [ N bytes: UTF-8 name ]
 //! ```
+//!
+//! The auth field is either the 16-byte secret carried by the QR code the
+//! kiosk shows ([`encode_qr_payload`]) or the kiosk's 6-digit fallback code
+//! zero-padded to 16 bytes ([`auth_from_pin`]); the kiosk accepts either.
 //!
 //! A central may deliver the frame in one write or several (an ATT payload
 //! can be as small as 20 bytes), so the receiving side reassembles with
@@ -306,28 +371,34 @@ use solana_pubkey::Pubkey;
 pub const SERVICE_UUID_U128: u128 = 0x8f1a0000_5b1e_4c6a_9a7e_0d2f3a1b4c5d;
 pub const PAIRING_CHARACTERISTIC_UUID_U128: u128 = 0x8f1a0001_5b1e_4c6a_9a7e_0d2f3a1b4c5d;
 
+pub const AUTH_LEN: usize = 16;
 pub const PIN_LEN: usize = 6;
 pub const PUBKEY_LEN: usize = 32;
 /// Mirrors `family_vault::state::BENEFICIARY_NAME_LEN` (a test pins them
 /// together) — the program rejects longer names.
 pub const MAX_NAME_LEN: usize = 32;
-const HEADER_LEN: usize = PIN_LEN + PUBKEY_LEN + 1;
+const HEADER_LEN: usize = AUTH_LEN + PUBKEY_LEN + 1;
+
+/// Prefix (and version) of the text encoded in the kiosk's pairing QR.
+pub const QR_PREFIX: &str = "fvpair1:";
 
 /// A partially-received frame older than this is dropped before the next
 /// write is appended, so a central that gave up halfway cannot corrupt the
 /// next attempt.
 pub const STALE_AFTER: Duration = Duration::from_secs(3);
 
+pub type AuthField = [u8; AUTH_LEN];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PairingRequest {
-    pub pin: String,
+    pub auth: AuthField,
     pub pubkey: Pubkey,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameError {
-    /// The PIN is not exactly six ASCII digits.
+    /// The fallback code is not exactly six ASCII digits.
     BadPin,
     NameEmpty,
     NameTooLong,
@@ -336,10 +407,38 @@ pub enum FrameError {
     TooLong,
 }
 
-pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
-    if request.pin.len() != PIN_LEN || !request.pin.bytes().all(|b| b.is_ascii_digit()) {
+/// The fallback code as an auth field: the six ASCII digits, zero-padded.
+pub fn auth_from_pin(pin: &str) -> Result<AuthField, FrameError> {
+    if pin.len() != PIN_LEN || !pin.bytes().all(|b| b.is_ascii_digit()) {
         return Err(FrameError::BadPin);
     }
+    let mut field = [0u8; AUTH_LEN];
+    field[..PIN_LEN].copy_from_slice(pin.as_bytes());
+    Ok(field)
+}
+
+/// The text the kiosk encodes in its pairing QR: [`QR_PREFIX`] followed by
+/// the secret as 32 lowercase hex characters.
+pub fn encode_qr_payload(secret: &AuthField) -> String {
+    let hex: String = secret.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{QR_PREFIX}{hex}")
+}
+
+/// Parses text scanned from the kiosk's QR. Strict: exact prefix, exactly
+/// 32 hex digits (either case).
+pub fn decode_qr_payload(text: &str) -> Option<AuthField> {
+    let hex = text.strip_prefix(QR_PREFIX)?;
+    if hex.len() != AUTH_LEN * 2 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut secret = [0u8; AUTH_LEN];
+    for (i, byte) in secret.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(secret)
+}
+
+pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
     let name = request.name.as_bytes();
     if name.is_empty() {
         return Err(FrameError::NameEmpty);
@@ -348,7 +447,7 @@ pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
         return Err(FrameError::NameTooLong);
     }
     let mut frame = Vec::with_capacity(HEADER_LEN + name.len());
-    frame.extend_from_slice(request.pin.as_bytes());
+    frame.extend_from_slice(&request.auth);
     frame.extend_from_slice(&request.pubkey.to_bytes());
     frame.push(name.len() as u8);
     frame.extend_from_slice(name);
@@ -366,7 +465,8 @@ impl FrameAssembler {
     /// Feeds one write. `Ok(Some(_))` means a complete, valid frame was
     /// assembled; `Ok(None)` means more bytes are needed; `Err(_)` means
     /// the frame is malformed. After `Ok(Some(_))` or `Err(_)` the buffer
-    /// is cleared, so the next write starts a fresh frame.
+    /// is cleared, so the next write starts a fresh frame. The auth field
+    /// is opaque here — checking it is the receiver's job.
     pub fn push(
         &mut self,
         chunk: &[u8],
@@ -406,21 +506,18 @@ impl FrameAssembler {
             return Err(FrameError::TooLong);
         }
 
-        let pin_bytes = &self.buf[..PIN_LEN];
-        if !pin_bytes.iter().all(u8::is_ascii_digit) {
-            return Err(FrameError::BadPin);
-        }
-        let pin = String::from_utf8_lossy(pin_bytes).into_owned();
+        let mut auth = [0u8; AUTH_LEN];
+        auth.copy_from_slice(&self.buf[..AUTH_LEN]);
 
         let mut pubkey_bytes = [0u8; PUBKEY_LEN];
-        pubkey_bytes.copy_from_slice(&self.buf[PIN_LEN..PIN_LEN + PUBKEY_LEN]);
+        pubkey_bytes.copy_from_slice(&self.buf[AUTH_LEN..AUTH_LEN + PUBKEY_LEN]);
 
         let name = std::str::from_utf8(&self.buf[HEADER_LEN..total])
             .map_err(|_| FrameError::NameNotUtf8)?
             .to_string();
 
         Ok(Some(PairingRequest {
-            pin,
+            auth,
             pubkey: Pubkey::new_from_array(pubkey_bytes),
             name,
         }))
@@ -431,7 +528,7 @@ impl FrameAssembler {
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test --package family-vault-client 2>&1 | tail -30`
-Expected: PASS — the 9 existing tests plus 13 new pairing tests (`22 passed; 0 failed; 1 ignored`).
+Expected: PASS — the 9 existing tests plus 17 new pairing tests (`26 passed; 0 failed; 1 ignored`).
 
 - [ ] **Step 6: Lint and commit**
 
@@ -441,30 +538,33 @@ Run: `cargo clippy --package family-vault-client --all-targets 2>&1 | tail -10` 
 git add tools/family-vault-client
 git commit -m "feat(family-vault-client): shared BLE pairing wire format
 
-Frame = PIN(6) + pubkey(32) + name length(1) + name. Shared so the kiosk
-(peripheral) and family-app (central) use one encoder/decoder. Assembler
-tolerates any write chunking and discards stale partial frames.
+Frame = auth(16) + pubkey(32) + name length(1) + name. The auth field is
+the secret from the kiosk's QR or the zero-padded 6-digit fallback code.
+Shared so the kiosk (peripheral) and family-app (central) use one
+encoder/decoder. Assembler tolerates any write chunking and discards stale
+partial frames; QR payload parsing is strict.
 
 Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 ```
 
 ---
 
-### Task 2: Kiosk-side PIN handling and `PairingSession`
+### Task 2: Kiosk-side credentials, gate and `PairingSession`
 
 **Files:**
 - Create: `kiosk-gui/src/pairing.rs`
 - Modify: `kiosk-gui/src/main.rs` (declare the module)
 
 **Interfaces:**
-- Consumes (Task 1): `family_vault_client::pairing::{FrameAssembler, FrameError, PairingRequest}`, `encode_frame` (tests only).
+- Consumes (Task 1): `family_vault_client::pairing::{AuthField, AUTH_LEN, PIN_LEN, FrameAssembler, FrameError, PairingRequest, encode_qr_payload, auth_from_pin, encode_frame}`.
 - Produces (module `crate::pairing`):
-  - `MAX_WRONG_PIN_ATTEMPTS: u32 = 5`
-  - `fn generate_pin() -> std::io::Result<String>` (6 ASCII digits from `/dev/urandom`)
+  - `MAX_WRONG_ATTEMPTS: u32 = 5`
+  - `struct PairingCredentials` (`Debug, Clone, PartialEq, Eq`): `from_random_bytes([u8; 20]) -> Self`, `secret(&self) -> &AuthField`, `pin(&self) -> &str`, `qr_payload(&self) -> String`
+  - `fn generate_credentials() -> std::io::Result<PairingCredentials>` (OS RNG)
   - `fn display_pin(pin: &str) -> String` (`"482913"` → `"482 913"`)
-  - `enum PinCheck { Accepted, Wrong { attempts_left: u32 }, LockedOut }`, `struct PinGate` (`new(String)`, `check(&mut self, &str) -> PinCheck`, `rotate(&mut self, String)`)
-  - `enum WriteOutcome { NeedMore, Accepted(PairingRequest), WrongPin { attempts_left: u32 }, LockedOut { new_pin: Option<String> }, Malformed(FrameError) }` (`Debug, PartialEq, Eq`)
-  - `struct PairingSession` (`new(String)`, `on_write(&mut self, chunk: &[u8], now: Instant, next_pin: impl FnOnce() -> Option<String>) -> WriteOutcome`)
+  - `enum AuthCheck { Accepted, Wrong { attempts_left: u32 }, LockedOut }`, `struct AuthGate` (`new(PairingCredentials)`, `check(&mut self, &AuthField) -> AuthCheck`, `rotate(&mut self, PairingCredentials)`)
+  - `enum WriteOutcome { NeedMore, Accepted(PairingRequest), WrongAuth { attempts_left: u32 }, LockedOut { new_credentials: Option<PairingCredentials> }, Malformed(FrameError) }` (`Debug, PartialEq, Eq`)
+  - `struct PairingSession` (`new(PairingCredentials)`, `on_write(&mut self, chunk: &[u8], now: Instant, next_credentials: impl FnOnce() -> Option<PairingCredentials>) -> WriteOutcome`)
 
 - [ ] **Step 1: Declare the module**
 
@@ -483,37 +583,67 @@ Create `kiosk-gui/src/pairing.rs` containing ONLY this test module:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use family_vault_client::pairing::{encode_frame, PairingRequest};
+    use family_vault_client::pairing::{auth_from_pin, encode_frame, PairingRequest};
     use solana_pubkey::Pubkey;
 
-    fn frame_with_pin(pin: &str) -> Vec<u8> {
-        encode_frame(&PairingRequest {
-            pin: pin.to_string(),
-            pubkey: Pubkey::new_from_array([7u8; 32]),
-            name: "Внук Саша".to_string(),
-        })
-        .unwrap()
+    /// secret = [1; 16]; pin = u32::from_le_bytes([1;4]) % 1_000_000 = 843009
+    fn creds() -> PairingCredentials {
+        PairingCredentials::from_random_bytes([1u8; 20])
     }
 
-    fn request_with_pin(pin: &str) -> PairingRequest {
+    fn other_creds() -> PairingCredentials {
+        PairingCredentials::from_random_bytes([2u8; 20])
+    }
+
+    fn frame_with_auth(auth: AuthField) -> Vec<u8> {
+        encode_frame(&request_with_auth(auth)).unwrap()
+    }
+
+    fn request_with_auth(auth: AuthField) -> PairingRequest {
         PairingRequest {
-            pin: pin.to_string(),
+            auth,
             pubkey: Pubkey::new_from_array([7u8; 32]),
             name: "Внук Саша".to_string(),
         }
     }
 
+    fn wrong_auth() -> AuthField {
+        [0xEE; AUTH_LEN]
+    }
+
+    // --- credentials ----------------------------------------------------
+
     #[test]
-    fn generate_pin_is_six_ascii_digits() {
-        let pin = generate_pin().unwrap();
-        assert_eq!(pin.len(), 6);
-        assert!(pin.bytes().all(|b| b.is_ascii_digit()), "got {pin}");
+    fn from_random_bytes_derives_a_zero_padded_six_digit_pin() {
+        let mut bytes = [9u8; 20];
+        bytes[16..].copy_from_slice(&42u32.to_le_bytes());
+        let c = PairingCredentials::from_random_bytes(bytes);
+        assert_eq!(c.pin(), "000042");
+        assert_eq!(c.secret(), &[9u8; 16]);
     }
 
     #[test]
-    fn format_pin_zero_pads() {
-        assert_eq!(format_pin(42), "000042");
-        assert_eq!(format_pin(999_999), "999999");
+    fn the_pin_field_matches_the_shared_encoding_of_the_pin() {
+        let c = creds();
+        assert_eq!(c.pin_field, auth_from_pin(c.pin()).unwrap());
+    }
+
+    #[test]
+    fn qr_payload_carries_the_secret() {
+        let c = creds();
+        assert_eq!(
+            family_vault_client::pairing::decode_qr_payload(&c.qr_payload()),
+            Some(*c.secret())
+        );
+    }
+
+    #[test]
+    fn generated_credentials_are_well_formed_and_differ_between_calls() {
+        let a = generate_credentials().unwrap();
+        let b = generate_credentials().unwrap();
+        assert_eq!(a.pin().len(), 6);
+        assert!(a.pin().bytes().all(|x| x.is_ascii_digit()));
+        assert_ne!(a.secret(), b.secret());
     }
 
     #[test]
@@ -521,111 +651,146 @@ mod tests {
         assert_eq!(display_pin("482913"), "482 913");
     }
 
+    // --- gate -----------------------------------------------------------
+
     #[test]
-    fn gate_accepts_the_right_pin() {
-        let mut gate = PinGate::new("111111".to_string());
-        assert_eq!(gate.check("111111"), PinCheck::Accepted);
+    fn gate_accepts_the_qr_secret() {
+        let mut gate = AuthGate::new(creds());
+        assert_eq!(gate.check(creds().secret()), AuthCheck::Accepted);
+    }
+
+    #[test]
+    fn gate_accepts_the_fallback_code() {
+        let mut gate = AuthGate::new(creds());
+        let field = auth_from_pin(creds().pin()).unwrap();
+        assert_eq!(gate.check(&field), AuthCheck::Accepted);
+    }
+
+    #[test]
+    fn gate_rejects_an_all_zero_auth_field() {
+        // Guards against ever treating an unset/zero field as a match.
+        let mut gate = AuthGate::new(creds());
+        assert_eq!(
+            gate.check(&[0u8; AUTH_LEN]),
+            AuthCheck::Wrong { attempts_left: 4 }
+        );
     }
 
     #[test]
     fn gate_counts_down_wrong_attempts_then_locks_out() {
-        let mut gate = PinGate::new("111111".to_string());
-        assert_eq!(gate.check("000000"), PinCheck::Wrong { attempts_left: 4 });
-        assert_eq!(gate.check("000000"), PinCheck::Wrong { attempts_left: 3 });
-        assert_eq!(gate.check("000000"), PinCheck::Wrong { attempts_left: 2 });
-        assert_eq!(gate.check("000000"), PinCheck::Wrong { attempts_left: 1 });
-        assert_eq!(gate.check("000000"), PinCheck::LockedOut);
+        let mut gate = AuthGate::new(creds());
+        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 4 });
+        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 3 });
+        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 2 });
+        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 1 });
+        assert_eq!(gate.check(&wrong_auth()), AuthCheck::LockedOut);
     }
 
     #[test]
-    fn a_locked_gate_rejects_even_the_right_pin_until_rotated() {
-        let mut gate = PinGate::new("111111".to_string());
-        for _ in 0..MAX_WRONG_PIN_ATTEMPTS {
-            gate.check("000000");
+    fn a_locked_gate_rejects_even_correct_credentials_until_rotated() {
+        let mut gate = AuthGate::new(creds());
+        for _ in 0..MAX_WRONG_ATTEMPTS {
+            gate.check(&wrong_auth());
         }
-        assert_eq!(gate.check("111111"), PinCheck::LockedOut);
+        assert_eq!(gate.check(creds().secret()), AuthCheck::LockedOut);
 
-        gate.rotate("222222".to_string());
-        assert_eq!(gate.check("111111"), PinCheck::Wrong { attempts_left: 4 });
-        assert_eq!(gate.check("222222"), PinCheck::Accepted);
+        gate.rotate(other_creds());
+        // Old credentials are dead, new ones work.
+        assert_eq!(
+            gate.check(creds().secret()),
+            AuthCheck::Wrong { attempts_left: 4 }
+        );
+        assert_eq!(
+            gate.check(&auth_from_pin(creds().pin()).unwrap()),
+            AuthCheck::Wrong { attempts_left: 3 }
+        );
+        assert_eq!(gate.check(other_creds().secret()), AuthCheck::Accepted);
+    }
+
+    // --- session --------------------------------------------------------
+
+    #[test]
+    fn session_accepts_the_qr_secret_in_one_write() {
+        let mut session = PairingSession::new(creds());
+        let out = session.on_write(&frame_with_auth(*creds().secret()), Instant::now(), || None);
+        assert_eq!(
+            out,
+            WriteOutcome::Accepted(request_with_auth(*creds().secret()))
+        );
     }
 
     #[test]
-    fn session_accepts_a_correct_single_write() {
-        let mut session = PairingSession::new("482913".to_string());
-        let out = session.on_write(&frame_with_pin("482913"), Instant::now(), || None);
-        assert_eq!(out, WriteOutcome::Accepted(request_with_pin("482913")));
+    fn session_accepts_the_fallback_code() {
+        let mut session = PairingSession::new(creds());
+        let field = auth_from_pin(creds().pin()).unwrap();
+        let out = session.on_write(&frame_with_auth(field), Instant::now(), || None);
+        assert_eq!(out, WriteOutcome::Accepted(request_with_auth(field)));
     }
 
     #[test]
     fn session_asks_for_more_until_the_frame_is_complete() {
-        let mut session = PairingSession::new("482913".to_string());
+        let mut session = PairingSession::new(creds());
         let now = Instant::now();
-        let frame = frame_with_pin("482913");
-        assert_eq!(
-            session.on_write(&frame[..20], now, || None),
-            WriteOutcome::NeedMore
-        );
+        let frame = frame_with_auth(*creds().secret());
+        assert_eq!(session.on_write(&frame[..20], now, || None), WriteOutcome::NeedMore);
         assert_eq!(
             session.on_write(&frame[20..], now, || None),
-            WriteOutcome::Accepted(request_with_pin("482913"))
+            WriteOutcome::Accepted(request_with_auth(*creds().secret()))
         );
     }
 
     #[test]
-    fn session_reports_a_wrong_pin() {
-        let mut session = PairingSession::new("482913".to_string());
-        let out = session.on_write(&frame_with_pin("000000"), Instant::now(), || None);
-        assert_eq!(out, WriteOutcome::WrongPin { attempts_left: 4 });
+    fn session_reports_wrong_credentials() {
+        let mut session = PairingSession::new(creds());
+        let out = session.on_write(&frame_with_auth(wrong_auth()), Instant::now(), || None);
+        assert_eq!(out, WriteOutcome::WrongAuth { attempts_left: 4 });
     }
 
     #[test]
     fn session_reports_malformed_frames() {
-        let mut session = PairingSession::new("482913".to_string());
-        let mut frame = frame_with_pin("482913");
-        frame[0] = b'x';
+        let mut session = PairingSession::new(creds());
+        let mut frame = frame_with_auth(*creds().secret());
+        frame.push(0); // trailing byte
         let out = session.on_write(&frame, Instant::now(), || None);
-        assert_eq!(out, WriteOutcome::Malformed(FrameError::BadPin));
+        assert_eq!(out, WriteOutcome::Malformed(FrameError::TooLong));
     }
 
     #[test]
-    fn session_rotates_the_pin_after_too_many_wrong_attempts() {
-        let mut session = PairingSession::new("482913".to_string());
+    fn session_rotates_credentials_after_too_many_wrong_attempts() {
+        let mut session = PairingSession::new(creds());
         let now = Instant::now();
         for _ in 0..4 {
-            session.on_write(&frame_with_pin("000000"), now, || None);
+            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
         }
-        let out = session.on_write(&frame_with_pin("000000"), now, || {
-            Some("135790".to_string())
-        });
+        let out = session.on_write(&frame_with_auth(wrong_auth()), now, || Some(other_creds()));
         assert_eq!(
             out,
             WriteOutcome::LockedOut {
-                new_pin: Some("135790".to_string())
+                new_credentials: Some(other_creds())
             }
         );
 
-        // The old PIN is dead, the new one works.
+        // The old QR secret and old code are dead, the new secret works.
         assert_eq!(
-            session.on_write(&frame_with_pin("482913"), now, || None),
-            WriteOutcome::WrongPin { attempts_left: 4 }
+            session.on_write(&frame_with_auth(*creds().secret()), now, || None),
+            WriteOutcome::WrongAuth { attempts_left: 4 }
         );
         assert_eq!(
-            session.on_write(&frame_with_pin("135790"), now, || None),
-            WriteOutcome::Accepted(request_with_pin("135790"))
+            session.on_write(&frame_with_auth(*other_creds().secret()), now, || None),
+            WriteOutcome::Accepted(request_with_auth(*other_creds().secret()))
         );
     }
 
     #[test]
-    fn session_stays_locked_if_a_new_pin_cannot_be_generated() {
-        let mut session = PairingSession::new("482913".to_string());
+    fn session_stays_locked_if_new_credentials_cannot_be_generated() {
+        let mut session = PairingSession::new(creds());
         let now = Instant::now();
         for _ in 0..5 {
-            session.on_write(&frame_with_pin("000000"), now, || None);
+            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
         }
-        // Even the correct PIN must not get in while locked and un-rotated.
-        let out = session.on_write(&frame_with_pin("482913"), now, || None);
-        assert_eq!(out, WriteOutcome::LockedOut { new_pin: None });
+        // Even the correct secret must not get in while locked and un-rotated.
+        let out = session.on_write(&frame_with_auth(*creds().secret()), now, || None);
+        assert_eq!(out, WriteOutcome::LockedOut { new_credentials: None });
     }
 }
 ```
@@ -633,38 +798,80 @@ mod tests {
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `cargo test --package kiosk-gui pairing::tests 2>&1 | tail -15`
-Expected: compile FAIL — unresolved `generate_pin`, `format_pin`, `display_pin`, `PinGate`, `PinCheck`, `PairingSession`, `WriteOutcome`, `MAX_WRONG_PIN_ATTEMPTS`, `Instant`, `FrameError`.
+Expected: compile FAIL — unresolved `PairingCredentials`, `generate_credentials`, `display_pin`, `AuthGate`, `AuthCheck`, `PairingSession`, `WriteOutcome`, `MAX_WRONG_ATTEMPTS`, `AuthField`, `AUTH_LEN`, `Instant`, `FrameError`.
 
 - [ ] **Step 4: Write the implementation**
 
 Insert at the TOP of `kiosk-gui/src/pairing.rs`, above the test module:
 
 ```rust
-//! Kiosk-side logic for first-run family-member pairing: the PIN the kiosk
-//! shows, the gate that checks it, and `PairingSession`, which turns raw
+//! Kiosk-side logic for first-run family-member pairing: the credentials
+//! the kiosk shows (a QR carrying a random secret, plus a 6-digit fallback
+//! code), the gate that checks them, and `PairingSession`, which turns raw
 //! BLE writes into an outcome. Pure logic — no Bluetooth and no chain I/O
 //! here (see `ble.rs` and `family_member.rs`), so it is fully unit-tested.
 //! The wire format itself lives in `family_vault_client::pairing`.
 
 use std::time::Instant;
 
-use family_vault_client::pairing::{FrameAssembler, FrameError, PairingRequest};
+use family_vault_client::pairing::{
+    encode_qr_payload, AuthField, FrameAssembler, FrameError, PairingRequest, AUTH_LEN, PIN_LEN,
+};
 
-/// After this many wrong PINs the kiosk rotates to a fresh PIN, so the
-/// 6-digit space cannot be brute-forced by repeated guessing.
-pub const MAX_WRONG_PIN_ATTEMPTS: u32 = 5;
+/// After this many wrong attempts the kiosk rotates to fresh credentials,
+/// so the guessable 6-digit code cannot be brute-forced.
+pub const MAX_WRONG_ATTEMPTS: u32 = 5;
 
-/// A random 6-digit PIN from the OS RNG. (The modulo bias of
-/// `u32 % 1_000_000` is ~0.02% and irrelevant for a rotating PIN.)
-pub fn generate_pin() -> std::io::Result<String> {
-    use std::io::Read;
-    let mut bytes = [0u8; 4];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    Ok(format_pin(u32::from_le_bytes(bytes) % 1_000_000))
+/// What the kiosk currently accepts: the 128-bit secret shown as a QR, and
+/// the 6-digit fallback code shown under it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingCredentials {
+    secret: AuthField,
+    pin: String,
+    /// `pin` zero-padded to 16 bytes, exactly as a central sends it.
+    pin_field: AuthField,
 }
 
-fn format_pin(n: u32) -> String {
-    format!("{n:06}")
+impl PairingCredentials {
+    /// 16 bytes of secret followed by 4 bytes that become the PIN. (The
+    /// modulo bias of `u32 % 1_000_000` is ~0.02% and irrelevant for a
+    /// rotating code.)
+    pub fn from_random_bytes(bytes: [u8; 20]) -> Self {
+        let mut secret = [0u8; AUTH_LEN];
+        secret.copy_from_slice(&bytes[..AUTH_LEN]);
+        let number = u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]) % 1_000_000;
+        let pin = format!("{number:06}");
+        // `{:06}` of a value < 1_000_000 is always exactly six ASCII
+        // digits, so this cannot go out of bounds.
+        let mut pin_field = [0u8; AUTH_LEN];
+        pin_field[..PIN_LEN].copy_from_slice(pin.as_bytes());
+        Self {
+            secret,
+            pin,
+            pin_field,
+        }
+    }
+
+    pub fn secret(&self) -> &AuthField {
+        &self.secret
+    }
+
+    pub fn pin(&self) -> &str {
+        &self.pin
+    }
+
+    /// The text to render as the pairing QR.
+    pub fn qr_payload(&self) -> String {
+        encode_qr_payload(&self.secret)
+    }
+}
+
+/// Fresh credentials from the OS RNG.
+pub fn generate_credentials() -> std::io::Result<PairingCredentials> {
+    use std::io::Read;
+    let mut bytes = [0u8; 20];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(PairingCredentials::from_random_bytes(bytes))
 }
 
 /// `"482913"` -> `"482 913"`, easier to read off a screen and type.
@@ -678,47 +885,52 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum PinCheck {
+pub enum AuthCheck {
     Accepted,
     Wrong { attempts_left: u32 },
     LockedOut,
 }
 
-pub struct PinGate {
-    pin: String,
+pub struct AuthGate {
+    credentials: PairingCredentials,
     wrong_attempts: u32,
 }
 
-impl PinGate {
-    pub fn new(pin: String) -> Self {
+impl AuthGate {
+    pub fn new(credentials: PairingCredentials) -> Self {
         Self {
-            pin,
+            credentials,
             wrong_attempts: 0,
         }
     }
 
-    /// Once locked out, every candidate (even the right one) is refused
-    /// until `rotate` installs a new PIN.
-    pub fn check(&mut self, candidate: &str) -> PinCheck {
-        if self.wrong_attempts >= MAX_WRONG_PIN_ATTEMPTS {
-            return PinCheck::LockedOut;
+    /// Accepts the QR secret OR the fallback code. Once locked out, every
+    /// candidate (even a correct one) is refused until `rotate` installs new
+    /// credentials.
+    pub fn check(&mut self, auth: &AuthField) -> AuthCheck {
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
+            return AuthCheck::LockedOut;
         }
-        if constant_time_eq(self.pin.as_bytes(), candidate.as_bytes()) {
+        // Evaluate both comparisons (no short-circuit) to keep the timing
+        // independent of which credential matched.
+        let by_secret = constant_time_eq(auth, &self.credentials.secret);
+        let by_pin = constant_time_eq(auth, &self.credentials.pin_field);
+        if by_secret | by_pin {
             self.wrong_attempts = 0;
-            return PinCheck::Accepted;
+            return AuthCheck::Accepted;
         }
         self.wrong_attempts += 1;
-        if self.wrong_attempts >= MAX_WRONG_PIN_ATTEMPTS {
-            PinCheck::LockedOut
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
+            AuthCheck::LockedOut
         } else {
-            PinCheck::Wrong {
-                attempts_left: MAX_WRONG_PIN_ATTEMPTS - self.wrong_attempts,
+            AuthCheck::Wrong {
+                attempts_left: MAX_WRONG_ATTEMPTS - self.wrong_attempts,
             }
         }
     }
 
-    pub fn rotate(&mut self, new_pin: String) {
-        self.pin = new_pin;
+    pub fn rotate(&mut self, credentials: PairingCredentials) {
+        self.credentials = credentials;
         self.wrong_attempts = 0;
     }
 }
@@ -727,49 +939,51 @@ impl PinGate {
 pub enum WriteOutcome {
     /// A partial frame was buffered; wait for more writes.
     NeedMore,
-    /// A complete frame with the right PIN.
+    /// A complete frame carrying valid credentials.
     Accepted(PairingRequest),
-    WrongPin { attempts_left: u32 },
-    /// Too many wrong PINs. `new_pin` is the freshly generated PIN to show,
-    /// or `None` if generating one failed (the gate then stays locked,
-    /// which is the safe direction).
-    LockedOut { new_pin: Option<String> },
+    WrongAuth { attempts_left: u32 },
+    /// Too many wrong attempts. `new_credentials` are the freshly generated
+    /// ones to show, or `None` if generating them failed (the gate then
+    /// stays locked, which is the safe direction).
+    LockedOut {
+        new_credentials: Option<PairingCredentials>,
+    },
     Malformed(FrameError),
 }
 
 pub struct PairingSession {
     assembler: FrameAssembler,
-    gate: PinGate,
+    gate: AuthGate,
 }
 
 impl PairingSession {
-    pub fn new(pin: String) -> Self {
+    pub fn new(credentials: PairingCredentials) -> Self {
         Self {
             assembler: FrameAssembler::default(),
-            gate: PinGate::new(pin),
+            gate: AuthGate::new(credentials),
         }
     }
 
-    /// Handles one BLE write. `next_pin` is only called when the gate
-    /// locks out, to produce the replacement PIN.
+    /// Handles one BLE write. `next_credentials` is only called when the
+    /// gate locks out, to produce the replacement credentials.
     pub fn on_write(
         &mut self,
         chunk: &[u8],
         now: Instant,
-        next_pin: impl FnOnce() -> Option<String>,
+        next_credentials: impl FnOnce() -> Option<PairingCredentials>,
     ) -> WriteOutcome {
         match self.assembler.push(chunk, now) {
             Ok(None) => WriteOutcome::NeedMore,
             Err(e) => WriteOutcome::Malformed(e),
-            Ok(Some(request)) => match self.gate.check(&request.pin) {
-                PinCheck::Accepted => WriteOutcome::Accepted(request),
-                PinCheck::Wrong { attempts_left } => WriteOutcome::WrongPin { attempts_left },
-                PinCheck::LockedOut => {
-                    let new_pin = next_pin();
-                    if let Some(pin) = &new_pin {
-                        self.gate.rotate(pin.clone());
+            Ok(Some(request)) => match self.gate.check(&request.auth) {
+                AuthCheck::Accepted => WriteOutcome::Accepted(request),
+                AuthCheck::Wrong { attempts_left } => WriteOutcome::WrongAuth { attempts_left },
+                AuthCheck::LockedOut => {
+                    let new_credentials = next_credentials();
+                    if let Some(credentials) = &new_credentials {
+                        self.gate.rotate(credentials.clone());
                     }
-                    WriteOutcome::LockedOut { new_pin }
+                    WriteOutcome::LockedOut { new_credentials }
                 }
             },
         }
@@ -780,7 +994,7 @@ impl PairingSession {
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test --package kiosk-gui pairing::tests 2>&1 | tail -25`
-Expected: PASS — `12 passed; 0 failed`.
+Expected: PASS — `18 passed; 0 failed`.
 
 - [ ] **Step 6: Lint and commit**
 
@@ -788,11 +1002,12 @@ Run: `cargo clippy --package kiosk-gui --all-targets 2>&1 | tail -10` — expect
 
 ```bash
 git add kiosk-gui/src/pairing.rs kiosk-gui/src/main.rs
-git commit -m "feat(kiosk-gui): PIN gate and pairing session for family-member bootstrap
+git commit -m "feat(kiosk-gui): pairing credentials, gate and session
 
-Random 6-digit PIN from the OS RNG, constant-time compare, lockout and
-rotation after 5 wrong attempts (stays locked if rotation fails), and a
-PairingSession that turns raw BLE writes into a single outcome.
+Credentials are a 128-bit secret (for the QR) plus a 6-digit fallback
+code, both from the OS RNG. The gate accepts either, compares in constant
+time, locks out after 5 wrong attempts and rotates (staying locked if
+rotation fails). PairingSession turns raw BLE writes into one outcome.
 
 Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 ```
@@ -876,7 +1091,7 @@ In `kiosk-gui/src/setup.rs` (`self_initialize_personal_vault`), replace the same
 ```
 
 Run: `cargo test --package family-vault-client 2>&1 | tail -6 && cargo check --package kiosk-gui 2>&1 | tail -5`
-Expected: tests PASS (`23 passed`), kiosk-gui compiles clean. (If `anchor_lang::prelude::AccountMeta` does not resolve, use `anchor_lang::solana_program::instruction::AccountMeta` — Anchor's prelude re-exports that same type.)
+Expected: tests PASS, kiosk-gui compiles clean. (If `anchor_lang::prelude::AccountMeta` does not resolve, use `anchor_lang::solana_program::instruction::AccountMeta` — Anchor's prelude re-exports that same type.)
 
 - [ ] **Step 3: Failing test — the funding floor must include the approvers account**
 
@@ -1190,7 +1405,7 @@ pub struct MemberSteps {
 
 impl MemberSteps {
     pub fn is_empty(&self) -> bool {
-        !(self.init_approvers || self.add_approver || self.add_beneficiary)
+        !self.init_approvers && !self.add_approver && !self.add_beneficiary
     }
 }
 
@@ -1412,11 +1627,11 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 - Modify: `kiosk-gui/Cargo.toml` (dependencies), `kiosk-gui/src/main.rs` (declare the module)
 
 **Interfaces:**
-- Consumes (Task 1/2): `family_vault_client::pairing::{PairingRequest, SERVICE_UUID_U128, PAIRING_CHARACTERISTIC_UUID_U128, encode_frame}`, `crate::pairing::{PairingSession, WriteOutcome, generate_pin}`.
+- Consumes (Tasks 1/2): `family_vault_client::pairing::{PairingRequest, PAIRING_CHARACTERISTIC_UUID_U128, SERVICE_UUID_U128, encode_frame}`, `crate::pairing::{PairingCredentials, PairingSession, WriteOutcome, generate_credentials}`.
 - Produces (module `crate::ble`):
   - `struct BleError(pub String)` (`Debug`, `Display`, `Error`)
-  - `type PinRotated = std::sync::Arc<dyn Fn(&str) + Send + Sync>`
-  - `fn wait_for_pairing(pin: String, on_pin_rotated: PinRotated, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<PairingRequest>, BleError>` — blocks the calling thread; `Ok(Some(_))` = a request with the right PIN arrived; `Ok(None)` = `cancel` was set; `Err(_)` = Bluetooth unavailable.
+  - `type CredentialsRotated = std::sync::Arc<dyn Fn(&PairingCredentials) + Send + Sync>`
+  - `fn wait_for_pairing(credentials: PairingCredentials, on_rotated: CredentialsRotated, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<PairingRequest>, BleError>` — blocks the calling thread; `Ok(Some(_))` = a request with valid credentials arrived; `Ok(None)` = `cancel` was set; `Err(_)` = Bluetooth unavailable.
 
 - [ ] **Step 1: Dependencies and module declaration**
 
@@ -1443,93 +1658,116 @@ Create `kiosk-gui/src/ble.rs` containing ONLY this test module:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use family_vault_client::pairing::encode_frame;
+    use family_vault_client::pairing::{auth_from_pin, encode_frame, AuthField};
     use solana_pubkey::Pubkey;
     use std::sync::atomic::AtomicBool;
 
-    fn frame(pin: &str) -> Vec<u8> {
+    fn creds() -> PairingCredentials {
+        PairingCredentials::from_random_bytes([1u8; 20])
+    }
+
+    fn frame(auth: AuthField) -> Vec<u8> {
         encode_frame(&PairingRequest {
-            pin: pin.to_string(),
+            auth,
             pubkey: Pubkey::new_from_array([7u8; 32]),
             name: "Внук Саша".to_string(),
         })
         .unwrap()
     }
 
-    fn fixture(pin: &str) -> (
-        Mutex<PairingSession>,
-        mpsc::Sender<PairingRequest>,
-        mpsc::Receiver<PairingRequest>,
-        PinRotated,
-        Arc<Mutex<Vec<String>>>,
-    ) {
+    fn wrong() -> AuthField {
+        [0xEE; 16]
+    }
+
+    struct Fixture {
+        session: Mutex<PairingSession>,
+        tx: mpsc::Sender<PairingRequest>,
+        rx: mpsc::Receiver<PairingRequest>,
+        callback: CredentialsRotated,
+        rotated: Arc<Mutex<Vec<PairingCredentials>>>,
+    }
+
+    fn fixture() -> Fixture {
         let rotated = Arc::new(Mutex::new(Vec::new()));
         let sink = rotated.clone();
-        let callback: PinRotated = Arc::new(move |p: &str| sink.lock().unwrap().push(p.to_string()));
+        let callback: CredentialsRotated =
+            Arc::new(move |c: &PairingCredentials| sink.lock().unwrap().push(c.clone()));
         let (tx, rx) = mpsc::channel();
-        (
-            Mutex::new(PairingSession::new(pin.to_string())),
+        Fixture {
+            session: Mutex::new(PairingSession::new(creds())),
             tx,
             rx,
             callback,
             rotated,
-        )
+        }
+    }
+
+    fn write(f: &Fixture, value: &[u8]) -> Result<(), ReqError> {
+        handle_write(&f.session, &f.tx, &f.callback, value)
     }
 
     #[test]
-    fn a_correct_frame_is_acknowledged_and_forwarded() {
-        let (session, tx, rx, cb, _) = fixture("482913");
-        assert!(handle_write(&session, &tx, &cb, &frame("482913")).is_ok());
-        let request = rx.try_recv().expect("accepted request must be forwarded");
-        assert_eq!(request.pin, "482913");
+    fn a_correct_qr_secret_is_acknowledged_and_forwarded() {
+        let f = fixture();
+        assert!(write(&f, &frame(*creds().secret())).is_ok());
+        let request = f.rx.try_recv().expect("accepted request must be forwarded");
         assert_eq!(request.name, "Внук Саша");
     }
 
     #[test]
-    fn a_partial_write_is_acknowledged_but_not_forwarded() {
-        let (session, tx, rx, cb, _) = fixture("482913");
-        let f = frame("482913");
-        assert!(handle_write(&session, &tx, &cb, &f[..20]).is_ok());
-        assert!(rx.try_recv().is_err());
+    fn a_correct_fallback_code_is_acknowledged_and_forwarded() {
+        let f = fixture();
+        let field = auth_from_pin(creds().pin()).unwrap();
+        assert!(write(&f, &frame(field)).is_ok());
+        assert!(f.rx.try_recv().is_ok());
     }
 
     #[test]
-    fn a_wrong_pin_is_rejected_with_not_authorized_and_not_forwarded() {
-        let (session, tx, rx, cb, _) = fixture("482913");
-        let res = handle_write(&session, &tx, &cb, &frame("000000"));
+    fn a_partial_write_is_acknowledged_but_not_forwarded() {
+        let f = fixture();
+        let full = frame(*creds().secret());
+        assert!(write(&f, &full[..20]).is_ok());
+        assert!(f.rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn wrong_credentials_are_rejected_with_not_authorized_and_not_forwarded() {
+        let f = fixture();
+        let res = write(&f, &frame(wrong()));
         assert!(matches!(res, Err(ReqError::NotAuthorized)));
-        assert!(rx.try_recv().is_err());
+        assert!(f.rx.try_recv().is_err());
     }
 
     #[test]
     fn a_malformed_frame_is_rejected_with_invalid_value_length() {
-        let (session, tx, _rx, cb, _) = fixture("482913");
-        let mut bad = frame("482913");
-        bad[0] = b'x';
-        let res = handle_write(&session, &tx, &cb, &bad);
+        let f = fixture();
+        let mut bad = frame(*creds().secret());
+        bad.push(0); // trailing byte
+        let res = write(&f, &bad);
         assert!(matches!(res, Err(ReqError::InvalidValueLength)));
     }
 
     #[test]
-    fn lockout_rotates_the_pin_and_tells_the_ui() {
-        let (session, tx, rx, cb, rotated) = fixture("482913");
+    fn lockout_rotates_the_credentials_and_tells_the_ui() {
+        let f = fixture();
         for _ in 0..5 {
-            let res = handle_write(&session, &tx, &cb, &frame("000000"));
+            let res = write(&f, &frame(wrong()));
             assert!(matches!(res, Err(ReqError::NotAuthorized)));
         }
-        let new_pin = {
-            let seen = rotated.lock().unwrap();
+        let new_creds = {
+            let seen = f.rotated.lock().unwrap();
             assert_eq!(seen.len(), 1, "UI must be told about exactly one rotation");
-            assert_eq!(seen[0].len(), 6);
             seen[0].clone()
         };
-        // The freshly shown PIN works; the original no longer does.
+        assert_ne!(new_creds.secret(), creds().secret());
+
+        // The old QR secret is dead; the freshly shown one works.
         assert!(matches!(
-            handle_write(&session, &tx, &cb, &frame("482913")),
+            write(&f, &frame(*creds().secret())),
             Err(ReqError::NotAuthorized)
         ));
-        assert!(handle_write(&session, &tx, &cb, &frame(&new_pin)).is_ok());
-        assert_eq!(rx.try_recv().unwrap().pin, new_pin);
+        assert!(write(&f, &frame(*new_creds.secret())).is_ok());
+        assert!(f.rx.try_recv().is_ok());
     }
 
     // The two tests below register a real advertisement and GATT
@@ -1540,7 +1778,7 @@ mod tests {
     #[ignore = "needs a Bluetooth adapter and a running bluetoothd"]
     fn returns_none_immediately_when_cancel_is_already_set() {
         let cancel = AtomicBool::new(true);
-        let out = wait_for_pairing("123456".to_string(), Arc::new(|_| {}), &cancel).unwrap();
+        let out = wait_for_pairing(creds(), Arc::new(|_| {}), &cancel).unwrap();
         assert_eq!(out, None);
     }
 
@@ -1554,7 +1792,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(1500));
                 cancel.store(true, Ordering::Relaxed);
             });
-            let out = wait_for_pairing("123456".to_string(), Arc::new(|_| {}), &cancel).unwrap();
+            let out = wait_for_pairing(creds(), Arc::new(|_| {}), &cancel).unwrap();
             assert_eq!(out, None);
         });
         assert!(started.elapsed() < Duration::from_secs(10));
@@ -1565,7 +1803,7 @@ mod tests {
 - [ ] **Step 3: Run to verify failure**
 
 Run: `cargo test --package kiosk-gui ble::tests 2>&1 | tail -10`
-Expected: compile FAIL — `handle_write`, `wait_for_pairing`, `PinRotated`, `ReqError`, `Mutex`, `mpsc`, `Arc`, `Duration`, `Ordering`, `PairingRequest`, `PairingSession` not found.
+Expected: compile FAIL — `handle_write`, `wait_for_pairing`, `CredentialsRotated`, `ReqError`, `Mutex`, `mpsc`, `Arc`, `Duration`, `Ordering`, `PairingRequest`, `PairingSession`, `PairingCredentials` not found.
 
 - [ ] **Step 4: Write the implementation**
 
@@ -1576,9 +1814,10 @@ Insert at the TOP of `kiosk-gui/src/ble.rs`:
 //! via `bluer`). While `wait_for_pairing` runs, the kiosk advertises one
 //! GATT service with one writable characteristic; a family member's app
 //! writes a frame (see `family_vault_client::pairing`) and the kiosk accepts
-//! it only if it carries the PIN currently shown on screen. All the
-//! decision-making lives in `crate::pairing::PairingSession`; this module
-//! only adapts it to BlueZ and maps outcomes to ATT errors.
+//! it only if it carries the QR secret or fallback code currently shown on
+//! screen. All the decision-making lives in
+//! `crate::pairing::PairingSession`; this module only adapts it to BlueZ and
+//! maps outcomes to ATT errors.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1595,14 +1834,15 @@ use family_vault_client::pairing::{
 };
 use futures::FutureExt;
 
-use crate::pairing::{generate_pin, PairingSession, WriteOutcome};
+use crate::pairing::{generate_credentials, PairingCredentials, PairingSession, WriteOutcome};
 
 const SERVICE_UUID: Uuid = Uuid::from_u128(SERVICE_UUID_U128);
 const PAIRING_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(PAIRING_CHARACTERISTIC_UUID_U128);
 
-/// Called (from the BLE runtime thread) with the new PIN whenever the
-/// kiosk rotates it after too many wrong attempts, so the UI can show it.
-pub type PinRotated = Arc<dyn Fn(&str) + Send + Sync>;
+/// Called (from the BLE runtime thread) with the new credentials whenever
+/// the kiosk rotates them after too many wrong attempts, so the UI can
+/// redraw the QR and code.
+pub type CredentialsRotated = Arc<dyn Fn(&PairingCredentials) + Send + Sync>;
 
 /// Bluetooth is not usable (no adapter, `bluetoothd` not running, ...).
 /// The setup flow treats this as "skip the pairing step", never as fatal.
@@ -1622,24 +1862,24 @@ fn unavailable(e: bluer::Error) -> BleError {
 }
 
 /// Blocks the calling thread while advertising, until either a request
-/// carrying the right PIN arrives (`Ok(Some(request))`) or `cancel` is set
-/// (`Ok(None)`). The advertisement and GATT application are removed before
-/// this returns.
+/// carrying valid credentials arrives (`Ok(Some(request))`) or `cancel` is
+/// set (`Ok(None)`). The advertisement and GATT application are removed
+/// before this returns.
 pub fn wait_for_pairing(
-    pin: String,
-    on_pin_rotated: PinRotated,
+    credentials: PairingCredentials,
+    on_rotated: CredentialsRotated,
     cancel: &AtomicBool,
 ) -> Result<Option<PairingRequest>, BleError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| BleError(e.to_string()))?;
-    runtime.block_on(run(pin, on_pin_rotated, cancel))
+    runtime.block_on(run(credentials, on_rotated, cancel))
 }
 
 async fn run(
-    pin: String,
-    on_pin_rotated: PinRotated,
+    credentials: PairingCredentials,
+    on_rotated: CredentialsRotated,
     cancel: &AtomicBool,
 ) -> Result<Option<PairingRequest>, BleError> {
     let session = bluer::Session::new().await.map_err(unavailable)?;
@@ -1654,12 +1894,12 @@ async fn run(
     };
     let advertisement_handle = adapter.advertise(advertisement).await.map_err(unavailable)?;
 
-    let state = Arc::new(Mutex::new(PairingSession::new(pin)));
+    let state = Arc::new(Mutex::new(PairingSession::new(credentials)));
     let (accepted_tx, accepted_rx) = mpsc::channel::<PairingRequest>();
 
     let write_state = state.clone();
     let write_tx = accepted_tx.clone();
-    let write_rotated = on_pin_rotated.clone();
+    let write_rotated = on_rotated.clone();
     let application = Application {
         services: vec![Service {
             uuid: SERVICE_UUID,
@@ -1709,33 +1949,33 @@ async fn run(
     Ok(outcome)
 }
 
-/// Maps one BLE write to an ATT response. Wrong PINs and malformed frames
-/// get a real ATT error so the central can tell the user what went wrong.
-/// Never logs the PIN.
+/// Maps one BLE write to an ATT response. Wrong credentials and malformed
+/// frames get a real ATT error so the central can tell the user what went
+/// wrong. Never logs the secret or the code.
 fn handle_write(
     session: &Mutex<PairingSession>,
     accepted: &mpsc::Sender<PairingRequest>,
-    on_pin_rotated: &PinRotated,
+    on_rotated: &CredentialsRotated,
     value: &[u8],
 ) -> Result<(), ReqError> {
     let Ok(mut session) = session.lock() else {
         return Err(ReqError::Failed);
     };
-    let outcome = session.on_write(value, Instant::now(), || generate_pin().ok());
+    let outcome = session.on_write(value, Instant::now(), || generate_credentials().ok());
     match outcome {
         WriteOutcome::NeedMore => Ok(()),
         WriteOutcome::Accepted(request) => {
             let _ = accepted.send(request);
             Ok(())
         }
-        WriteOutcome::WrongPin { attempts_left } => {
-            eprintln!("[kiosk-gui] pairing: wrong PIN ({attempts_left} attempts left)");
+        WriteOutcome::WrongAuth { attempts_left } => {
+            eprintln!("[kiosk-gui] pairing: wrong credentials ({attempts_left} attempts left)");
             Err(ReqError::NotAuthorized)
         }
-        WriteOutcome::LockedOut { new_pin } => {
-            eprintln!("[kiosk-gui] pairing: too many wrong PINs, rotating the PIN");
-            if let Some(pin) = new_pin {
-                on_pin_rotated(&pin);
+        WriteOutcome::LockedOut { new_credentials } => {
+            eprintln!("[kiosk-gui] pairing: too many wrong attempts, rotating credentials");
+            if let Some(credentials) = new_credentials {
+                on_rotated(&credentials);
             }
             Err(ReqError::NotAuthorized)
         }
@@ -1750,7 +1990,7 @@ fn handle_write(
 - [ ] **Step 5: Run the automated tests**
 
 Run: `cargo test --package kiosk-gui ble::tests 2>&1 | tail -15`
-Expected: `5 passed; 0 failed; 2 ignored`.
+Expected: `6 passed; 0 failed; 2 ignored`.
 
 - [ ] **Step 6: Run the hardware tests on this machine (it has `hci0` and a running `bluetooth` service)**
 
@@ -1766,8 +2006,8 @@ git add kiosk-gui/Cargo.toml kiosk-gui/src Cargo.lock
 git commit -m "feat(kiosk-gui): BLE peripheral adapter for family-member pairing
 
 bluer GATT server with one writable characteristic; advertises only while
-wait_for_pairing runs and tears down before returning. Wrong PINs and
-malformed frames surface as real ATT errors. Verified against a real
+wait_for_pairing runs and tears down before returning. Wrong credentials
+and malformed frames surface as real ATT errors. Verified against a real
 BlueZ (advertisement + GATT application register and are removed).
 
 Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
@@ -1782,7 +2022,7 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 - Modify: `kiosk-gui/tests/navigation.rs`
 
 **Interfaces:**
-- Produces (Slint, exposed on `AppWindow`, so Rust gets these generated members): `set_setup_pairing_active(bool)`, `set_setup_pin_text(SharedString)`, `on_skip_pairing_requested(impl FnMut())`. The existing `set_setup_status_text` doubles as the instruction line in pairing mode.
+- Produces (Slint, exposed on `AppWindow`, so Rust gets these generated members): `set_setup_pairing_active(bool)`, `set_setup_pin_text(SharedString)`, `on_skip_pairing_requested(impl FnMut())`. The existing `set_setup_qr_image` shows the pairing QR while pairing is active (Rust swaps the image), and `set_setup_status_text` doubles as the instruction line.
 - The skip button has `accessible-role: button` and `accessible-label: "Пропустить"` and exists in the element tree ONLY while `pairing-active` is true.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1863,9 +2103,9 @@ In `kiosk-gui/ui/theme.slint`, add below `font-size-body`:
 
 ```slint
 
-    // The pairing PIN is the one thing on its screen that must be read and
-    // typed correctly, so it gets by far the largest type.
-    out property <length> font-size-pin: 72px;
+    // The fallback pairing code must be read and typed correctly, so it
+    // gets the largest type on its screen.
+    out property <length> font-size-code: 64px;
 ```
 
 Replace the entire contents of `kiosk-gui/ui/setup.slint` with:
@@ -1874,13 +2114,15 @@ Replace the entire contents of `kiosk-gui/ui/setup.slint` with:
 import { Theme } from "theme.slint";
 
 export component SetupScreen inherits Rectangle {
+    // In funding mode this is the funding QR; in pairing mode Rust swaps in
+    // the pairing QR (the same property, so the Image element is shared).
     in property <image> qr-image;
     in property <string> status-text: "";
 
-    // Pairing mode replaces the funding QR with a PIN that the person types
-    // into the family app (see the family-app design spec, "Identity &
-    // Bootstrap"). The kiosk has no input device for this step, so the only
-    // control is a way to skip it.
+    // Pairing mode: QR on the left, and on the right the instruction, the
+    // fallback code for people who cannot scan, and a way to skip. The
+    // kiosk has no input device for this step, so skipping is the only
+    // control. See the family-app design spec, "Identity & Bootstrap".
     in property <bool> pairing-active: false;
     in property <string> pin-text: "";
 
@@ -1900,49 +2142,73 @@ export component SetupScreen inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        if !pairing-active : Image {
-            source: qr-image;
-            width: 280px;
-            height: 280px;
-            horizontal-alignment: center;
-        }
+        if !pairing-active : VerticalLayout {
+            spacing: Theme.spacing;
 
-        Text {
-            text: status-text;
-            color: Theme.fg;
-            font-size: Theme.font-size-body;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-
-        if pairing-active : Text {
-            text: pin-text;
-            color: Theme.fg;
-            font-size: Theme.font-size-pin;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
-
-        if pairing-active : Rectangle {
-            height: Theme.target-size;
-            width: 240px;
-            background: Theme.secondary-button-bg;
-            border-color: Theme.secondary-button-border;
-            border-width: 2px;
-            border-radius: 8px;
-            accessible-role: button;
-            accessible-label: "Пропустить";
-
-            TouchArea {
-                clicked => { skip-pairing-requested(); }
+            Image {
+                source: qr-image;
+                width: 280px;
+                height: 280px;
+                horizontal-alignment: center;
             }
 
             Text {
-                text: "Пропустить";
-                color: Theme.secondary-button-fg;
+                text: status-text;
+                color: Theme.fg;
                 font-size: Theme.font-size-body;
                 horizontal-alignment: center;
-                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+
+        if pairing-active : HorizontalLayout {
+            spacing: Theme.spacing;
+
+            Image {
+                source: qr-image;
+                width: 280px;
+                height: 280px;
+            }
+
+            VerticalLayout {
+                spacing: Theme.spacing;
+                alignment: center;
+
+                Text {
+                    text: status-text;
+                    color: Theme.fg;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+
+                Text {
+                    text: pin-text;
+                    color: Theme.fg;
+                    font-size: Theme.font-size-code;
+                    font-weight: 700;
+                }
+
+                Rectangle {
+                    height: Theme.target-size;
+                    background: Theme.secondary-button-bg;
+                    border-color: Theme.secondary-button-border;
+                    border-width: 2px;
+                    border-radius: 8px;
+                    accessible-role: button;
+                    accessible-label: "Пропустить";
+
+                    TouchArea {
+                        clicked => { skip-pairing-requested(); }
+                    }
+
+                    Text {
+                        text: "Пропустить";
+                        color: Theme.secondary-button-fg;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
             }
         }
     }
@@ -1965,11 +2231,11 @@ and next to the other `callback ... <=> ...;` lines:
 - [ ] **Step 4: Run to verify pass**
 
 Run: `cargo test --package kiosk-gui --test navigation 2>&1 | tail -18`
-Expected: `12 passed; 0 failed`. If `if cond : Element` inside the layout is rejected by the Slint compiler, wrap the pairing-only children in a single `if pairing-active : VerticalLayout { ... }` instead; keep the accessible label/role unchanged.
+Expected: `12 passed; 0 failed`. If `if cond : Element` inside the layout is rejected by the Slint compiler, restructure using a `visible:`-free alternative of your choice that keeps the same guarantee (the skip button must NOT be in the element tree unless `pairing-active`); keep the accessible label/role unchanged.
 
 - [ ] **Step 5: Check the screen fits 800x480 and commit**
 
-Run the app screenshot check only if a display is available; otherwise reason from the numbers: heading 40 + status (2 lines of 28) ≈ 70 + PIN 72 + button 60 + 5 gaps of 16 + padding 32 ≈ 400px < 480px.
+If a display is available, look at both modes; otherwise reason from the numbers. Pairing mode: heading 40 + 16 gap + max(QR 280, right column ≈ instruction 2-3 lines of 28px ≈ 100 + code 64 + button 60 + 2 gaps 32 ≈ 256) + padding 32 ≈ 370 px < 480 px; width: 280 + 16 + right column ≈ 470 px, the code «482 913» at 64 px ≈ 300 px. Funding mode is unchanged (heading + 280 QR + status).
 
 Run: `cargo clippy --workspace --all-targets 2>&1 | tail -6` — expected: clean.
 
@@ -1977,9 +2243,9 @@ Run: `cargo clippy --workspace --all-targets 2>&1 | tail -6` — expected: clean
 git add kiosk-gui/ui kiosk-gui/tests/navigation.rs
 git commit -m "feat(kiosk-gui): pairing view on the setup screen
 
-Shows the PIN in large type with a single Пропустить button while
-pairing is active; hides the funding QR. The skip button only exists in
-the element tree in pairing mode.
+Pairing mode shows the pairing QR on the left and, on the right, the
+instruction, the large fallback code and a single Пропустить button. The
+skip button only exists in the element tree in pairing mode.
 
 Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 ```
@@ -1992,41 +2258,54 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 - Modify: `kiosk-gui/src/main.rs`
 
 **Interfaces:**
-- Consumes: everything above. `setup::ProvisioningConfig { rpc_url, program_id: AnchorPubkey, mint }`, the existing `run_setup_flow`, `set_setup_status`.
-- Produces: `fn run_family_pairing_step(...)`; `run_setup_flow` gains a `skip_pairing: Arc<AtomicBool>` parameter.
+- Consumes: everything above. `setup::ProvisioningConfig { rpc_url, program_id: AnchorPubkey, mint }`, `setup::render_qr(&str) -> slint::Image`, the existing `run_setup_flow`, `set_setup_status`.
+- Produces: `fn show_pairing_view`, `fn hide_pairing_view`, `fn run_family_pairing_step(...)`; `run_setup_flow` gains a `skip_pairing: Arc<AtomicBool>` parameter.
 
 - [ ] **Step 1: Remove the three temporary `allow(dead_code)` markers**
 
 Delete these attribute lines (and their `// used starting in Task 6` comments) above `mod pairing;`, `mod family_member;`, `mod ble;` in `kiosk-gui/src/main.rs`, leaving plain `mod ble; mod family_member; mod pairing;`.
 
 Run: `cargo check --package kiosk-gui 2>&1 | tail -20`
-Expected: `dead_code` errors for every item not yet used by `main.rs` (this is the red step: it lists exactly what must be wired). `generate_pin`, `display_pin`, `ble::wait_for_pairing`, `family_member::{fetch_membership_state, needs_pairing, add_first_family_member}` must all end up used; `PinGate`/`PairingSession`/etc. are used transitively through `ble.rs`. Anything still reported after Step 3 that is genuinely unused must be deleted, not re-allowed.
+Expected: `dead_code` errors for every item not yet used by `main.rs` (this is the red step: it lists exactly what must be wired). `generate_credentials`, `display_pin`, `PairingCredentials::{qr_payload, pin}`, `ble::wait_for_pairing`, `ble::CredentialsRotated`, `family_member::{fetch_membership_state, needs_pairing, add_first_family_member}` must all end up used; the rest is used transitively. Anything still reported after Step 3 that is genuinely unused (for example `PIN_LEN`-style constants or `FrameAssembler` re-exports) must be deleted or made non-`pub`, not re-allowed.
 
-- [ ] **Step 2: Add the pairing step function**
+- [ ] **Step 2: Add the pairing step functions**
 
 In `kiosk-gui/src/main.rs`, add directly below `fn set_setup_status(...)`:
 
 ```rust
-/// Shows (`Some(pin)`) or hides (`None`) the pairing view on the setup
-/// screen. Safe to call from any thread.
-fn set_pairing_view(app_weak: &slint::Weak<AppWindow>, pin: Option<&str>) {
+/// Switches the setup screen into pairing mode: the pairing QR, the
+/// instruction and the fallback code. Safe to call from any thread — the
+/// `slint::Image` is built inside the UI-thread closure because it is not
+/// `Send`. Called again when the kiosk rotates its credentials.
+fn show_pairing_view(
+    app_weak: &slint::Weak<AppWindow>,
+    credentials: &pairing::PairingCredentials,
+) {
     let app_weak = app_weak.clone();
-    let pin = pin.map(pairing::display_pin);
+    let qr_text = credentials.qr_payload();
+    let code = pairing::display_pin(credentials.pin());
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
-            match pin {
-                Some(pin) => {
-                    app.set_setup_status_text(
-                        "Откройте приложение семьи и введите этот код:".into(),
-                    );
-                    app.set_setup_pin_text(pin.into());
-                    app.set_setup_pairing_active(true);
-                }
-                None => {
-                    app.set_setup_pairing_active(false);
-                    app.set_setup_pin_text("".into());
-                }
-            }
+            app.set_setup_qr_image(setup::render_qr(&qr_text));
+            app.set_setup_status_text(
+                "Отсканируйте этот код в приложении семьи или введите цифры:".into(),
+            );
+            app.set_setup_pin_text(code.into());
+            app.set_setup_pairing_active(true);
+        }
+    });
+}
+
+/// Leaves pairing mode and puts the funding QR back (which is what the
+/// screen showed for the rest of setup before pairing existed).
+fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
+    let app_weak = app_weak.clone();
+    let funding_qr_text = funding_qr_text.to_string();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_setup_pairing_active(false);
+            app.set_setup_pin_text("".into());
+            app.set_setup_qr_image(setup::render_qr(&funding_qr_text));
         }
     });
 }
@@ -2060,21 +2339,25 @@ fn run_family_pairing_step(
         ),
     }
 
-    let pin = match pairing::generate_pin() {
-        Ok(pin) => pin,
+    let credentials = match pairing::generate_credentials() {
+        Ok(credentials) => credentials,
         Err(e) => {
-            eprintln!("[kiosk-gui] setup: could not generate a pairing PIN ({e}); skipping pairing");
+            eprintln!(
+                "[kiosk-gui] setup: could not generate pairing credentials ({e}); skipping pairing"
+            );
             return;
         }
     };
 
-    set_pairing_view(app_weak, Some(pin.as_str()));
-    let on_pin_rotated: ble::PinRotated = {
+    show_pairing_view(app_weak, &credentials);
+    let on_rotated: ble::CredentialsRotated = {
         let app_weak = app_weak.clone();
-        Arc::new(move |new_pin: &str| set_pairing_view(&app_weak, Some(new_pin)))
+        Arc::new(move |new_credentials: &pairing::PairingCredentials| {
+            show_pairing_view(&app_weak, new_credentials)
+        })
     };
-    let outcome = ble::wait_for_pairing(pin, on_pin_rotated, skip_pairing.as_ref());
-    set_pairing_view(app_weak, None);
+    let outcome = ble::wait_for_pairing(credentials, on_rotated, skip_pairing.as_ref());
+    hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
 
     let request = match outcome {
         Ok(Some(request)) => request,
@@ -2173,10 +2456,11 @@ git add kiosk-gui/src/main.rs
 git commit -m "feat(kiosk-gui): pair the first family member during first-run setup
 
 After the personal vault exists and before kiosk.toml is written, show a
-PIN, accept one family member over Bluetooth, and register them as
-approver and payee in one atomic transaction. Never fatal: no Bluetooth,
-a skip, or a chain failure just continues setup. Idempotent, so a power
-cut anywhere in the step resumes cleanly.
+pairing QR (plus a typed fallback code), accept one family member over
+Bluetooth, and register them as approver and payee in one atomic
+transaction. Never fatal: no Bluetooth, a skip, or a chain failure just
+continues setup. Idempotent, so a power cut anywhere in the step resumes
+cleanly.
 
 Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 ```
@@ -2185,12 +2469,13 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 
 ## Manual verification (human, after Task 6 — not automatable here)
 
-Needs a funded devnet setup, a phone with a BLE tool (e.g. nRF Connect), and a fresh config dir with a valid `provisioning.toml`.
+Needs a funded devnet setup, a phone with a BLE tool (e.g. nRF Connect) and a QR scanner app, and a fresh config dir with a valid `provisioning.toml`.
 
-1. Start the kiosk on a fresh config dir; fund the QR address as in the first-run-setup flow. Expected: after the vault initialises, the screen switches to «Откройте приложение семьи и введите этот код:» with a large `NNN NNN` PIN and a «Пропустить» button.
-2. Generate a frame on the dev machine: `PAIR_PIN=<the PIN, no space> PAIR_PUBKEY=<any base58 pubkey> PAIR_NAME="Внук Саша" cargo test -p family-vault-client print_frame_hex -- --ignored --nocapture`.
-3. In nRF Connect: scan, connect to **FamilyVault**, open the service `8f1a0000-5b1e-4c6a-9a7e-0d2f3a1b4c5d`, write the printed hex (as bytes) to characteristic `…0001…`. Expected: write succeeds; kiosk shows «Добавляем участника семьи...» then continues to the wallet screen.
-4. Wrong-PIN check: repeat with a wrong PIN — expected ATT error "insufficient authorization"; after 5 wrong writes the on-screen PIN changes.
-5. Inspect the log for `registered family member <pubkey> ("Внук Саша")`, then confirm on-chain (`solana account <approvers PDA> --url devnet`) that the pubkey is listed, and that the kiosk's payee list now shows «Внук Саша» (active after the 48 h cooldown).
-6. Resume check: kill the kiosk right after step 3, restart it. Expected: no second pairing prompt (an approver already exists) and setup completes.
-7. Skip check: on a fresh config dir tap «Пропустить». Expected: setup completes normally with no family member.
+1. Start the kiosk on a fresh config dir; fund the QR address as in the first-run-setup flow. Expected: after the vault initialises, the screen shows a **new QR** on the left and on the right «Отсканируйте этот код в приложении семьи или введите цифры:», a large `NNN NNN` code, and a «Пропустить» button.
+2. Scan the QR with any phone scanner; it should read `fvpair1:` followed by 32 hex characters.
+3. Generate a frame on the dev machine, QR path: `PAIR_QR='<scanned text>' PAIR_PUBKEY=<any base58 pubkey> PAIR_NAME="Внук Саша" cargo test -p family-vault-client print_frame_hex -- --ignored --nocapture`. (Code path: use `PAIR_PIN=<the digits, no space>` instead of `PAIR_QR`.)
+4. In nRF Connect: scan, connect to **FamilyVault**, open the service `8f1a0000-5b1e-4c6a-9a7e-0d2f3a1b4c5d`, write the printed hex (as bytes) to characteristic `…0001…`. Expected: write succeeds; kiosk shows «Добавляем участника семьи...» then continues to the wallet screen.
+5. Wrong-credentials check: write a frame with a wrong `PAIR_PIN` — expected ATT error "insufficient authorization"; after 5 wrong writes the on-screen QR and code change.
+6. Inspect the log for `registered family member <pubkey> ("Внук Саша")`, then confirm on-chain (`solana account <approvers PDA> --url devnet`) that the pubkey is listed, and that the kiosk's payee list now shows «Внук Саша» (active after the 48 h cooldown).
+7. Resume check: kill the kiosk right after step 4, restart it. Expected: no second pairing prompt (an approver already exists) and setup completes.
+8. Skip check: on a fresh config dir tap «Пропустить». Expected: setup completes normally with no family member.

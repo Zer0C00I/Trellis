@@ -94,34 +94,43 @@ because the kiosk is Linux by definition.
 
 Mechanism: during this step, the kiosk advertises a BLE GATT service
 scoped to setup only (torn down as soon as the step ends) with one
-writable characteristic. **The kiosk shows a random 6-digit PIN on its
-screen; the person types that PIN into family-app**, which writes
-`PIN + pubkey + name` to the characteristic. The kiosk accepts the write
-only if the PIN matches. This direction (PIN shown on the kiosk, typed on
-the phone) is deliberate: the kiosk needs no input device for this step
-(consistent with its no-text-input design), and a stranger who happens to
-be in Bluetooth range cannot inject their own key without seeing the
-kiosk's screen. After 5 wrong PINs the kiosk generates a new PIN, so the
-6-digit space cannot be brute-forced by repeated guessing. Wrong PIN /
-malformed frames are answered with a proper ATT error so family-app can
-say "неверный код".
+writable characteristic, and **shows a QR code on its screen**. The
+family member opens family-app, **scans that QR with their phone's
+camera** (the phone has a camera; the kiosk needs none), and the app
+writes `secret + pubkey + name` to the characteristic. Nothing is typed.
+This is the same idea as Matter commissioning, where the QR *is* the
+passcode. The QR encodes a one-time random 128-bit secret
+(`fvpair1:<32 hex chars>`); the kiosk accepts the write only if it carries
+that secret, so a stranger in Bluetooth range cannot inject a key without
+seeing the kiosk's screen.
+
+**Fallback code.** If the phone cannot scan (broken camera, screen glare),
+the kiosk also shows a short 6-digit code under the QR and family-app
+offers "Ввести код вручную". The 6-digit code is a second credential the
+kiosk accepts; because it is guessable, **any 5 wrong attempts make the
+kiosk generate a fresh secret and code** (and redraw the QR), so the
+6-digit space cannot be brute-forced. Wrong credentials / malformed frames
+are answered with a proper ATT error so family-app can say "неверный код".
 
 **Wire format** (single writable characteristic; shared between kiosk and
 family-app via the `family-vault-client` crate so both sides use the same
 encoder/decoder):
 
 ```
-[ 6 bytes: ASCII digits, the PIN ]
+[ 16 bytes: auth field ]
 [ 32 bytes: the family member's pubkey ]
 [ 1 byte: N, the length of the name in bytes, 1..=32 ]
 [ N bytes: UTF-8 name, e.g. "Внук Саша" ]
 ```
 
-Total `39 + N` bytes. A central may deliver it in one write or split across
-several (ATT payloads can be as small as 20 bytes), so the kiosk
-reassembles; a partial frame not completed within 3 seconds is discarded.
-The name is what grandma later sees on the kiosk's "send to" screen, which
-is why it travels with the key rather than being a fixed label.
+The auth field is either the 16-byte secret from the QR, or the 6 ASCII
+digits of the fallback code zero-padded to 16 bytes; the kiosk accepts
+either. Total `49 + N` bytes. A central may deliver it in one write or
+split across several (ATT payloads can be as small as 20 bytes), so the
+kiosk reassembles; a partial frame not completed within 3 seconds is
+discarded. The name is what grandma later sees on the kiosk's "send to"
+screen, which is why it travels with the key rather than being a fixed
+label.
 
 **Failure behaviour, all deliberate:**
 - No Bluetooth adapter / `bluetoothd` not running: the kiosk logs it and
@@ -199,10 +208,11 @@ logic.
 ## Screens
 
 1. **First launch** — generate keypair locally → during a kiosk's own
-   first-run setup, hand the pubkey over via BLE (see "Identity &
-   Bootstrap") with a short on-screen confirmation code → "ждём, пока вас
-   добавят" status, matching the plain-language, no-jargon tone kiosk
-   already uses for its own first-run screen.
+   first-run setup, scan the QR the kiosk shows (or type its fallback
+   6-digit code) and enter your name; the app hands the pubkey over via
+   BLE (see "Identity & Bootstrap") → "ждём, пока вас добавят" status,
+   matching the plain-language, no-jargon tone kiosk already uses for its
+   own first-run screen.
 2. **Discovery** — silent on every launch/refresh; once a vault is found,
    go straight to the main screen. No user-visible "searching" step
    needed if it completes in normal RPC latency; if it doesn't, reuse the
