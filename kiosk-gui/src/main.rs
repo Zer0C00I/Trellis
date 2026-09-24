@@ -10,6 +10,8 @@ mod chain;
 mod setup;
 #[allow(dead_code)] // used starting in Task 6
 mod pairing;
+#[allow(dead_code)] // used starting in Task 6
+mod family_member;
 
 use std::cell::RefCell;
 use std::rc::Rc;

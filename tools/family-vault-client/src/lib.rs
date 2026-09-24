@@ -28,6 +28,23 @@ pub fn to_client(p: AnchorPubkey) -> Pubkey {
     Pubkey::new_from_array(p.to_bytes())
 }
 
+/// Converts Anchor-generated `AccountMeta`s (old Solana crate generation)
+/// into the client-generation `AccountMeta`s that `solana_instruction::
+/// Instruction` needs. Every place that builds an instruction from an
+/// Anchor `accounts` struct needs exactly this conversion.
+pub fn to_client_metas(
+    metas: &[anchor_lang::prelude::AccountMeta],
+) -> Vec<solana_instruction::AccountMeta> {
+    metas
+        .iter()
+        .map(|m| solana_instruction::AccountMeta {
+            pubkey: to_client(m.pubkey),
+            is_signer: m.is_signer,
+            is_writable: m.is_writable,
+        })
+        .collect()
+}
+
 fn find_pda(seeds: &[&[u8]], program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(seeds, program_id)
 }
@@ -169,5 +186,20 @@ mod tests {
     fn decode_mint_decimals_rejects_garbage() {
         let data = vec![0u8; 3];
         assert!(decode_mint_decimals(&data).is_err());
+    }
+
+    #[test]
+    fn to_client_metas_preserves_pubkey_and_flags() {
+        let key = pubkey(5);
+        let metas = vec![
+            anchor_lang::prelude::AccountMeta::new(to_anchor(key), true),
+            anchor_lang::prelude::AccountMeta::new_readonly(to_anchor(pubkey(6)), false),
+        ];
+        let converted = to_client_metas(&metas);
+        assert_eq!(converted.len(), 2);
+        assert_eq!(converted[0].pubkey, key);
+        assert!(converted[0].is_signer && converted[0].is_writable);
+        assert_eq!(converted[1].pubkey, pubkey(6));
+        assert!(!converted[1].is_signer && !converted[1].is_writable);
     }
 }

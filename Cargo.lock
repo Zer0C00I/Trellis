@@ -2772,6 +2772,7 @@ dependencies = [
  "anchor-lang",
  "family-vault",
  "solana-client",
+ "solana-instruction",
  "solana-pubkey 4.2.1",
  "spl-token",
 ]

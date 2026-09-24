@@ -160,6 +160,7 @@ pub fn render_qr(data: &str) -> slint::Image {
 /// this). Not rent — rent is computed live below, never guessed.
 pub const MIN_FUNDING_LAMPORTS_BUFFER: u64 = 50_000;
 
+/// Includes the `TrustedApprovers` account created during first-run family pairing.
 pub fn compute_min_funding_lamports(
     rpc: &solana_client::rpc_client::RpcClient,
 ) -> Result<u64, crate::chain::ChainError> {
@@ -169,10 +170,28 @@ pub fn compute_min_funding_lamports(
     let list_rent = rpc
         .get_minimum_balance_for_rent_exemption(family_vault::state::BeneficiaryList::SPACE)
         .map_err(crate::chain::map_client_error_pub)?;
+    let approvers_rent = rpc
+        .get_minimum_balance_for_rent_exemption(family_vault::state::TrustedApprovers::SPACE)
+        .map_err(crate::chain::map_client_error_pub)?;
     let ata_rent = rpc
         .get_minimum_balance_for_rent_exemption(165) // spl_token::state::Account::LEN
         .map_err(crate::chain::map_client_error_pub)?;
-    Ok(vault_rent + list_rent + ata_rent + MIN_FUNDING_LAMPORTS_BUFFER)
+    Ok(min_funding_from_rents(
+        vault_rent,
+        list_rent,
+        approvers_rent,
+        ata_rent,
+    ))
+}
+
+/// Pure so the composition of the floor is unit-tested without an RPC.
+pub fn min_funding_from_rents(
+    vault_rent: u64,
+    list_rent: u64,
+    approvers_rent: u64,
+    ata_rent: u64,
+) -> u64 {
+    vault_rent + list_rent + approvers_rent + ata_rent + MIN_FUNDING_LAMPORTS_BUFFER
 }
 
 /// Self-initializes the device's own personal vault, paid for and signed
@@ -226,14 +245,7 @@ pub fn self_initialize_personal_vault(
     }
     .to_account_metas(None);
 
-    let client_metas: Vec<solana_instruction::AccountMeta> = accounts
-        .iter()
-        .map(|m| solana_instruction::AccountMeta {
-            pubkey: family_vault_client::to_client(m.pubkey),
-            is_signer: m.is_signer,
-            is_writable: m.is_writable,
-        })
-        .collect();
+    let client_metas = family_vault_client::to_client_metas(&accounts);
 
     let ix = solana_instruction::Instruction {
         program_id: program_id_client,
@@ -260,6 +272,20 @@ pub fn self_initialize_personal_vault(
 mod tests {
     use super::*;
     use solana_signer::Signer;
+
+    #[test]
+    fn min_funding_includes_every_account_rent_plus_the_buffer() {
+        assert_eq!(
+            min_funding_from_rents(1_000, 2_000, 400, 30_000),
+            1_000 + 2_000 + 400 + 30_000 + MIN_FUNDING_LAMPORTS_BUFFER
+        );
+        // The approvers account is created during family pairing, so its
+        // rent must be part of the floor: dropping it changes the total.
+        assert_ne!(
+            min_funding_from_rents(1_000, 2_000, 400, 30_000),
+            min_funding_from_rents(1_000, 2_000, 0, 30_000)
+        );
+    }
 
     #[test]
     fn needs_setup_is_true_when_config_file_is_missing() {

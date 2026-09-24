@@ -224,14 +224,7 @@ pub fn submit_withdraw(
     }
     .to_account_metas(None);
 
-    let client_metas: Vec<solana_instruction::AccountMeta> = anchor_metas
-        .iter()
-        .map(|m| solana_instruction::AccountMeta {
-            pubkey: family_vault_client::to_client(m.pubkey),
-            is_signer: m.is_signer,
-            is_writable: m.is_writable,
-        })
-        .collect();
+    let client_metas = family_vault_client::to_client_metas(&anchor_metas);
     let client_program_id = family_vault_client::to_client(cfg.program_id);
 
     let ix = solana_instruction::Instruction {
