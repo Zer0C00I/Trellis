@@ -108,9 +108,22 @@ seeing the kiosk's screen.
 the kiosk also shows a short 6-digit code under the QR and family-app
 offers "Ввести код вручную". The 6-digit code is a second credential the
 kiosk accepts; because it is guessable, **any 5 wrong attempts make the
-kiosk generate a fresh secret and code** (and redraw the QR), so the
-6-digit space cannot be brute-forced. Wrong credentials / malformed frames
-are answered with a proper ATT error so family-app can say "неверный код".
+kiosk generate a fresh secret and code** (and redraw the QR), and **after
+25 wrong attempts in total the kiosk stops accepting pairing for that
+window** (only «Пропустить» / `admin-cli` remain), so a nearby attacker
+gets at most 25 guesses at a 1-in-a-million code. Wrong credentials /
+malformed frames are answered with a proper ATT error so family-app can
+say "неверный код".
+
+The characteristic is not link-encrypted, so the QR secret crosses the air
+in cleartext. That is acceptable because the secret is single-use and dead
+once a request is accepted or the credentials rotate.
+
+family-app requirements for this write: it MUST write with response
+(write-with-response) so it sees the ATT error, and it MUST confirm
+registration by polling the chain rather than trusting the write
+acknowledgement (the kiosk may fail to submit the transaction after
+acknowledging the write).
 
 **Wire format** (single writable characteristic; shared between kiosk and
 family-app via the `family-vault-client` crate so both sides use the same

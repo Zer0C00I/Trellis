@@ -6,11 +6,11 @@ mod slint_ui {
 
 use slint_ui::*;
 
-mod chain;
-mod setup;
-mod pairing;
-mod family_member;
 mod ble;
+mod chain;
+mod family_member;
+mod pairing;
+mod setup;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -83,7 +83,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     if setup::needs_setup(&config_path) {
         let cfg_slot = cfg.clone();
-        run_setup_flow(app.as_weak(), config_path.clone(), cfg_slot, skip_pairing.clone());
+        run_setup_flow(
+            app.as_weak(),
+            config_path.clone(),
+            cfg_slot,
+            skip_pairing.clone(),
+        );
     } else {
         match chain::load_config(&config_path) {
             Ok(loaded) => {
@@ -502,7 +507,14 @@ fn run_setup_flow(
             return;
         };
 
-        run_family_pairing_step(&app_weak, &rpc, &owner, &provisioning, &vault, &skip_pairing);
+        run_family_pairing_step(
+            &app_weak,
+            &rpc,
+            &owner,
+            &provisioning,
+            &vault,
+            &skip_pairing,
+        );
 
         let values = setup::KioskConfigValues {
             rpc_url: provisioning.rpc_url.clone(),
@@ -541,9 +553,8 @@ fn run_setup_flow(
         let personal_beneficiaries: std::sync::Arc<
             std::sync::Mutex<Vec<(u8, solana_pubkey::Pubkey)>>,
         > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let pool_beneficiaries: std::sync::Arc<
-            std::sync::Mutex<Vec<(u8, solana_pubkey::Pubkey)>>,
-        > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pool_beneficiaries: std::sync::Arc<std::sync::Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
 
         let app_weak_for_transition = app_weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -568,10 +579,7 @@ fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
 /// instruction and the fallback code. Safe to call from any thread — the
 /// `slint::Image` is built inside the UI-thread closure because it is not
 /// `Send`. Called again when the kiosk rotates its credentials.
-fn show_pairing_view(
-    app_weak: &slint::Weak<AppWindow>,
-    credentials: &pairing::PairingCredentials,
-) {
+fn show_pairing_view(app_weak: &slint::Weak<AppWindow>, credentials: &pairing::PairingCredentials) {
     let app_weak = app_weak.clone();
     let qr_text = credentials.qr_payload();
     let code = pairing::display_pin(credentials.pin());
@@ -649,6 +657,9 @@ fn run_family_pairing_step(
     };
     let outcome = ble::wait_for_pairing(credentials, on_rotated, skip_pairing.as_ref());
     hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
+    // The funding QR is back on screen; do not leave the pairing
+    // instruction next to it on the skip / BLE-unavailable paths.
+    set_setup_status(app_weak, "Почти готово...".to_string());
 
     let request = match outcome {
         Ok(Some(request)) => request,
@@ -675,7 +686,7 @@ fn run_family_pairing_step(
         ) {
             Ok(()) => {
                 eprintln!(
-                    "[kiosk-gui] setup: registered family member {} (\"{}\")",
+                    "[kiosk-gui] setup: registered family member {} ({:?})",
                     request.pubkey, request.name
                 );
                 added = true;
@@ -683,7 +694,9 @@ fn run_family_pairing_step(
             }
             Err(e) => {
                 eprintln!("[kiosk-gui] setup: add family member attempt {attempt} failed: {e:?}");
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                if attempt < 4 {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
             }
         }
     }

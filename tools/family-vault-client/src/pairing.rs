@@ -20,6 +20,7 @@
 //! can be as small as 20 bytes), so the receiving side reassembles with
 //! [`FrameAssembler`].
 
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use solana_pubkey::Pubkey;
@@ -48,11 +49,23 @@ pub const STALE_AFTER: Duration = Duration::from_secs(3);
 
 pub type AuthField = [u8; AUTH_LEN];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PairingRequest {
     pub auth: AuthField,
     pub pubkey: Pubkey,
     pub name: String,
+}
+
+// Hand-written so the auth field (the secret or the fallback code) can never
+// end up in a log line via `{:?}`.
+impl fmt::Debug for PairingRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PairingRequest")
+            .field("auth", &format_args!("<redacted>"))
+            .field("pubkey", &self.pubkey)
+            .field("name", &self.name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +73,9 @@ pub enum FrameError {
     /// The fallback code is not exactly six ASCII digits.
     BadPin,
     NameEmpty,
+    /// Blank after trimming, or contains a control character (newline,
+    /// escape, ...) that could forge or corrupt log lines and UI text.
+    NameInvalid,
     NameTooLong,
     NameNotUtf8,
     /// More bytes arrived than the declared name length allows.
@@ -97,6 +113,10 @@ pub fn decode_qr_payload(text: &str) -> Option<AuthField> {
     Some(secret)
 }
 
+fn name_is_valid(name: &str) -> bool {
+    !name.trim().is_empty() && !name.chars().any(char::is_control)
+}
+
 pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
     let name = request.name.as_bytes();
     if name.is_empty() {
@@ -104,6 +124,9 @@ pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
     }
     if name.len() > MAX_NAME_LEN {
         return Err(FrameError::NameTooLong);
+    }
+    if !name_is_valid(&request.name) {
+        return Err(FrameError::NameInvalid);
     }
     let mut frame = Vec::with_capacity(HEADER_LEN + name.len());
     frame.extend_from_slice(&request.auth);
@@ -172,8 +195,11 @@ impl FrameAssembler {
         pubkey_bytes.copy_from_slice(&self.buf[AUTH_LEN..AUTH_LEN + PUBKEY_LEN]);
 
         let name = std::str::from_utf8(&self.buf[HEADER_LEN..total])
-            .map_err(|_| FrameError::NameNotUtf8)?
-            .to_string();
+            .map_err(|_| FrameError::NameNotUtf8)?;
+        if !name_is_valid(name) {
+            return Err(FrameError::NameInvalid);
+        }
+        let name = name.to_string();
 
         Ok(Some(PairingRequest {
             auth,
@@ -309,6 +335,60 @@ mod tests {
             assembler.push(&frame, Instant::now()),
             Err(FrameError::NameNotUtf8)
         );
+    }
+
+    fn frame_with_name(name: &str) -> Vec<u8> {
+        let mut frame = header_with_name_len(name.len() as u8);
+        frame.extend_from_slice(name.as_bytes());
+        frame
+    }
+
+    #[test]
+    fn whitespace_only_and_control_char_names_are_invalid_in_the_assembler() {
+        for name in ["   ", "\t", "Ann\nBob", "A\u{7}B", "\u{0}"] {
+            let mut assembler = FrameAssembler::default();
+            assert_eq!(
+                assembler.push(&frame_with_name(name), Instant::now()),
+                Err(FrameError::NameInvalid),
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_rejects_whitespace_only_and_control_char_names() {
+        for name in ["   ", "Ann\nBob", "x\u{1b}[31m"] {
+            let mut req = sample();
+            req.name = name.to_string();
+            assert_eq!(encode_frame(&req), Err(FrameError::NameInvalid), "{name:?}");
+        }
+        // A zero-length name stays NameEmpty.
+        let mut req = sample();
+        req.name = String::new();
+        assert_eq!(encode_frame(&req), Err(FrameError::NameEmpty));
+    }
+
+    #[test]
+    fn bidi_marks_are_not_control_characters_and_are_accepted() {
+        // Deliberately only `char::is_control` is checked.
+        let mut req = sample();
+        req.name = "Ann\u{202E}".to_string();
+        assert!(encode_frame(&req).is_ok());
+    }
+
+    #[test]
+    fn pairing_request_debug_redacts_the_auth_field() {
+        let req = PairingRequest {
+            auth: [0xC7; AUTH_LEN],
+            pubkey: Pubkey::new_from_array([7u8; 32]),
+            name: "Внук".to_string(),
+        };
+        let out = format!("{req:?}");
+        assert!(out.contains("<redacted>"));
+        assert!(out.contains("Внук"));
+        for leak in ["c7", "C7", "199", "0xc7", "0xC7"] {
+            assert!(!out.contains(leak), "leaked {leak}: {out}");
+        }
     }
 
     #[test]

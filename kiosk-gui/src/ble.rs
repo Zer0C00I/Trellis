@@ -80,7 +80,10 @@ async fn run(
         local_name: Some("FamilyVault".to_string()),
         ..Default::default()
     };
-    let advertisement_handle = adapter.advertise(advertisement).await.map_err(unavailable)?;
+    let advertisement_handle = adapter
+        .advertise(advertisement)
+        .await
+        .map_err(unavailable)?;
 
     let state = Arc::new(Mutex::new(PairingSession::new(credentials)));
     let (accepted_tx, accepted_rx) = mpsc::channel::<PairingRequest>();
@@ -96,7 +99,7 @@ async fn run(
                 uuid: PAIRING_CHARACTERISTIC_UUID,
                 write: Some(CharacteristicWrite {
                     write: true,
-                    write_without_response: true,
+                    write_without_response: false,
                     method: CharacteristicWriteMethod::Fun(Box::new(move |value, _req| {
                         let state = write_state.clone();
                         let tx = write_tx.clone();

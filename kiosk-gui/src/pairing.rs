@@ -5,24 +5,41 @@
 //! here (see `ble.rs` and `family_member.rs`), so it is fully unit-tested.
 //! The wire format itself lives in `family_vault_client::pairing`.
 
+use std::fmt;
 use std::time::Instant;
 
 use family_vault_client::pairing::{
     encode_qr_payload, AuthField, FrameAssembler, FrameError, PairingRequest, AUTH_LEN, PIN_LEN,
 };
 
-/// After this many wrong attempts the kiosk rotates to fresh credentials,
-/// so the guessable 6-digit code cannot be brute-forced.
+/// After this many wrong attempts the kiosk rotates to fresh credentials
+/// (bounded overall by `MAX_TOTAL_WRONG_ATTEMPTS`).
 pub const MAX_WRONG_ATTEMPTS: u32 = 5;
+
+/// Total wrong guesses tolerated across all rotations (five windows'
+/// worth). Rotation resets the per-window counter, so without this a
+/// patient attacker in range could keep guessing the 6-digit code.
+pub const MAX_TOTAL_WRONG_ATTEMPTS: u32 = 25;
 
 /// What the kiosk currently accepts: the 128-bit secret shown as a QR, and
 /// the 6-digit fallback code shown under it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PairingCredentials {
     secret: AuthField,
     pin: String,
     /// `pin` zero-padded to 16 bytes, exactly as a central sends it.
     pin_field: AuthField,
+}
+
+// Hand-written so the secret and the code can never reach a log via `{:?}`.
+impl fmt::Debug for PairingCredentials {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PairingCredentials")
+            .field("secret", &format_args!("<redacted>"))
+            .field("pin", &format_args!("<redacted>"))
+            .field("pin_field", &format_args!("<redacted>"))
+            .finish()
+    }
 }
 
 impl PairingCredentials {
@@ -87,6 +104,8 @@ pub enum AuthCheck {
 pub struct AuthGate {
     credentials: PairingCredentials,
     wrong_attempts: u32,
+    /// Wrong guesses over the gate's whole life; never reset by `rotate`.
+    total_wrong: u32,
 }
 
 impl AuthGate {
@@ -94,14 +113,21 @@ impl AuthGate {
         Self {
             credentials,
             wrong_attempts: 0,
+            total_wrong: 0,
         }
+    }
+
+    /// True once the total guess budget is spent; the gate then stays
+    /// locked for good.
+    pub fn exhausted(&self) -> bool {
+        self.total_wrong >= MAX_TOTAL_WRONG_ATTEMPTS
     }
 
     /// Accepts the QR secret OR the fallback code. Once locked out, every
     /// candidate (even a correct one) is refused until `rotate` installs new
     /// credentials.
     pub fn check(&mut self, auth: &AuthField) -> AuthCheck {
-        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS || self.exhausted() {
             return AuthCheck::LockedOut;
         }
         // Evaluate both comparisons (no short-circuit) to keep the timing
@@ -113,7 +139,8 @@ impl AuthGate {
             return AuthCheck::Accepted;
         }
         self.wrong_attempts += 1;
-        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
+        self.total_wrong += 1;
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS || self.exhausted() {
             AuthCheck::LockedOut
         } else {
             AuthCheck::Wrong {
@@ -134,7 +161,9 @@ pub enum WriteOutcome {
     NeedMore,
     /// A complete frame carrying valid credentials.
     Accepted(PairingRequest),
-    WrongAuth { attempts_left: u32 },
+    WrongAuth {
+        attempts_left: u32,
+    },
     /// Too many wrong attempts. `new_credentials` are the freshly generated
     /// ones to show, or `None` if generating them failed (the gate then
     /// stays locked, which is the safe direction).
@@ -171,6 +200,9 @@ impl PairingSession {
             Ok(Some(request)) => match self.gate.check(&request.auth) {
                 AuthCheck::Accepted => WriteOutcome::Accepted(request),
                 AuthCheck::Wrong { attempts_left } => WriteOutcome::WrongAuth { attempts_left },
+                AuthCheck::LockedOut if self.gate.exhausted() => WriteOutcome::LockedOut {
+                    new_credentials: None,
+                },
                 AuthCheck::LockedOut => {
                     let new_credentials = next_credentials();
                     if let Some(credentials) = &new_credentials {
@@ -282,10 +314,22 @@ mod tests {
     #[test]
     fn gate_counts_down_wrong_attempts_then_locks_out() {
         let mut gate = AuthGate::new(creds());
-        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 4 });
-        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 3 });
-        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 2 });
-        assert_eq!(gate.check(&wrong_auth()), AuthCheck::Wrong { attempts_left: 1 });
+        assert_eq!(
+            gate.check(&wrong_auth()),
+            AuthCheck::Wrong { attempts_left: 4 }
+        );
+        assert_eq!(
+            gate.check(&wrong_auth()),
+            AuthCheck::Wrong { attempts_left: 3 }
+        );
+        assert_eq!(
+            gate.check(&wrong_auth()),
+            AuthCheck::Wrong { attempts_left: 2 }
+        );
+        assert_eq!(
+            gate.check(&wrong_auth()),
+            AuthCheck::Wrong { attempts_left: 1 }
+        );
         assert_eq!(gate.check(&wrong_auth()), AuthCheck::LockedOut);
     }
 
@@ -335,7 +379,10 @@ mod tests {
         let mut session = PairingSession::new(creds());
         let now = Instant::now();
         let frame = frame_with_auth(*creds().secret());
-        assert_eq!(session.on_write(&frame[..20], now, || None), WriteOutcome::NeedMore);
+        assert_eq!(
+            session.on_write(&frame[..20], now, || None),
+            WriteOutcome::NeedMore
+        );
         assert_eq!(
             session.on_write(&frame[20..], now, || None),
             WriteOutcome::Accepted(request_with_auth(*creds().secret()))
@@ -393,6 +440,166 @@ mod tests {
         }
         // Even the correct secret must not get in while locked and un-rotated.
         let out = session.on_write(&frame_with_auth(*creds().secret()), now, || None);
-        assert_eq!(out, WriteOutcome::LockedOut { new_credentials: None });
+        assert_eq!(
+            out,
+            WriteOutcome::LockedOut {
+                new_credentials: None
+            }
+        );
+    }
+
+    // --- global guess budget, redaction, counters -----------------------
+
+    #[test]
+    fn credentials_debug_redacts_secret_and_pin() {
+        let c = PairingCredentials::from_random_bytes([
+            0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5,
+            0xA5, 0xA5, 0x39, 0x30, 0x00, 0x00, // 12345 -> pin "012345"
+        ]);
+        assert_eq!(c.pin(), "012345");
+        let out = format!("{c:?}");
+        assert!(out.contains("<redacted>"));
+        for leak in ["012345", "12345", "a5", "A5", "165", "0xa5", "0xA5", "48"] {
+            assert!(!out.contains(leak), "leaked {leak}: {out}");
+        }
+    }
+
+    /// Sends `n` wrong frames, counting `next_credentials` calls; the
+    /// closure hands out fresh (distinct) credentials each time.
+    fn send_wrong(
+        session: &mut PairingSession,
+        n: u32,
+        calls: &mut Vec<u32>,
+        start: u32,
+    ) -> Vec<WriteOutcome> {
+        let now = Instant::now();
+        let mut outs = Vec::new();
+        for i in 0..n {
+            let attempt = start + i + 1;
+            let out = session.on_write(&frame_with_auth(wrong_auth()), now, || {
+                calls.push(attempt);
+                Some(PairingCredentials::from_random_bytes([attempt as u8; 20]))
+            });
+            outs.push(out);
+        }
+        outs
+    }
+
+    #[test]
+    fn next_credentials_is_requested_at_attempts_5_10_15_20_only() {
+        let mut session = PairingSession::new(creds());
+        let mut calls = Vec::new();
+        send_wrong(&mut session, 24, &mut calls, 0);
+        assert_eq!(calls, vec![5, 10, 15, 20]);
+    }
+
+    #[test]
+    fn after_25_wrong_attempts_across_rotations_pairing_is_locked_for_good() {
+        let mut session = PairingSession::new(creds());
+        let mut calls = Vec::new();
+        let outs = send_wrong(&mut session, 25, &mut calls, 0);
+        assert_eq!(calls, vec![5, 10, 15, 20], "no rotation on the 25th");
+        assert_eq!(
+            outs.last().unwrap(),
+            &WriteOutcome::LockedOut {
+                new_credentials: None
+            }
+        );
+        // Even the latest valid secret is refused, and no rotation happens.
+        let latest = PairingCredentials::from_random_bytes([20u8; 20]);
+        let out = session.on_write(&frame_with_auth(*latest.secret()), Instant::now(), || {
+            calls.push(99);
+            Some(other_creds())
+        });
+        assert_eq!(
+            out,
+            WriteOutcome::LockedOut {
+                new_credentials: None
+            }
+        );
+        assert_eq!(calls, vec![5, 10, 15, 20]);
+    }
+
+    #[test]
+    fn exhaustion_survives_rotate() {
+        let mut gate = AuthGate::new(creds());
+        for _ in 0..MAX_TOTAL_WRONG_ATTEMPTS {
+            if gate.check(&wrong_auth()) == AuthCheck::LockedOut && !gate.exhausted() {
+                gate.rotate(other_creds());
+            }
+        }
+        assert!(gate.exhausted());
+        gate.rotate(other_creds());
+        assert!(gate.exhausted());
+        assert_eq!(gate.check(other_creds().secret()), AuthCheck::LockedOut);
+    }
+
+    #[test]
+    fn malformed_and_partial_writes_do_not_consume_attempts() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        let frame = frame_with_auth(*creds().secret());
+        for i in 0..7u64 {
+            // Each round is > STALE_AFTER after the previous one, so the
+            // dangling partial frame from the last round is discarded.
+            let now = t0 + std::time::Duration::from_secs(10 * (i + 1));
+            let mut bad = frame.clone();
+            bad.push(0);
+            assert_eq!(
+                session.on_write(&bad, now, || None),
+                WriteOutcome::Malformed(FrameError::TooLong)
+            );
+            assert_eq!(
+                session.on_write(&frame[..10], now, || None),
+                WriteOutcome::NeedMore
+            );
+        }
+        let now = t0 + std::time::Duration::from_secs(1000);
+        assert_eq!(
+            session.on_write(&frame_with_auth(wrong_auth()), now, || None),
+            WriteOutcome::WrongAuth { attempts_left: 4 }
+        );
+        assert_eq!(
+            session.on_write(&frame, now, || None),
+            WriteOutcome::Accepted(request_with_auth(*creds().secret()))
+        );
+    }
+
+    #[test]
+    fn an_accepted_check_resets_the_window_counter() {
+        let mut gate = AuthGate::new(creds());
+        gate.check(&wrong_auth());
+        gate.check(&wrong_auth());
+        assert_eq!(gate.check(creds().secret()), AuthCheck::Accepted);
+        assert_eq!(
+            gate.check(&wrong_auth()),
+            AuthCheck::Wrong { attempts_left: 4 }
+        );
+    }
+
+    #[test]
+    fn a_failed_rotation_is_retried_on_the_next_locked_write() {
+        let mut session = PairingSession::new(creds());
+        let now = Instant::now();
+        for _ in 0..4 {
+            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
+        }
+        assert_eq!(
+            session.on_write(&frame_with_auth(wrong_auth()), now, || None),
+            WriteOutcome::LockedOut {
+                new_credentials: None
+            }
+        );
+        let out = session.on_write(&frame_with_auth(wrong_auth()), now, || Some(other_creds()));
+        assert_eq!(
+            out,
+            WriteOutcome::LockedOut {
+                new_credentials: Some(other_creds())
+            }
+        );
+        assert_eq!(
+            session.on_write(&frame_with_auth(*other_creds().secret()), now, || None),
+            WriteOutcome::Accepted(request_with_auth(*other_creds().secret()))
+        );
     }
 }
