@@ -84,9 +84,13 @@ entry:** the kiosk has no camera (ruling out QR-scan-in), and typing a
 primary path. BLE doesn't require kiosk and phone to share a WiFi
 network (unlike an HTTP-over-LAN approach) — only physical proximity
 (a few meters), which is itself a reasonable trust signal during a
-one-time setup step nobody else should be near. Rust side: `btleplug`
-(cross-platform BLE central/peripheral, covering Windows/Linux/Android)
-is the natural fit given this spec's target platform matrix.
+one-time setup step nobody else should be near. Rust side, the two
+roles need different crates: `btleplug` is central-only (it cannot act
+as a GATT server), so family-app (central, cross-platform:
+Windows/Linux/Android) uses `btleplug`, while the kiosk (peripheral, always
+Linux) uses `bluer`, the official BlueZ bindings, which support
+publishing GATT services and advertising. Linux-only is fine for `bluer`
+because the kiosk is Linux by definition.
 
 Mechanism: during this step, the kiosk advertises a BLE GATT service
 scoped to setup only (torn down once the step completes or times out);
