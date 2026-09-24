@@ -117,7 +117,10 @@ guesses per cooldown at a 1-in-a-million code (roughly 60 per hour at the
 maximum cooldown), so brute force is impractical. Nearby garbage writes
 can delay a legitimate pairing by at most 5 minutes per burst but can
 never permanently prevent it: there is no permanent lockout. The screen
-tells the family member to wait while a cooldown runs. Wrong credentials /
+tells the family member to wait while a cooldown runs; the «подождите»
+notice replaces the normal instruction only while the cooldown lasts and
+reverts to the normal instruction when it ends, so the screen never shows a
+false state. Wrong credentials /
 malformed frames are answered with a proper ATT error so family-app can
 say "неверный код".
 

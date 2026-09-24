@@ -42,6 +42,39 @@ pub fn display_wait(wait: Duration) -> String {
     }
 }
 
+/// The setup-screen instruction above the pairing QR. During a cooldown it
+/// tells the family member to wait; without one it is the normal text.
+pub fn pairing_instruction(wait: Option<Duration>) -> String {
+    match wait {
+        None => "Отсканируйте этот код в приложении семьи или введите цифры:".to_string(),
+        Some(wait) => format!(
+            "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:",
+            display_wait(wait)
+        ),
+    }
+}
+
+/// Monotonic counter identifying the current state of the pairing screen.
+/// Each redraw or teardown takes a new generation; a delayed action (the
+/// end-of-cooldown text restore) remembers the generation it was scheduled
+/// under and does nothing if the screen has moved on since.
+pub struct ViewGeneration(std::sync::atomic::AtomicU64);
+
+impl ViewGeneration {
+    pub const fn new() -> Self {
+        Self(std::sync::atomic::AtomicU64::new(0))
+    }
+
+    /// Starts a new generation and returns it.
+    pub fn next(&self) -> u64 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+    }
+
+    pub fn is_current(&self, generation: u64) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst) == generation
+    }
+}
+
 /// What the kiosk currently accepts: the 128-bit secret shown as a QR, and
 /// the 6-digit fallback code shown under it.
 #[derive(Clone, PartialEq, Eq)]
@@ -357,6 +390,38 @@ mod tests {
         assert_eq!(display_wait(Duration::from_secs(90)), "2 мин.");
         assert_eq!(display_wait(Duration::from_secs(120)), "2 мин.");
         assert_eq!(display_wait(Duration::from_secs(300)), "5 мин.");
+    }
+
+    #[test]
+    fn pairing_instruction_is_the_normal_text_without_a_wait() {
+        assert_eq!(
+            pairing_instruction(None),
+            "Отсканируйте этот код в приложении семьи или введите цифры:"
+        );
+    }
+
+    #[test]
+    fn pairing_instruction_prefixes_the_wait_during_a_cooldown() {
+        assert_eq!(
+            pairing_instruction(Some(Duration::from_secs(30))),
+            "Подождите 30 сек., затем отсканируйте этот код в приложении семьи или введите цифры:"
+        );
+    }
+
+    #[test]
+    fn view_generation_next_increments() {
+        let g = ViewGeneration::new();
+        assert_eq!(g.next(), 1);
+        assert_eq!(g.next(), 2);
+    }
+
+    #[test]
+    fn view_generation_old_is_not_current_after_next() {
+        let g = ViewGeneration::new();
+        let old = g.next();
+        let newest = g.next();
+        assert!(!g.is_current(old));
+        assert!(g.is_current(newest));
     }
 
     // --- gate -----------------------------------------------------------

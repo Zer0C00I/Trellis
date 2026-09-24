@@ -575,6 +575,10 @@ fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
     });
 }
 
+/// Generation of the pairing screen; see [`pairing::ViewGeneration`]. Only
+/// touched on the UI thread.
+static PAIRING_VIEW: pairing::ViewGeneration = pairing::ViewGeneration::new();
+
 /// Switches the setup screen into pairing mode: the pairing QR, the
 /// instruction and the fallback code. Safe to call from any thread — the
 /// `slint::Image` is built inside the UI-thread closure because it is not
@@ -587,19 +591,26 @@ fn show_pairing_view(
     let app_weak = app_weak.clone();
     let qr_text = credentials.qr_payload();
     let code = pairing::display_pin(credentials.pin());
-    let instruction = match wait {
-        None => "Отсканируйте этот код в приложении семьи или введите цифры:".to_string(),
-        Some(wait) => format!(
-            "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:",
-            pairing::display_wait(wait)
-        ),
-    };
+    let instruction = pairing::pairing_instruction(wait);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
             app.set_setup_qr_image(setup::render_qr(&qr_text));
             app.set_setup_status_text(instruction.into());
             app.set_setup_pin_text(code.into());
             app.set_setup_pairing_active(true);
+            let generation = PAIRING_VIEW.next();
+            // The waiting text is only true while the cooldown lasts: put
+            // the normal instruction back once it ends (single change, no
+            // countdown) unless the screen has changed in the meantime.
+            if let Some(wait) = wait.filter(|d| *d > std::time::Duration::ZERO) {
+                slint::Timer::single_shot(wait, move || {
+                    if PAIRING_VIEW.is_current(generation) {
+                        if let Some(app) = app_weak.upgrade() {
+                            app.set_setup_status_text(pairing::pairing_instruction(None).into());
+                        }
+                    }
+                });
+            }
         }
     });
 }
@@ -611,6 +622,7 @@ fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
     let funding_qr_text = funding_qr_text.to_string();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
+            PAIRING_VIEW.next();
             app.set_setup_pairing_active(false);
             app.set_setup_pin_text("".into());
             app.set_setup_qr_image(setup::render_qr(&funding_qr_text));
