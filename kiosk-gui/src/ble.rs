@@ -29,8 +29,9 @@ const PAIRING_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(PAIRING_CHARACTERISTIC
 
 /// Called (from the BLE runtime thread) with the new credentials whenever
 /// the kiosk rotates them after too many wrong attempts, so the UI can
-/// redraw the QR and code.
-pub type CredentialsRotated = Arc<dyn Fn(&PairingCredentials) + Send + Sync>;
+/// redraw the QR and code. The `Duration` is the cooldown during which the
+/// new credentials are not yet accepted.
+pub type CredentialsRotated = Arc<dyn Fn(&PairingCredentials, Duration) + Send + Sync>;
 
 /// Bluetooth is not usable (no adapter, `bluetoothd` not running, ...).
 /// The setup flow treats this as "skip the pairing step", never as fatal.
@@ -149,10 +150,21 @@ fn handle_write(
     on_rotated: &CredentialsRotated,
     value: &[u8],
 ) -> Result<(), ReqError> {
+    handle_write_at(session, accepted, on_rotated, value, Instant::now())
+}
+
+/// `handle_write` with the current time supplied by the caller.
+fn handle_write_at(
+    session: &Mutex<PairingSession>,
+    accepted: &mpsc::Sender<PairingRequest>,
+    on_rotated: &CredentialsRotated,
+    value: &[u8],
+    now: Instant,
+) -> Result<(), ReqError> {
     let Ok(mut session) = session.lock() else {
         return Err(ReqError::Failed);
     };
-    let outcome = session.on_write(value, Instant::now(), || generate_credentials().ok());
+    let outcome = session.on_write(value, now, || generate_credentials().ok());
     match outcome {
         WriteOutcome::NeedMore => Ok(()),
         WriteOutcome::Accepted(request) => {
@@ -163,10 +175,22 @@ fn handle_write(
             eprintln!("[kiosk-gui] pairing: wrong credentials ({attempts_left} attempts left)");
             Err(ReqError::NotAuthorized)
         }
-        WriteOutcome::LockedOut { new_credentials } => {
-            eprintln!("[kiosk-gui] pairing: too many wrong attempts, rotating credentials");
-            if let Some(credentials) = new_credentials {
-                on_rotated(&credentials);
+        WriteOutcome::CoolingDown { .. } => {
+            eprintln!("[kiosk-gui] pairing: cooling down, attempt refused");
+            Err(ReqError::NotAuthorized)
+        }
+        WriteOutcome::LockedOut {
+            new_credentials,
+            cooldown,
+        } => {
+            match new_credentials {
+                Some(credentials) => {
+                    eprintln!("[kiosk-gui] pairing: too many wrong attempts, rotating credentials");
+                    on_rotated(&credentials, cooldown);
+                }
+                None => eprintln!(
+                    "[kiosk-gui] pairing: could not generate new credentials, pairing stays locked"
+                ),
             }
             Err(ReqError::NotAuthorized)
         }
@@ -206,14 +230,15 @@ mod tests {
         tx: mpsc::Sender<PairingRequest>,
         rx: mpsc::Receiver<PairingRequest>,
         callback: CredentialsRotated,
-        rotated: Arc<Mutex<Vec<PairingCredentials>>>,
+        rotated: Arc<Mutex<Vec<(PairingCredentials, Duration)>>>,
     }
 
     fn fixture() -> Fixture {
         let rotated = Arc::new(Mutex::new(Vec::new()));
         let sink = rotated.clone();
-        let callback: CredentialsRotated =
-            Arc::new(move |c: &PairingCredentials| sink.lock().unwrap().push(c.clone()));
+        let callback: CredentialsRotated = Arc::new(move |c: &PairingCredentials, d: Duration| {
+            sink.lock().unwrap().push((c.clone(), d))
+        });
         let (tx, rx) = mpsc::channel();
         Fixture {
             session: Mutex::new(PairingSession::new(creds())),
@@ -226,6 +251,10 @@ mod tests {
 
     fn write(f: &Fixture, value: &[u8]) -> Result<(), ReqError> {
         handle_write(&f.session, &f.tx, &f.callback, value)
+    }
+
+    fn write_at(f: &Fixture, value: &[u8], now: Instant) -> Result<(), ReqError> {
+        handle_write_at(&f.session, &f.tx, &f.callback, value, now)
     }
 
     #[test]
@@ -276,19 +305,42 @@ mod tests {
             let res = write(&f, &frame(wrong()));
             assert!(matches!(res, Err(ReqError::NotAuthorized)));
         }
-        let new_creds = {
+        let (new_creds, cooldown) = {
             let seen = f.rotated.lock().unwrap();
             assert_eq!(seen.len(), 1, "UI must be told about exactly one rotation");
             seen[0].clone()
         };
         assert_ne!(new_creds.secret(), creds().secret());
+        assert_eq!(cooldown, Duration::from_secs(30));
+        assert!(f.rx.try_recv().is_err());
+    }
 
-        // The old QR secret is dead; the freshly shown one works.
+    #[test]
+    fn the_new_secret_is_refused_during_the_cooldown_and_accepted_after() {
+        let f = fixture();
+        let t0 = Instant::now();
+        for _ in 0..5 {
+            assert!(matches!(
+                write_at(&f, &frame(wrong()), t0),
+                Err(ReqError::NotAuthorized)
+            ));
+        }
+        let new_creds = f.rotated.lock().unwrap()[0].0.clone();
+
+        // During the cooldown even the correct new secret is refused.
         assert!(matches!(
-            write(&f, &frame(*creds().secret())),
+            write_at(&f, &frame(*new_creds.secret()), t0 + Duration::from_secs(1)),
             Err(ReqError::NotAuthorized)
         ));
-        assert!(write(&f, &frame(*new_creds.secret())).is_ok());
+        assert!(f.rx.try_recv().is_err());
+
+        // The old secret is dead; afterwards the new one works.
+        let after = t0 + Duration::from_secs(30);
+        assert!(matches!(
+            write_at(&f, &frame(*creds().secret()), after),
+            Err(ReqError::NotAuthorized)
+        ));
+        assert!(write_at(&f, &frame(*new_creds.secret()), after).is_ok());
         assert!(f.rx.try_recv().is_ok());
     }
 
@@ -300,7 +352,7 @@ mod tests {
     #[ignore = "needs a Bluetooth adapter and a running bluetoothd"]
     fn returns_none_immediately_when_cancel_is_already_set() {
         let cancel = AtomicBool::new(true);
-        let out = wait_for_pairing(creds(), Arc::new(|_| {}), &cancel).unwrap();
+        let out = wait_for_pairing(creds(), Arc::new(|_, _| {}), &cancel).unwrap();
         assert_eq!(out, None);
     }
 
@@ -314,7 +366,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(1500));
                 cancel.store(true, Ordering::Relaxed);
             });
-            let out = wait_for_pairing(creds(), Arc::new(|_| {}), &cancel).unwrap();
+            let out = wait_for_pairing(creds(), Arc::new(|_, _| {}), &cancel).unwrap();
             assert_eq!(out, None);
         });
         assert!(started.elapsed() < Duration::from_secs(10));

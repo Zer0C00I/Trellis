@@ -579,16 +579,25 @@ fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
 /// instruction and the fallback code. Safe to call from any thread — the
 /// `slint::Image` is built inside the UI-thread closure because it is not
 /// `Send`. Called again when the kiosk rotates its credentials.
-fn show_pairing_view(app_weak: &slint::Weak<AppWindow>, credentials: &pairing::PairingCredentials) {
+fn show_pairing_view(
+    app_weak: &slint::Weak<AppWindow>,
+    credentials: &pairing::PairingCredentials,
+    wait: Option<std::time::Duration>,
+) {
     let app_weak = app_weak.clone();
     let qr_text = credentials.qr_payload();
     let code = pairing::display_pin(credentials.pin());
+    let instruction = match wait {
+        None => "Отсканируйте этот код в приложении семьи или введите цифры:".to_string(),
+        Some(wait) => format!(
+            "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:",
+            pairing::display_wait(wait)
+        ),
+    };
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
             app.set_setup_qr_image(setup::render_qr(&qr_text));
-            app.set_setup_status_text(
-                "Отсканируйте этот код в приложении семьи или введите цифры:".into(),
-            );
+            app.set_setup_status_text(instruction.into());
             app.set_setup_pin_text(code.into());
             app.set_setup_pairing_active(true);
         }
@@ -648,12 +657,15 @@ fn run_family_pairing_step(
         }
     };
 
-    show_pairing_view(app_weak, &credentials);
+    show_pairing_view(app_weak, &credentials, None);
     let on_rotated: ble::CredentialsRotated = {
         let app_weak = app_weak.clone();
-        Arc::new(move |new_credentials: &pairing::PairingCredentials| {
-            show_pairing_view(&app_weak, new_credentials)
-        })
+        Arc::new(
+            move |new_credentials: &pairing::PairingCredentials, cooldown: std::time::Duration| {
+                let wait = (cooldown > std::time::Duration::ZERO).then_some(cooldown);
+                show_pairing_view(&app_weak, new_credentials, wait)
+            },
+        )
     };
     let outcome = ble::wait_for_pairing(credentials, on_rotated, skip_pairing.as_ref());
     hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());

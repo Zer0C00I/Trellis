@@ -108,10 +108,16 @@ seeing the kiosk's screen.
 the kiosk also shows a short 6-digit code under the QR and family-app
 offers "Ввести код вручную". The 6-digit code is a second credential the
 kiosk accepts; because it is guessable, **any 5 wrong attempts make the
-kiosk generate a fresh secret and code** (and redraw the QR), and **after
-25 wrong attempts in total the kiosk stops accepting pairing for that
-window** (only «Пропустить» / `admin-cli` remain), so a nearby attacker
-gets at most 25 guesses at a 1-in-a-million code. Wrong credentials /
+kiosk generate a fresh secret and code** (and redraw the QR) and start a
+cooldown of 30 s, doubling with each further lockout up to a 5-minute
+maximum (30, 60, 120, 240, 300, 300, ... s), during which **all attempts
+are refused unevaluated** — even one carrying the new correct secret — and
+do not count as wrong attempts. This bounds a nearby attacker to about 5
+guesses per cooldown at a 1-in-a-million code (roughly 60 per hour at the
+maximum cooldown), so brute force is impractical. Nearby garbage writes
+can delay a legitimate pairing by at most 5 minutes per burst but can
+never permanently prevent it: there is no permanent lockout. The screen
+tells the family member to wait while a cooldown runs. Wrong credentials /
 malformed frames are answered with a proper ATT error so family-app can
 say "неверный код".
 

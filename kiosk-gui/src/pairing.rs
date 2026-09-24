@@ -6,20 +6,41 @@
 //! The wire format itself lives in `family_vault_client::pairing`.
 
 use std::fmt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use family_vault_client::pairing::{
     encode_qr_payload, AuthField, FrameAssembler, FrameError, PairingRequest, AUTH_LEN, PIN_LEN,
 };
 
 /// After this many wrong attempts the kiosk rotates to fresh credentials
-/// (bounded overall by `MAX_TOTAL_WRONG_ATTEMPTS`).
+/// and starts a cooldown.
 pub const MAX_WRONG_ATTEMPTS: u32 = 5;
 
-/// Total wrong guesses tolerated across all rotations (five windows'
-/// worth). Rotation resets the per-window counter, so without this a
-/// patient attacker in range could keep guessing the 6-digit code.
-pub const MAX_TOTAL_WRONG_ATTEMPTS: u32 = 25;
+/// Cooldown after the first lockout; it doubles with each further one.
+pub const COOLDOWN_BASE: Duration = Duration::from_secs(30);
+
+/// The cooldown never grows beyond this. There is no permanent lockout.
+pub const COOLDOWN_MAX: Duration = Duration::from_secs(300);
+
+/// Cooldown after the `n`th lockout (1 for the first):
+/// `min(30 * 2^(n-1), 300)` seconds. Never overflows.
+pub fn cooldown_for_lockout(n: u32) -> Duration {
+    let doublings = n.saturating_sub(1).min(16);
+    COOLDOWN_BASE
+        .saturating_mul(1 << doublings)
+        .min(COOLDOWN_MAX)
+}
+
+/// `30 s` -> `"30 сек."`, `60 s` -> `"1 мин."`; partial minutes round up.
+/// Abbreviations avoid Russian plural forms.
+pub fn display_wait(wait: Duration) -> String {
+    let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+    if secs < 60 {
+        format!("{secs} сек.")
+    } else {
+        format!("{} мин.", secs.div_ceil(60))
+    }
+}
 
 /// What the kiosk currently accepts: the 128-bit secret shown as a QR, and
 /// the 6-digit fallback code shown under it.
@@ -97,15 +118,22 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[derive(Debug, PartialEq, Eq)]
 pub enum AuthCheck {
     Accepted,
-    Wrong { attempts_left: u32 },
+    Wrong {
+        attempts_left: u32,
+    },
     LockedOut,
+    /// A cooldown is running; the credentials were not evaluated.
+    CoolingDown {
+        remaining: Duration,
+    },
 }
 
 pub struct AuthGate {
     credentials: PairingCredentials,
     wrong_attempts: u32,
-    /// Wrong guesses over the gate's whole life; never reset by `rotate`.
-    total_wrong: u32,
+    /// Lockouts (rotations) so far; sets the cooldown length.
+    lockouts: u32,
+    cooldown_until: Option<Instant>,
 }
 
 impl AuthGate {
@@ -113,21 +141,25 @@ impl AuthGate {
         Self {
             credentials,
             wrong_attempts: 0,
-            total_wrong: 0,
+            lockouts: 0,
+            cooldown_until: None,
         }
     }
 
-    /// True once the total guess budget is spent; the gate then stays
-    /// locked for good.
-    pub fn exhausted(&self) -> bool {
-        self.total_wrong >= MAX_TOTAL_WRONG_ATTEMPTS
-    }
-
-    /// Accepts the QR secret OR the fallback code. Once locked out, every
-    /// candidate (even a correct one) is refused until `rotate` installs new
-    /// credentials.
-    pub fn check(&mut self, auth: &AuthField) -> AuthCheck {
-        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS || self.exhausted() {
+    /// Accepts the QR secret OR the fallback code. While a cooldown runs,
+    /// every candidate (even a correct one) is refused without being
+    /// evaluated or counted. Once locked out, every candidate is refused
+    /// until `rotate` installs new credentials.
+    pub fn check(&mut self, auth: &AuthField, now: Instant) -> AuthCheck {
+        if let Some(until) = self.cooldown_until {
+            if now < until {
+                return AuthCheck::CoolingDown {
+                    remaining: until - now,
+                };
+            }
+            self.cooldown_until = None;
+        }
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
             return AuthCheck::LockedOut;
         }
         // Evaluate both comparisons (no short-circuit) to keep the timing
@@ -139,8 +171,7 @@ impl AuthGate {
             return AuthCheck::Accepted;
         }
         self.wrong_attempts += 1;
-        self.total_wrong += 1;
-        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS || self.exhausted() {
+        if self.wrong_attempts >= MAX_WRONG_ATTEMPTS {
             AuthCheck::LockedOut
         } else {
             AuthCheck::Wrong {
@@ -149,9 +180,15 @@ impl AuthGate {
         }
     }
 
-    pub fn rotate(&mut self, credentials: PairingCredentials) {
+    /// Installs new credentials after a lockout and starts the cooldown
+    /// that applies to them; returns its length.
+    pub fn rotate(&mut self, credentials: PairingCredentials, now: Instant) -> Duration {
         self.credentials = credentials;
         self.wrong_attempts = 0;
+        self.lockouts = self.lockouts.saturating_add(1);
+        let cooldown = cooldown_for_lockout(self.lockouts);
+        self.cooldown_until = Some(now + cooldown);
+        cooldown
     }
 }
 
@@ -164,11 +201,17 @@ pub enum WriteOutcome {
     WrongAuth {
         attempts_left: u32,
     },
+    /// A cooldown is running: the frame was refused unevaluated.
+    CoolingDown {
+        remaining: Duration,
+    },
     /// Too many wrong attempts. `new_credentials` are the freshly generated
     /// ones to show, or `None` if generating them failed (the gate then
-    /// stays locked, which is the safe direction).
+    /// stays locked, which is the safe direction). `cooldown` is the wait
+    /// that applies to the new credentials (zero when there are none).
     LockedOut {
         new_credentials: Option<PairingCredentials>,
+        cooldown: Duration,
     },
     Malformed(FrameError),
 }
@@ -197,18 +240,20 @@ impl PairingSession {
         match self.assembler.push(chunk, now) {
             Ok(None) => WriteOutcome::NeedMore,
             Err(e) => WriteOutcome::Malformed(e),
-            Ok(Some(request)) => match self.gate.check(&request.auth) {
+            Ok(Some(request)) => match self.gate.check(&request.auth, now) {
                 AuthCheck::Accepted => WriteOutcome::Accepted(request),
                 AuthCheck::Wrong { attempts_left } => WriteOutcome::WrongAuth { attempts_left },
-                AuthCheck::LockedOut if self.gate.exhausted() => WriteOutcome::LockedOut {
-                    new_credentials: None,
-                },
+                AuthCheck::CoolingDown { remaining } => WriteOutcome::CoolingDown { remaining },
                 AuthCheck::LockedOut => {
                     let new_credentials = next_credentials();
-                    if let Some(credentials) = &new_credentials {
-                        self.gate.rotate(credentials.clone());
+                    let cooldown = match &new_credentials {
+                        Some(credentials) => self.gate.rotate(credentials.clone(), now),
+                        None => Duration::ZERO,
+                    };
+                    WriteOutcome::LockedOut {
+                        new_credentials,
+                        cooldown,
                     }
-                    WriteOutcome::LockedOut { new_credentials }
                 }
             },
         }
@@ -220,6 +265,7 @@ mod tests {
     use super::*;
     use family_vault_client::pairing::{auth_from_pin, encode_frame, PairingRequest};
     use solana_pubkey::Pubkey;
+    use std::time::Duration;
 
     /// secret = [1; 16]; pin = u32::from_le_bytes([1;4]) % 1_000_000 = 843009
     fn creds() -> PairingCredentials {
@@ -286,19 +332,49 @@ mod tests {
         assert_eq!(display_pin("482913"), "482 913");
     }
 
+    // --- cooldown schedule ------------------------------------------------
+
+    #[test]
+    fn cooldown_schedule_doubles_up_to_the_maximum() {
+        let secs: Vec<u64> = (1..=6).map(|n| cooldown_for_lockout(n).as_secs()).collect();
+        assert_eq!(secs, vec![30, 60, 120, 240, 300, 300]);
+        assert_eq!(COOLDOWN_BASE, Duration::from_secs(30));
+        assert_eq!(COOLDOWN_MAX, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn cooldown_schedule_does_not_overflow() {
+        assert_eq!(cooldown_for_lockout(u32::MAX), COOLDOWN_MAX);
+        assert_eq!(cooldown_for_lockout(64), COOLDOWN_MAX);
+        assert_eq!(cooldown_for_lockout(0), COOLDOWN_BASE);
+    }
+
+    #[test]
+    fn display_wait_uses_seconds_below_a_minute_and_minutes_above() {
+        assert_eq!(display_wait(Duration::from_secs(30)), "30 сек.");
+        assert_eq!(display_wait(Duration::from_secs(59)), "59 сек.");
+        assert_eq!(display_wait(Duration::from_secs(60)), "1 мин.");
+        assert_eq!(display_wait(Duration::from_secs(90)), "2 мин.");
+        assert_eq!(display_wait(Duration::from_secs(120)), "2 мин.");
+        assert_eq!(display_wait(Duration::from_secs(300)), "5 мин.");
+    }
+
     // --- gate -----------------------------------------------------------
 
     #[test]
     fn gate_accepts_the_qr_secret() {
         let mut gate = AuthGate::new(creds());
-        assert_eq!(gate.check(creds().secret()), AuthCheck::Accepted);
+        assert_eq!(
+            gate.check(creds().secret(), Instant::now()),
+            AuthCheck::Accepted
+        );
     }
 
     #[test]
     fn gate_accepts_the_fallback_code() {
         let mut gate = AuthGate::new(creds());
         let field = auth_from_pin(creds().pin()).unwrap();
-        assert_eq!(gate.check(&field), AuthCheck::Accepted);
+        assert_eq!(gate.check(&field, Instant::now()), AuthCheck::Accepted);
     }
 
     #[test]
@@ -306,7 +382,7 @@ mod tests {
         // Guards against ever treating an unset/zero field as a match.
         let mut gate = AuthGate::new(creds());
         assert_eq!(
-            gate.check(&[0u8; AUTH_LEN]),
+            gate.check(&[0u8; AUTH_LEN], Instant::now()),
             AuthCheck::Wrong { attempts_left: 4 }
         );
     }
@@ -314,44 +390,55 @@ mod tests {
     #[test]
     fn gate_counts_down_wrong_attempts_then_locks_out() {
         let mut gate = AuthGate::new(creds());
-        assert_eq!(
-            gate.check(&wrong_auth()),
-            AuthCheck::Wrong { attempts_left: 4 }
-        );
-        assert_eq!(
-            gate.check(&wrong_auth()),
-            AuthCheck::Wrong { attempts_left: 3 }
-        );
-        assert_eq!(
-            gate.check(&wrong_auth()),
-            AuthCheck::Wrong { attempts_left: 2 }
-        );
-        assert_eq!(
-            gate.check(&wrong_auth()),
-            AuthCheck::Wrong { attempts_left: 1 }
-        );
-        assert_eq!(gate.check(&wrong_auth()), AuthCheck::LockedOut);
+        let now = Instant::now();
+        for left in [4, 3, 2, 1] {
+            assert_eq!(
+                gate.check(&wrong_auth(), now),
+                AuthCheck::Wrong {
+                    attempts_left: left
+                }
+            );
+        }
+        assert_eq!(gate.check(&wrong_auth(), now), AuthCheck::LockedOut);
     }
 
     #[test]
     fn a_locked_gate_rejects_even_correct_credentials_until_rotated() {
         let mut gate = AuthGate::new(creds());
+        let now = Instant::now();
         for _ in 0..MAX_WRONG_ATTEMPTS {
-            gate.check(&wrong_auth());
+            gate.check(&wrong_auth(), now);
         }
-        assert_eq!(gate.check(creds().secret()), AuthCheck::LockedOut);
+        assert_eq!(gate.check(creds().secret(), now), AuthCheck::LockedOut);
 
-        gate.rotate(other_creds());
+        assert_eq!(gate.rotate(other_creds(), now), COOLDOWN_BASE);
+        let later = now + COOLDOWN_BASE;
         // Old credentials are dead, new ones work.
         assert_eq!(
-            gate.check(creds().secret()),
+            gate.check(creds().secret(), later),
             AuthCheck::Wrong { attempts_left: 4 }
         );
         assert_eq!(
-            gate.check(&auth_from_pin(creds().pin()).unwrap()),
+            gate.check(&auth_from_pin(creds().pin()).unwrap(), later),
             AuthCheck::Wrong { attempts_left: 3 }
         );
-        assert_eq!(gate.check(other_creds().secret()), AuthCheck::Accepted);
+        assert_eq!(
+            gate.check(other_creds().secret(), later),
+            AuthCheck::Accepted
+        );
+    }
+
+    #[test]
+    fn an_accepted_check_resets_the_window_counter() {
+        let mut gate = AuthGate::new(creds());
+        let now = Instant::now();
+        gate.check(&wrong_auth(), now);
+        gate.check(&wrong_auth(), now);
+        assert_eq!(gate.check(creds().secret(), now), AuthCheck::Accepted);
+        assert_eq!(
+            gate.check(&wrong_auth(), now),
+            AuthCheck::Wrong { attempts_left: 4 }
+        );
     }
 
     // --- session --------------------------------------------------------
@@ -405,50 +492,215 @@ mod tests {
         assert_eq!(out, WriteOutcome::Malformed(FrameError::TooLong));
     }
 
+    /// Sends `n` wrong frames at `now`; every rotation hands out `next`.
+    fn send_wrong(
+        session: &mut PairingSession,
+        n: u32,
+        now: Instant,
+        next: PairingCredentials,
+    ) -> WriteOutcome {
+        let mut out = None;
+        for _ in 0..n {
+            out =
+                Some(session.on_write(&frame_with_auth(wrong_auth()), now, || Some(next.clone())));
+        }
+        out.unwrap()
+    }
+
     #[test]
-    fn session_rotates_credentials_after_too_many_wrong_attempts() {
+    fn the_fifth_wrong_attempt_rotates_and_reports_the_cooldown() {
         let mut session = PairingSession::new(creds());
         let now = Instant::now();
-        for _ in 0..4 {
-            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
-        }
-        let out = session.on_write(&frame_with_auth(wrong_auth()), now, || Some(other_creds()));
+        let out = send_wrong(&mut session, 5, now, other_creds());
         assert_eq!(
             out,
             WriteOutcome::LockedOut {
-                new_credentials: Some(other_creds())
+                new_credentials: Some(other_creds()),
+                cooldown: Duration::from_secs(30),
             }
         );
+    }
 
-        // The old QR secret and old code are dead, the new secret works.
-        assert_eq!(
-            session.on_write(&frame_with_auth(*creds().secret()), now, || None),
-            WriteOutcome::WrongAuth { attempts_left: 4 }
+    #[test]
+    fn during_the_cooldown_even_the_new_correct_secret_is_refused() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+
+        let out = session.on_write(
+            &frame_with_auth(*other_creds().secret()),
+            t0 + Duration::from_secs(1),
+            || panic!("no rotation while cooling down"),
         );
         assert_eq!(
-            session.on_write(&frame_with_auth(*other_creds().secret()), now, || None),
+            out,
+            WriteOutcome::CoolingDown {
+                remaining: Duration::from_secs(29)
+            }
+        );
+        // The new fallback code is refused too.
+        let pin = auth_from_pin(other_creds().pin()).unwrap();
+        assert!(matches!(
+            session.on_write(&frame_with_auth(pin), t0 + Duration::from_secs(29), || None),
+            WriteOutcome::CoolingDown { .. }
+        ));
+    }
+
+    #[test]
+    fn cooldown_refusals_do_not_count_as_wrong_attempts() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+        // Far more than 5 garbage frames during the cooldown.
+        for i in 0..20u64 {
+            let out = session.on_write(
+                &frame_with_auth(wrong_auth()),
+                t0 + Duration::from_millis(100 * i),
+                || panic!("no rotation while cooling down"),
+            );
+            assert!(matches!(out, WriteOutcome::CoolingDown { .. }));
+        }
+        let after = t0 + Duration::from_secs(30);
+        assert_eq!(
+            session.on_write(&frame_with_auth(wrong_auth()), after, || None),
+            WriteOutcome::WrongAuth { attempts_left: 4 }
+        );
+    }
+
+    #[test]
+    fn the_new_secret_is_accepted_once_the_cooldown_elapses() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+        let out = session.on_write(
+            &frame_with_auth(*other_creds().secret()),
+            t0 + Duration::from_secs(30),
+            || None,
+        );
+        assert_eq!(
+            out,
             WriteOutcome::Accepted(request_with_auth(*other_creds().secret()))
         );
     }
 
     #[test]
-    fn session_stays_locked_if_new_credentials_cannot_be_generated() {
+    fn the_old_secret_is_dead_after_rotation() {
         let mut session = PairingSession::new(creds());
-        let now = Instant::now();
-        for _ in 0..5 {
-            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
-        }
-        // Even the correct secret must not get in while locked and un-rotated.
-        let out = session.on_write(&frame_with_auth(*creds().secret()), now, || None);
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+        let out = session.on_write(
+            &frame_with_auth(*creds().secret()),
+            t0 + Duration::from_secs(30),
+            || None,
+        );
+        assert_eq!(out, WriteOutcome::WrongAuth { attempts_left: 4 });
+    }
+
+    #[test]
+    fn the_second_lockout_uses_a_sixty_second_cooldown() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+        let t1 = t0 + Duration::from_secs(30);
+        let out = send_wrong(&mut session, 5, t1, creds());
         assert_eq!(
             out,
             WriteOutcome::LockedOut {
-                new_credentials: None
+                new_credentials: Some(creds()),
+                cooldown: Duration::from_secs(60),
             }
         );
+        assert_eq!(
+            session.on_write(
+                &frame_with_auth(*creds().secret()),
+                t1 + Duration::from_secs(59),
+                || None
+            ),
+            WriteOutcome::CoolingDown {
+                remaining: Duration::from_secs(1)
+            }
+        );
+        assert!(matches!(
+            session.on_write(
+                &frame_with_auth(*creds().secret()),
+                t1 + Duration::from_secs(60),
+                || None
+            ),
+            WriteOutcome::Accepted(_)
+        ));
     }
 
-    // --- global guess budget, redaction, counters -----------------------
+    #[test]
+    fn a_failed_rotation_leaves_the_gate_locked_and_is_retried_on_the_next_write() {
+        let mut session = PairingSession::new(creds());
+        let t0 = Instant::now();
+        for _ in 0..4 {
+            session.on_write(&frame_with_auth(wrong_auth()), t0, || None);
+        }
+        assert_eq!(
+            session.on_write(&frame_with_auth(wrong_auth()), t0, || None),
+            WriteOutcome::LockedOut {
+                new_credentials: None,
+                cooldown: Duration::ZERO,
+            }
+        );
+        // Still locked, no cooldown running: even the correct secret is
+        // refused and triggers another rotation attempt.
+        let t1 = t0 + Duration::from_secs(5);
+        assert_eq!(
+            session.on_write(&frame_with_auth(*creds().secret()), t1, || None),
+            WriteOutcome::LockedOut {
+                new_credentials: None,
+                cooldown: Duration::ZERO,
+            }
+        );
+        // The retry succeeds and the cooldown starts at that write.
+        assert_eq!(
+            session.on_write(&frame_with_auth(wrong_auth()), t1, || Some(other_creds())),
+            WriteOutcome::LockedOut {
+                new_credentials: Some(other_creds()),
+                cooldown: Duration::from_secs(30),
+            }
+        );
+        assert!(matches!(
+            session.on_write(&frame_with_auth(*other_creds().secret()), t1, || None),
+            WriteOutcome::CoolingDown { .. }
+        ));
+        assert!(matches!(
+            session.on_write(
+                &frame_with_auth(*other_creds().secret()),
+                t1 + Duration::from_secs(30),
+                || None
+            ),
+            WriteOutcome::Accepted(_)
+        ));
+    }
+
+    #[test]
+    fn there_is_no_permanent_lockout_across_many_rotations() {
+        let mut session = PairingSession::new(creds());
+        let mut now = Instant::now();
+        let mut current = creds();
+        for round in 0..12u8 {
+            let next = PairingCredentials::from_random_bytes([round + 10; 20]);
+            let out = send_wrong(&mut session, 5, now, next.clone());
+            assert!(matches!(
+                out,
+                WriteOutcome::LockedOut {
+                    new_credentials: Some(_),
+                    ..
+                }
+            ));
+            now += COOLDOWN_MAX;
+            current = next;
+        }
+        assert!(matches!(
+            session.on_write(&frame_with_auth(*current.secret()), now, || None),
+            WriteOutcome::Accepted(_)
+        ));
+    }
+
+    // --- redaction, counters --------------------------------------------
 
     #[test]
     fn credentials_debug_redacts_secret_and_pin() {
@@ -464,76 +716,6 @@ mod tests {
         }
     }
 
-    /// Sends `n` wrong frames, counting `next_credentials` calls; the
-    /// closure hands out fresh (distinct) credentials each time.
-    fn send_wrong(
-        session: &mut PairingSession,
-        n: u32,
-        calls: &mut Vec<u32>,
-        start: u32,
-    ) -> Vec<WriteOutcome> {
-        let now = Instant::now();
-        let mut outs = Vec::new();
-        for i in 0..n {
-            let attempt = start + i + 1;
-            let out = session.on_write(&frame_with_auth(wrong_auth()), now, || {
-                calls.push(attempt);
-                Some(PairingCredentials::from_random_bytes([attempt as u8; 20]))
-            });
-            outs.push(out);
-        }
-        outs
-    }
-
-    #[test]
-    fn next_credentials_is_requested_at_attempts_5_10_15_20_only() {
-        let mut session = PairingSession::new(creds());
-        let mut calls = Vec::new();
-        send_wrong(&mut session, 24, &mut calls, 0);
-        assert_eq!(calls, vec![5, 10, 15, 20]);
-    }
-
-    #[test]
-    fn after_25_wrong_attempts_across_rotations_pairing_is_locked_for_good() {
-        let mut session = PairingSession::new(creds());
-        let mut calls = Vec::new();
-        let outs = send_wrong(&mut session, 25, &mut calls, 0);
-        assert_eq!(calls, vec![5, 10, 15, 20], "no rotation on the 25th");
-        assert_eq!(
-            outs.last().unwrap(),
-            &WriteOutcome::LockedOut {
-                new_credentials: None
-            }
-        );
-        // Even the latest valid secret is refused, and no rotation happens.
-        let latest = PairingCredentials::from_random_bytes([20u8; 20]);
-        let out = session.on_write(&frame_with_auth(*latest.secret()), Instant::now(), || {
-            calls.push(99);
-            Some(other_creds())
-        });
-        assert_eq!(
-            out,
-            WriteOutcome::LockedOut {
-                new_credentials: None
-            }
-        );
-        assert_eq!(calls, vec![5, 10, 15, 20]);
-    }
-
-    #[test]
-    fn exhaustion_survives_rotate() {
-        let mut gate = AuthGate::new(creds());
-        for _ in 0..MAX_TOTAL_WRONG_ATTEMPTS {
-            if gate.check(&wrong_auth()) == AuthCheck::LockedOut && !gate.exhausted() {
-                gate.rotate(other_creds());
-            }
-        }
-        assert!(gate.exhausted());
-        gate.rotate(other_creds());
-        assert!(gate.exhausted());
-        assert_eq!(gate.check(other_creds().secret()), AuthCheck::LockedOut);
-    }
-
     #[test]
     fn malformed_and_partial_writes_do_not_consume_attempts() {
         let mut session = PairingSession::new(creds());
@@ -542,7 +724,7 @@ mod tests {
         for i in 0..7u64 {
             // Each round is > STALE_AFTER after the previous one, so the
             // dangling partial frame from the last round is discarded.
-            let now = t0 + std::time::Duration::from_secs(10 * (i + 1));
+            let now = t0 + Duration::from_secs(10 * (i + 1));
             let mut bad = frame.clone();
             bad.push(0);
             assert_eq!(
@@ -554,7 +736,7 @@ mod tests {
                 WriteOutcome::NeedMore
             );
         }
-        let now = t0 + std::time::Duration::from_secs(1000);
+        let now = t0 + Duration::from_secs(1000);
         assert_eq!(
             session.on_write(&frame_with_auth(wrong_auth()), now, || None),
             WriteOutcome::WrongAuth { attempts_left: 4 }
@@ -566,40 +748,21 @@ mod tests {
     }
 
     #[test]
-    fn an_accepted_check_resets_the_window_counter() {
-        let mut gate = AuthGate::new(creds());
-        gate.check(&wrong_auth());
-        gate.check(&wrong_auth());
-        assert_eq!(gate.check(creds().secret()), AuthCheck::Accepted);
-        assert_eq!(
-            gate.check(&wrong_auth()),
-            AuthCheck::Wrong { attempts_left: 4 }
-        );
-    }
-
-    #[test]
-    fn a_failed_rotation_is_retried_on_the_next_locked_write() {
+    fn malformed_and_partial_writes_are_unaffected_by_the_cooldown() {
         let mut session = PairingSession::new(creds());
-        let now = Instant::now();
-        for _ in 0..4 {
-            session.on_write(&frame_with_auth(wrong_auth()), now, || None);
-        }
+        let t0 = Instant::now();
+        send_wrong(&mut session, 5, t0, other_creds());
+        let now = t0 + Duration::from_secs(1);
+        let frame = frame_with_auth(*other_creds().secret());
+        let mut bad = frame.clone();
+        bad.push(0);
         assert_eq!(
-            session.on_write(&frame_with_auth(wrong_auth()), now, || None),
-            WriteOutcome::LockedOut {
-                new_credentials: None
-            }
-        );
-        let out = session.on_write(&frame_with_auth(wrong_auth()), now, || Some(other_creds()));
-        assert_eq!(
-            out,
-            WriteOutcome::LockedOut {
-                new_credentials: Some(other_creds())
-            }
+            session.on_write(&bad, now, || None),
+            WriteOutcome::Malformed(FrameError::TooLong)
         );
         assert_eq!(
-            session.on_write(&frame_with_auth(*other_creds().secret()), now, || None),
-            WriteOutcome::Accepted(request_with_auth(*other_creds().secret()))
+            session.on_write(&frame[..10], now, || None),
+            WriteOutcome::NeedMore
         );
     }
 }
