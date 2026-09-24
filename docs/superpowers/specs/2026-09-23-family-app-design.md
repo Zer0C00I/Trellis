@@ -93,12 +93,57 @@ publishing GATT services and advertising. Linux-only is fine for `bluer`
 because the kiosk is Linux by definition.
 
 Mechanism: during this step, the kiosk advertises a BLE GATT service
-scoped to setup only (torn down once the step completes or times out);
-family-app scans, connects, and writes its pubkey to a characteristic.
-The setup screen shows a short confirmation code so the person can
-visually verify the device that connected is the one in front of them,
-guarding against an unrelated BLE device answering the advertisement
-during the setup window.
+scoped to setup only (torn down as soon as the step ends) with one
+writable characteristic. **The kiosk shows a random 6-digit PIN on its
+screen; the person types that PIN into family-app**, which writes
+`PIN + pubkey + name` to the characteristic. The kiosk accepts the write
+only if the PIN matches. This direction (PIN shown on the kiosk, typed on
+the phone) is deliberate: the kiosk needs no input device for this step
+(consistent with its no-text-input design), and a stranger who happens to
+be in Bluetooth range cannot inject their own key without seeing the
+kiosk's screen. After 5 wrong PINs the kiosk generates a new PIN, so the
+6-digit space cannot be brute-forced by repeated guessing. Wrong PIN /
+malformed frames are answered with a proper ATT error so family-app can
+say "неверный код".
+
+**Wire format** (single writable characteristic; shared between kiosk and
+family-app via the `family-vault-client` crate so both sides use the same
+encoder/decoder):
+
+```
+[ 6 bytes: ASCII digits, the PIN ]
+[ 32 bytes: the family member's pubkey ]
+[ 1 byte: N, the length of the name in bytes, 1..=32 ]
+[ N bytes: UTF-8 name, e.g. "Внук Саша" ]
+```
+
+Total `39 + N` bytes. A central may deliver it in one write or split across
+several (ATT payloads can be as small as 20 bytes), so the kiosk
+reassembles; a partial frame not completed within 3 seconds is discarded.
+The name is what grandma later sees on the kiosk's "send to" screen, which
+is why it travels with the key rather than being a fixed label.
+
+**Failure behaviour, all deliberate:**
+- No Bluetooth adapter / `bluetoothd` not running: the kiosk logs it and
+  skips the pairing step; setup completes and the first family member can
+  be added later with `admin-cli` (so dev machines and adapter-less
+  hardware are never bricked).
+- A **Пропустить** button on the pairing screen skips the step for anyone
+  setting the device up without the family app at hand (same fallback).
+- The step runs **before** `kiosk.toml` is written and is idempotent
+  (it reads the on-chain approvers/beneficiaries first and only submits
+  what is missing, in one atomic transaction), so power loss mid-setup
+  resumes cleanly instead of double-adding or losing the chance to pair.
+- The new `TrustedApprovers` account costs rent the original funding
+  floor did not include; the minimum funding amount grows accordingly.
+- Note the added beneficiary is subject to the normal 48h cooldown before
+  grandma can send to them; the trusted-approver role has no cooldown.
+
+Crates: the kiosk (always Linux) is the BLE **peripheral** and uses
+`bluer` (BlueZ bindings, verified to build and to register advertising +
+a GATT application against a real BlueZ in this repo's environment);
+family-app is the **central** and uses `btleplug`. `kiosk-gui` therefore
+becomes Linux-only, which is accepted: the kiosk hardware is Linux.
 
 ## Vault Discovery
 
