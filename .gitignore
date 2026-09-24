@@ -1,2 +1,15 @@
 /target
 /programs/*/target
+
+# local tooling scratch
+/.superpowers/
+/.codegraph/
+
+# never commit key material or device config
+*keypair*.json
+id.json
+*.pem
+.env
+kiosk.toml
+provisioning.toml
+/test-ledger/
