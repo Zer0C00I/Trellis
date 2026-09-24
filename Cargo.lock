@@ -2770,6 +2770,7 @@ name = "family-vault-client"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "family-vault",
  "solana-client",
  "solana-pubkey 4.2.1",
  "spl-token",
