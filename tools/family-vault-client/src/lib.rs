@@ -6,6 +6,8 @@
 //! `kiosk-gui/src/setup.rs`, and `tools/admin-cli/src/main.rs` before
 //! this crate existed — this is the single source of truth now.
 
+pub mod pairing;
+
 use solana_client::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
 use spl_token::solana_program::program_pack::Pack;

@@ -12,3 +12,6 @@ spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
 [lints.rust]
 unsafe_code = "deny"
 dead_code = "deny"
+
+[dev-dependencies]
+family-vault = { version = "0.1.0", path = "../../programs/family-vault", features = ["cpi"] }
