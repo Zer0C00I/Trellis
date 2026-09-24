@@ -8,11 +8,8 @@ use slint_ui::*;
 
 mod chain;
 mod setup;
-#[allow(dead_code)] // used starting in Task 6
 mod pairing;
-#[allow(dead_code)] // used starting in Task 6
 mod family_member;
-#[allow(dead_code)] // used starting in Task 6
 mod ble;
 
 use std::cell::RefCell;
@@ -74,9 +71,19 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
 
+    // Set by the setup screen's "Пропустить" button; read by the BLE
+    // pairing step running on the setup thread.
+    let skip_pairing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let skip_pairing = skip_pairing.clone();
+        app.on_skip_pairing_requested(move || {
+            skip_pairing.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+
     if setup::needs_setup(&config_path) {
         let cfg_slot = cfg.clone();
-        run_setup_flow(app.as_weak(), config_path.clone(), cfg_slot);
+        run_setup_flow(app.as_weak(), config_path.clone(), cfg_slot, skip_pairing.clone());
     } else {
         match chain::load_config(&config_path) {
             Ok(loaded) => {
@@ -389,6 +396,7 @@ fn run_setup_flow(
     app_weak: slint::Weak<AppWindow>,
     config_path: std::path::PathBuf,
     cfg_slot: Arc<Mutex<Option<Arc<ChainConfig>>>>,
+    skip_pairing: Arc<std::sync::atomic::AtomicBool>,
 ) {
     let app_weak_for_screen = app_weak.clone();
     let _ = slint::invoke_from_event_loop(move || {
@@ -494,6 +502,8 @@ fn run_setup_flow(
             return;
         };
 
+        run_family_pairing_step(&app_weak, &rpc, &owner, &provisioning, &vault, &skip_pairing);
+
         let values = setup::KioskConfigValues {
             rpc_url: provisioning.rpc_url.clone(),
             keypair_path: keypair_path.to_string_lossy().into_owned(),
@@ -552,6 +562,137 @@ fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
             app.set_setup_status_text(text.into());
         }
     });
+}
+
+/// Switches the setup screen into pairing mode: the pairing QR, the
+/// instruction and the fallback code. Safe to call from any thread — the
+/// `slint::Image` is built inside the UI-thread closure because it is not
+/// `Send`. Called again when the kiosk rotates its credentials.
+fn show_pairing_view(
+    app_weak: &slint::Weak<AppWindow>,
+    credentials: &pairing::PairingCredentials,
+) {
+    let app_weak = app_weak.clone();
+    let qr_text = credentials.qr_payload();
+    let code = pairing::display_pin(credentials.pin());
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_setup_qr_image(setup::render_qr(&qr_text));
+            app.set_setup_status_text(
+                "Отсканируйте этот код в приложении семьи или введите цифры:".into(),
+            );
+            app.set_setup_pin_text(code.into());
+            app.set_setup_pairing_active(true);
+        }
+    });
+}
+
+/// Leaves pairing mode and puts the funding QR back (which is what the
+/// screen showed for the rest of setup before pairing existed).
+fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
+    let app_weak = app_weak.clone();
+    let funding_qr_text = funding_qr_text.to_string();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = app_weak.upgrade() {
+            app.set_setup_pairing_active(false);
+            app.set_setup_pin_text("".into());
+            app.set_setup_qr_image(setup::render_qr(&funding_qr_text));
+        }
+    });
+}
+
+/// First-run step between "personal vault exists" and "write kiosk.toml":
+/// let one family member hand the kiosk their key over Bluetooth and
+/// register them on-chain. Never fatal — no Bluetooth, a skip, or a chain
+/// failure all just continue setup (the first family member can then be
+/// added with `admin-cli`). Runs BEFORE `kiosk.toml` is written and is
+/// idempotent, so a power cut anywhere in here resumes cleanly.
+fn run_family_pairing_step(
+    app_weak: &slint::Weak<AppWindow>,
+    rpc: &solana_client::rpc_client::RpcClient,
+    owner: &solana_keypair::Keypair,
+    provisioning: &setup::ProvisioningConfig,
+    vault: &solana_pubkey::Pubkey,
+    skip_pairing: &Arc<std::sync::atomic::AtomicBool>,
+) {
+    let program_id = family_vault_client::to_client(provisioning.program_id);
+    let (approvers_pk, _) = family_vault_client::approvers_pda(&program_id, vault);
+    let (list_pk, _) = family_vault_client::beneficiary_list_pda(&program_id, vault);
+
+    match family_member::fetch_membership_state(rpc, &approvers_pk, &list_pk) {
+        Ok(state) if !family_member::needs_pairing(&state) => {
+            eprintln!("[kiosk-gui] setup: a family member is already registered, skipping pairing");
+            return;
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!(
+            "[kiosk-gui] setup: could not read membership state ({e:?}); offering pairing anyway"
+        ),
+    }
+
+    let credentials = match pairing::generate_credentials() {
+        Ok(credentials) => credentials,
+        Err(e) => {
+            eprintln!(
+                "[kiosk-gui] setup: could not generate pairing credentials ({e}); skipping pairing"
+            );
+            return;
+        }
+    };
+
+    show_pairing_view(app_weak, &credentials);
+    let on_rotated: ble::CredentialsRotated = {
+        let app_weak = app_weak.clone();
+        Arc::new(move |new_credentials: &pairing::PairingCredentials| {
+            show_pairing_view(&app_weak, new_credentials)
+        })
+    };
+    let outcome = ble::wait_for_pairing(credentials, on_rotated, skip_pairing.as_ref());
+    hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
+
+    let request = match outcome {
+        Ok(Some(request)) => request,
+        Ok(None) => {
+            eprintln!("[kiosk-gui] setup: family pairing skipped");
+            return;
+        }
+        Err(e) => {
+            eprintln!("[kiosk-gui] setup: {e}; skipping family pairing");
+            return;
+        }
+    };
+
+    set_setup_status(app_weak, "Добавляем участника семьи...".to_string());
+    let mut added = false;
+    for attempt in 0..5u32 {
+        match family_member::add_first_family_member(
+            rpc,
+            owner,
+            &program_id,
+            vault,
+            &request.pubkey,
+            &request.name,
+        ) {
+            Ok(()) => {
+                eprintln!(
+                    "[kiosk-gui] setup: registered family member {} (\"{}\")",
+                    request.pubkey, request.name
+                );
+                added = true;
+                break;
+            }
+            Err(e) => {
+                eprintln!("[kiosk-gui] setup: add family member attempt {attempt} failed: {e:?}");
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+        }
+    }
+    if !added {
+        eprintln!(
+            "[kiosk-gui] setup: could not register the family member; add them later with admin-cli"
+        );
+    }
+    set_setup_status(app_weak, "Почти готово...".to_string());
 }
 
 /// Wraps `refresh_vault_state` so it becomes a no-op when `cfg` hasn't
