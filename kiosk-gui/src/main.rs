@@ -8,6 +8,8 @@ use slint_ui::*;
 
 mod chain;
 mod setup;
+#[allow(dead_code)] // used starting in Task 6
+mod pairing;
 
 use std::cell::RefCell;
 use std::rc::Rc;
