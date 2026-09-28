@@ -9,7 +9,7 @@ use slint_ui::*;
 mod ble;
 mod chain;
 mod family_member;
-pub mod pairing;
+mod pairing;
 mod setup;
 
 use std::cell::RefCell;
