@@ -842,6 +842,8 @@ mod tests {
 
         pairing_wait_notice_reverts_to_normal_after_the_cooldown_elapses();
         a_stale_timer_does_not_overwrite_a_newer_screen_state();
+        the_result_screen_auto_returns_to_my_wallet_after_six_seconds();
+        the_auto_return_timer_does_not_fire_while_on_a_different_screen();
     }
 
     /// Exercises the real `slint::Timer::single_shot` scheduled by
@@ -959,5 +961,78 @@ mod tests {
             .take()
             .expect("the queued event-loop closure ran");
         assert_eq!(final_text, "Почти готово...");
+    }
+
+    /// Exercises `app.slint`'s native `auto-return-timer` (a `Timer`
+    /// declared entirely in .slint, not driven from Rust): it must not fire
+    /// before its 6s interval elapses, and must switch back to
+    /// `Screen::MyWallet` once it does.
+    ///
+    /// Unlike the pairing-timer scenarios above, this timer's binding
+    /// (`running: current-screen == Screen.result`) and property
+    /// read/writes here don't go through `invoke_from_event_loop` --
+    /// `AppWindow::new()` runs on this same test thread, so
+    /// `set_current_screen`/`get_current_screen` apply synchronously (the
+    /// same direct style `tests/navigation.rs` uses inside its own
+    /// event-loop-driven closures), and `mock_elapsed_time` activates any
+    /// due timers synchronously too, with no running event loop required.
+    fn the_result_screen_auto_returns_to_my_wallet_after_six_seconds() {
+        let app = AppWindow::new().unwrap();
+
+        app.set_current_screen(Screen::Result);
+
+        // The `running: current-screen == Screen.result` binding is only
+        // re-evaluated (and the timer actually started) the next time
+        // property change handlers run, which `mock_elapsed_time` triggers
+        // as a side effect. A zero-duration call here starts the timer's
+        // count from "now" -- without it, the first real advance below
+        // would both start the timer AND count toward its interval in one
+        // step, undercounting how much mock time the timer has actually
+        // seen.
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+
+        // Just under the 6s interval: the timer must not have fired yet.
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(5_900));
+        assert_eq!(
+            app.get_current_screen(),
+            Screen::Result,
+            "auto-return-timer fired before its 6s interval elapsed"
+        );
+
+        // Past the interval: the timer must now have fired.
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(200));
+        assert_eq!(
+            app.get_current_screen(),
+            Screen::MyWallet,
+            "auto-return-timer did not fire after its 6s interval elapsed"
+        );
+    }
+
+    /// Guards the timer's `running: current-screen == Screen.result`
+    /// binding: while on any other screen it must not run at all, so a
+    /// regression that removed the binding (making the timer always fire)
+    /// would be caught here.
+    fn the_auto_return_timer_does_not_fire_while_on_a_different_screen() {
+        let app = AppWindow::new().unwrap();
+
+        // Deliberately NOT `Screen::MyWallet`: the timer's own effect is to
+        // set the screen TO `MyWallet`, so asserting against `MyWallet`
+        // itself would pass even if the timer incorrectly fired (a no-op
+        // change). Using a distinct screen makes an incorrect fire visible.
+        app.set_current_screen(Screen::Confirm);
+
+        // See the sibling scenario above for why this zero-duration pump is
+        // needed before the real advance: it's what makes the `running`
+        // binding get (re-)evaluated, so a regression that hard-codes
+        // `running: true` actually starts counting from here rather than
+        // from partway into the 10s advance below.
+        i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
+
+        i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(10));
+        assert_eq!(
+            app.get_current_screen(),
+            Screen::Confirm,
+            "auto-return-timer fired while not on the Result screen"
+        );
     }
 }
