@@ -3,6 +3,9 @@ name = "kiosk-gui"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "kiosk_gui"
+
 [dependencies]
 anchor-lang = "1.2.0"
 family-vault = { version = "0.1.0", path = "../programs/family-vault", features = ["cpi"] }

@@ -1,4 +1,4 @@
-slint::include_modules!();
+use kiosk_gui::slint_ui::*;
 
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 use slint::platform::PointerEventButton;
