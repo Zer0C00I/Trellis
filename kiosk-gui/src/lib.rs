@@ -819,3 +819,145 @@ fn fetch_beneficiary_addresses(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    // `i_slint_backend_testing`'s platform can only be initialized once per
+    // process (its own docs say so: the process-wide event-loop proxy is a
+    // `OnceCell`), and Rust's default `#[test]` harness runs every test
+    // function on its own freshly spawned OS thread -- even under
+    // `--test-threads=1` -- so a second test's thread would never observe
+    // the platform bound to the first test's thread. `tests/navigation.rs`
+    // hits the exact same constraint and solves it by driving every
+    // scenario from one `#[test]` function on one thread; we do the same
+    // here, calling the two (non-`#[test]`) scenario functions below in
+    // sequence from a single `#[test]` entry point.
+    #[test]
+    fn pairing_wait_timer_uses_slint_mock_time() {
+        i_slint_backend_testing::init_integration_test_with_mock_time();
+
+        pairing_wait_notice_reverts_to_normal_after_the_cooldown_elapses();
+        a_stale_timer_does_not_overwrite_a_newer_screen_state();
+    }
+
+    /// Exercises the real `slint::Timer::single_shot` scheduled by
+    /// `show_pairing_view`: after the cooldown, the timer must fire and put
+    /// the normal instruction back.
+    ///
+    /// `slint::invoke_from_event_loop` (used internally by
+    /// `show_pairing_view`) only queues its closure -- it runs once
+    /// `slint::run_event_loop()` actually pumps the queue -- so the
+    /// assertions are made from inside further queued closures rather than
+    /// immediately after the call, and the result is handed back out
+    /// through an `Arc<Mutex<..>>` (the closures must be `Send`, so a
+    /// captured `Rc`/`RefCell` won't compile).
+    fn pairing_wait_notice_reverts_to_normal_after_the_cooldown_elapses() {
+        let app = AppWindow::new().unwrap();
+        let credentials = pairing::PairingCredentials::from_random_bytes([9u8; 20]);
+
+        show_pairing_view(
+            &app.as_weak(),
+            &credentials,
+            Some(Duration::from_secs(30)),
+        );
+
+        let captured: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+        let captured_clone = captured.clone();
+        let app_weak = app.as_weak();
+        slint::invoke_from_event_loop(move || {
+            // Immediately after `show_pairing_view`'s queued closure has
+            // run, the waiting text is in effect.
+            let waiting = app_weak
+                .upgrade()
+                .map(|a| a.get_setup_status_text().to_string())
+                .unwrap_or_default();
+
+            // Advance mock time past the cooldown; the pending single-shot
+            // timer fires synchronously as part of this call.
+            i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
+
+            let after = app_weak
+                .upgrade()
+                .map(|a| a.get_setup_status_text().to_string())
+                .unwrap_or_default();
+            *captured_clone.lock().unwrap() = Some((waiting, after));
+            slint::quit_event_loop().unwrap();
+        })
+        .unwrap();
+
+        slint::run_event_loop().unwrap();
+
+        let (waiting, after) = captured
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the queued event-loop closure ran");
+        assert!(
+            waiting.contains("Подождите"),
+            "expected the waiting text, got: {waiting}"
+        );
+        assert!(
+            !after.contains("Подождите"),
+            "waiting text should have reverted, got: {after}"
+        );
+        assert_eq!(after, pairing::pairing_instruction(None));
+    }
+
+    /// A screen change (here, `hide_pairing_view`) that happens before the
+    /// cooldown elapses must invalidate the pending timer via
+    /// `PAIRING_VIEW`'s generation counter, so the timer's eventual firing
+    /// does not clobber whatever later replaced the pairing-wait text.
+    fn a_stale_timer_does_not_overwrite_a_newer_screen_state() {
+        let app = AppWindow::new().unwrap();
+        let credentials = pairing::PairingCredentials::from_random_bytes([9u8; 20]);
+
+        show_pairing_view(
+            &app.as_weak(),
+            &credentials,
+            Some(Duration::from_secs(30)),
+        );
+
+        let final_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let final_text_clone = final_text.clone();
+        let app_weak = app.as_weak();
+        slint::invoke_from_event_loop(move || {
+            // The screen changes (e.g. pairing ends) BEFORE the cooldown
+            // elapses. `hide_pairing_view` itself only queues its own
+            // closure, so the follow-up step below is queued from here too
+            // -- guaranteeing it runs after `hide_pairing_view`'s closure
+            // (and thus after `PAIRING_VIEW.next()`) has actually executed.
+            hide_pairing_view(&app_weak, "some-funding-qr-text");
+            if let Some(app) = app_weak.upgrade() {
+                app.set_setup_status_text("Почти готово...".into());
+            }
+
+            let app_weak2 = app_weak.clone();
+            let final_text_clone2 = final_text_clone.clone();
+            slint::invoke_from_event_loop(move || {
+                // The stale timer must NOT have overwritten this later
+                // status.
+                i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
+                if let Some(app) = app_weak2.upgrade() {
+                    *final_text_clone2.lock().unwrap() =
+                        Some(app.get_setup_status_text().to_string());
+                }
+                slint::quit_event_loop().unwrap();
+            })
+            .unwrap();
+        })
+        .unwrap();
+
+        slint::run_event_loop().unwrap();
+
+        let final_text = final_text
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the queued event-loop closure ran");
+        assert_eq!(final_text, "Почти готово...");
+    }
+}
