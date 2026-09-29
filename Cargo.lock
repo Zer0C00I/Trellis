@@ -2893,6 +2893,7 @@ dependencies = [
  "solana-client",
  "solana-instruction",
  "solana-pubkey 4.2.1",
+ "spl-associated-token-account",
  "spl-token",
 ]
 
