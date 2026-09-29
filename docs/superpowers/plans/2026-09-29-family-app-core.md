@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `family-app-core`, a headless Rust library with everything a future Tauri UI shell needs: local identity (keypair), on-chain vault discovery, every everyday admin-cli-equivalent action (open account, deposit, send, add payee, add payee urgently, add approver, approve withdrawal), and BLE pairing as the central role (scanning for and writing to a kiosk in first-run setup).
+**Goal:** Build `family-app-core`, a headless Rust library with everything a future Tauri UI shell needs: local identity (keypair), on-chain vault discovery, every everyday admin-cli-equivalent action (open account, deposit, send, add payee, add payee urgently, add approver, approve withdrawal), read-only transaction history, and BLE pairing as the central role (scanning for and writing to a kiosk in first-run setup).
 
 **Architecture:** Three layers, each independently testable: (1) pure instruction builders hoisted into the existing shared `family-vault-client` crate (a third consumer besides admin-cli and kiosk-gui now needs them, so a fourth duplication is worse than the hoist); (2) a new `tools/family-app-core` library crate wrapping those builders with RPC send/sign, local identity, and on-chain discovery; (3) a BLE central module in the same crate, reusing the wire format `family-vault-client::pairing` already shared with the kiosk (BLE peripheral). No UI, no Tauri, no IPC in this plan — that is a follow-up plan once this one lands, per the family-app design spec's own scope split.
 
-**Tech Stack:** Rust, existing `family-vault-client`/`family-vault` crates, `solana-client =4.2.2` (RPC, matching the rest of this workspace's pins), `btleplug` (BLE central — version TBD by Task 5's own compile spike, see that task), TDD throughout.
+**Tech Stack:** Rust, existing `family-vault-client`/`family-vault` crates, `solana-client =4.2.2` (RPC, matching the rest of this workspace's pins), `btleplug` (BLE central — version TBD by Task 6's own compile spike, see that task), TDD throughout.
 
 **Spec:** `docs/superpowers/specs/2026-09-23-family-app-design.md` — sections "Vault Discovery", "MVP Scope", "Identity & Bootstrap". This plan also corrects one inaccuracy in that spec's "Vault Discovery" section (see Task 3).
 
@@ -17,14 +17,14 @@
 - Two incompatible Solana `Pubkey` generations coexist: `anchor_lang::prelude::Pubkey` (Anchor bindings) and `solana_pubkey::Pubkey` (client side). Convert ONLY with `family_vault_client::{to_anchor, to_client}`.
 - MVP explicitly excludes owner-rotation flows (`request-rotation`/`execute-rotation`/`cancel-rotation`) — do not build these; the family-app design spec lists them as out of scope.
 - No process::exit / no CLI parsing in this crate — everything returns `Result`. This is a library other code (a future Tauri backend, or tests) calls into, not a binary.
-- Never invent unverified crate APIs. Where this plan cites a function/type, it was checked against the pinned version's source in this environment (`~/.cargo/registry/src/...`) before being written down. Task 5 is the one exception (BLE central library not yet chosen/verified) and says so explicitly — its first step is a verification spike, not a leap of faith.
+- Never invent unverified crate APIs. Where this plan cites a function/type, it was checked against the pinned version's source in this environment (`~/.cargo/registry/src/...`) before being written down. Task 6 is the one exception (BLE central library not yet chosen/verified) and says so explicitly — its first step is a verification spike, not a leap of faith.
 - Tests use real logic, not mocks. RPC-dependent tests that need a live endpoint are `#[ignore = "..."]` and documented as manual, matching the convention already used in `kiosk-gui/src/setup.rs` and `kiosk-gui/src/ble.rs`.
 
 ## File Structure
 
 - Create `tools/family-vault-client/src/builders.rs` — pure instruction builders shared by admin-cli, kiosk-gui, and family-app-core.
 - Modify `tools/family-vault-client/src/lib.rs` (`pub mod builders;`).
-- Create `tools/family-app-core/Cargo.toml`, `tools/family-app-core/src/lib.rs`, `tools/family-app-core/src/identity.rs`, `tools/family-app-core/src/discovery.rs`, `tools/family-app-core/src/actions.rs`, `tools/family-app-core/src/pairing.rs`.
+- Create `tools/family-app-core/Cargo.toml`, `tools/family-app-core/src/lib.rs`, `tools/family-app-core/src/identity.rs`, `tools/family-app-core/src/discovery.rs`, `tools/family-app-core/src/actions.rs`, `tools/family-app-core/src/history.rs`, `tools/family-app-core/src/pairing.rs`.
 - Modify `Cargo.toml` (workspace members) and `docs/superpowers/specs/2026-09-23-family-app-design.md` (Task 3's spec correction).
 
 ---
@@ -1420,7 +1420,397 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 
 ---
 
-### Task 5: BLE pairing (central role)
+### Task 5: Transaction history
+
+**Files:**
+- Create: `tools/family-app-core/src/history.rs`
+- Modify: `tools/family-app-core/Cargo.toml` (three new dependencies), `tools/family-app-core/src/lib.rs` (add `pub mod history;`)
+
+**Interfaces:**
+- Consumes: `family_vault::instruction::{InitializeVault, InitializeApprovers, AddTrustedApprover, AddBeneficiary, AddBeneficiaryUrgent, Deposit, Withdraw, RequestWithdrawal, ApproveWithdrawal}` (all already exist; each is `AnchorSerialize + AnchorDeserialize` — Anchor's own codegen derives both on every instruction struct, verified against `anchor-syn-1.2.0`'s `codegen/program/instruction.rs`, so decoding an instruction's raw bytes back into its struct is exactly as safe as encoding it was).
+- Produces (module `family_app_core::history`):
+  - `struct HistoryEntry { signature: String, block_time: Option<i64>, kind: HistoryEntryKind }` (`Debug, Clone, PartialEq, Eq`)
+  - `enum HistoryEntryKind { Deposit { amount: u64 }, Withdraw { amount: u64 }, AddBeneficiary { name: String }, AddBeneficiaryUrgent { name: String }, AddTrustedApprover, RequestWithdrawal { amount: u64, nonce: u64 }, ApproveWithdrawal, InitializeVault, InitializeApprovers, Unknown }` (`Debug, Clone, PartialEq, Eq`)
+  - `fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind` (pure, no RPC)
+  - `fn fetch_history(rpc: &RpcClient, vault: &Pubkey, program_id: &Pubkey, limit: usize) -> Result<Vec<HistoryEntry>, String>`
+
+**Why this needs one RPC round trip per transaction, not a memcmp scan like Task 3:** a vault's history lives in the *ledger* (past transactions), not in any account's current bytes, so this uses `getSignaturesForAddress` + `getTransaction` per signature — a completely different Solana RPC surface than Task 3's `getProgramAccounts`.
+
+- [ ] **Step 1: Add the new dependencies**
+
+Add to `tools/family-app-core/Cargo.toml`'s `[dependencies]`:
+
+```toml
+bs58 = "=0.5.1"
+solana-signature = "=3.4.1"
+solana-transaction-status-client-types = "=4.2.2"
+```
+
+(`solana-signature` may already be present from an earlier task in this plan — if so, don't duplicate the line.)
+
+- [ ] **Step 2: Write the failing tests**
+
+Create `tools/family-app-core/src/history.rs` containing ONLY this test module (pure `decode_instruction_kind` tests first — no RPC needed; the RPC-dependent `fetch_history` gets one `#[ignore]` live test, same convention as Task 3):
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anchor_lang::InstructionData;
+    use family_vault::instruction::{
+        AddBeneficiary, AddBeneficiaryUrgent, AddTrustedApprover, ApproveWithdrawal, Deposit,
+        InitializeApprovers, InitializeVault, RequestWithdrawal, Withdraw,
+    };
+
+    #[test]
+    fn decodes_initialize_vault() {
+        let data = InitializeVault { is_pool: true, daily_limit: 1_000 }.data();
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::InitializeVault);
+    }
+
+    #[test]
+    fn decodes_initialize_approvers() {
+        let data = InitializeApprovers {}.data();
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::InitializeApprovers);
+    }
+
+    #[test]
+    fn decodes_add_trusted_approver() {
+        let data = AddTrustedApprover { address: Default::default() }.data();
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::AddTrustedApprover);
+    }
+
+    #[test]
+    fn decodes_deposit_with_its_amount() {
+        let data = Deposit { amount: 42_000 }.data();
+        assert_eq!(
+            decode_instruction_kind(&data),
+            HistoryEntryKind::Deposit { amount: 42_000 }
+        );
+    }
+
+    #[test]
+    fn decodes_withdraw_with_its_amount() {
+        let data = Withdraw { amount: 7_500 }.data();
+        assert_eq!(
+            decode_instruction_kind(&data),
+            HistoryEntryKind::Withdraw { amount: 7_500 }
+        );
+    }
+
+    #[test]
+    fn decodes_add_beneficiary_with_its_name() {
+        let data = AddBeneficiary {
+            name: "Внук Саша".to_string(),
+            address: Default::default(),
+        }
+        .data();
+        assert_eq!(
+            decode_instruction_kind(&data),
+            HistoryEntryKind::AddBeneficiary { name: "Внук Саша".to_string() }
+        );
+    }
+
+    #[test]
+    fn decodes_add_beneficiary_urgent_with_its_name() {
+        let data = AddBeneficiaryUrgent {
+            name: "Дочка Маша".to_string(),
+            address: Default::default(),
+        }
+        .data();
+        assert_eq!(
+            decode_instruction_kind(&data),
+            HistoryEntryKind::AddBeneficiaryUrgent { name: "Дочка Маша".to_string() }
+        );
+    }
+
+    #[test]
+    fn decodes_request_withdrawal_with_amount_and_nonce() {
+        let data = RequestWithdrawal { amount: 100, nonce: 3 }.data();
+        assert_eq!(
+            decode_instruction_kind(&data),
+            HistoryEntryKind::RequestWithdrawal { amount: 100, nonce: 3 }
+        );
+    }
+
+    #[test]
+    fn decodes_approve_withdrawal() {
+        let data = ApproveWithdrawal {}.data();
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::ApproveWithdrawal);
+    }
+
+    #[test]
+    fn an_unrecognized_discriminator_decodes_as_unknown() {
+        let garbage = vec![0xFFu8; 16];
+        assert_eq!(decode_instruction_kind(&garbage), HistoryEntryKind::Unknown);
+    }
+
+    #[test]
+    fn data_shorter_than_a_discriminator_decodes_as_unknown_not_a_panic() {
+        assert_eq!(decode_instruction_kind(&[1, 2, 3]), HistoryEntryKind::Unknown);
+        assert_eq!(decode_instruction_kind(&[]), HistoryEntryKind::Unknown);
+    }
+
+    #[test]
+    fn a_known_discriminator_with_truncated_payload_decodes_as_unknown_not_a_panic() {
+        // Deposit's discriminator with the u64 amount cut short.
+        let mut data = Deposit { amount: 1 }.data();
+        data.truncate(10); // 8-byte discriminator + 2 of the 8 amount bytes
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::Unknown);
+    }
+
+    // Requires a live RPC endpoint and a vault with real transaction
+    // history. Run manually with
+    // `HISTORY_TEST_VAULT=<pubkey> cargo test -p family-app-core history::tests::fetches_real_history -- --ignored --nocapture`
+    #[test]
+    #[ignore = "needs a live RPC endpoint and a vault with real history"]
+    fn fetches_real_history() {
+        let rpc = solana_client::rpc_client::RpcClient::new(
+            "https://api.devnet.solana.com".to_string(),
+        );
+        let program_id: solana_pubkey::Pubkey = "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ"
+            .parse()
+            .unwrap();
+        let vault: solana_pubkey::Pubkey = std::env::var("HISTORY_TEST_VAULT")
+            .expect("set HISTORY_TEST_VAULT to a vault pubkey with real transaction history")
+            .parse()
+            .unwrap();
+        let entries = fetch_history(&rpc, &vault, &program_id, 20).unwrap();
+        println!("found {} entries: {entries:?}", entries.len());
+        assert!(!entries.is_empty());
+    }
+}
+```
+
+- [ ] **Step 3: Run the tests to verify they fail**
+
+Run: `cargo test --package family-app-core history:: 2>&1 | tail -20`
+Expected: compile FAIL — `decode_instruction_kind`/`HistoryEntry`/`HistoryEntryKind`/`fetch_history` not found.
+
+- [ ] **Step 4: Write the implementation**
+
+Insert at the TOP of `tools/family-app-core/src/history.rs`, above the test module:
+
+```rust
+//! Read-only transaction history for a vault: what happened, in plain
+//! terms, without exposing raw instruction bytes to a caller. Two RPC
+//! calls per signature (`getSignaturesForAddress` then `getTransaction`)
+//! — a completely different Solana RPC surface than `discovery`'s
+//! `getProgramAccounts` scan, since history lives in the ledger, not in
+//! any account's current state.
+
+use anchor_lang::{AnchorDeserialize, InstructionData};
+use family_vault::instruction::{
+    AddBeneficiary, AddBeneficiaryUrgent, AddTrustedApprover, ApproveWithdrawal, Deposit,
+    InitializeApprovers, InitializeVault, RequestWithdrawal, Withdraw,
+};
+use solana_client::rpc_client::{GetConfirmedSignaturesForAddress2Config, RpcClient};
+use solana_client::rpc_config::RpcTransactionConfig;
+use solana_pubkey::Pubkey;
+use solana_transaction_status_client_types::{EncodedTransaction, UiMessage, UiTransactionEncoding};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryEntry {
+    pub signature: String,
+    pub block_time: Option<i64>,
+    pub kind: HistoryEntryKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HistoryEntryKind {
+    Deposit { amount: u64 },
+    Withdraw { amount: u64 },
+    AddBeneficiary { name: String },
+    AddBeneficiaryUrgent { name: String },
+    AddTrustedApprover,
+    RequestWithdrawal { amount: u64, nonce: u64 },
+    ApproveWithdrawal,
+    InitializeVault,
+    InitializeApprovers,
+    Unknown,
+}
+
+/// The first 8 bytes of any Anchor instruction's encoded data are its
+/// discriminator, fixed per instruction type regardless of argument
+/// values — `disc_of` reads it from a throwaway instance purely to learn
+/// that prefix, never to inspect the (irrelevant) dummy values.
+fn disc_of(data: Vec<u8>) -> [u8; 8] {
+    let mut d = [0u8; 8];
+    d.copy_from_slice(&data[..8]);
+    d
+}
+
+/// Decodes one instruction's raw bytes into a `HistoryEntryKind`. A
+/// transaction touching this vault can legitimately contain other
+/// programs' instructions too (e.g. the System Program's account-creation
+/// instruction alongside `InitializeVault`) or a corrupt/short payload —
+/// both decode as `Unknown` rather than an error, so one bad instruction
+/// never fails the whole history fetch.
+pub fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind {
+    if data.len() < 8 {
+        return HistoryEntryKind::Unknown;
+    }
+    let mut disc = [0u8; 8];
+    disc.copy_from_slice(&data[..8]);
+    let payload = &data[8..];
+
+    if disc == disc_of(InitializeVault { is_pool: false, daily_limit: 0 }.data()) {
+        return HistoryEntryKind::InitializeVault;
+    }
+    if disc == disc_of(InitializeApprovers {}.data()) {
+        return HistoryEntryKind::InitializeApprovers;
+    }
+    if disc == disc_of(AddTrustedApprover { address: Default::default() }.data()) {
+        return HistoryEntryKind::AddTrustedApprover;
+    }
+    if disc == disc_of(Deposit { amount: 0 }.data()) {
+        return Deposit::try_from_slice(payload)
+            .map(|ix| HistoryEntryKind::Deposit { amount: ix.amount })
+            .unwrap_or(HistoryEntryKind::Unknown);
+    }
+    if disc == disc_of(Withdraw { amount: 0 }.data()) {
+        return Withdraw::try_from_slice(payload)
+            .map(|ix| HistoryEntryKind::Withdraw { amount: ix.amount })
+            .unwrap_or(HistoryEntryKind::Unknown);
+    }
+    if disc == disc_of(AddBeneficiary { name: String::new(), address: Default::default() }.data()) {
+        return AddBeneficiary::try_from_slice(payload)
+            .map(|ix| HistoryEntryKind::AddBeneficiary { name: ix.name })
+            .unwrap_or(HistoryEntryKind::Unknown);
+    }
+    if disc == disc_of(
+        AddBeneficiaryUrgent { name: String::new(), address: Default::default() }.data(),
+    ) {
+        return AddBeneficiaryUrgent::try_from_slice(payload)
+            .map(|ix| HistoryEntryKind::AddBeneficiaryUrgent { name: ix.name })
+            .unwrap_or(HistoryEntryKind::Unknown);
+    }
+    if disc == disc_of(RequestWithdrawal { amount: 0, nonce: 0 }.data()) {
+        return RequestWithdrawal::try_from_slice(payload)
+            .map(|ix| HistoryEntryKind::RequestWithdrawal { amount: ix.amount, nonce: ix.nonce })
+            .unwrap_or(HistoryEntryKind::Unknown);
+    }
+    if disc == disc_of(ApproveWithdrawal {}.data()) {
+        return HistoryEntryKind::ApproveWithdrawal;
+    }
+
+    HistoryEntryKind::Unknown
+}
+
+/// Fetches up to `limit` recent signatures touching `vault`, decodes each
+/// transaction's instructions that belong to `program_id`, and returns
+/// the recognized ones as plain `HistoryEntry` values (an `Unknown`-
+/// decoded instruction, or one from a different program in the same
+/// transaction, is silently skipped — it is not history-worthy on its
+/// own). A failed transaction (one that errored on-chain) never changed
+/// vault state and is skipped entirely.
+pub fn fetch_history(
+    rpc: &RpcClient,
+    vault: &Pubkey,
+    program_id: &Pubkey,
+    limit: usize,
+) -> Result<Vec<HistoryEntry>, String> {
+    let signatures = rpc
+        .get_signatures_for_address_with_config(
+            vault,
+            GetConfirmedSignaturesForAddress2Config {
+                before: None,
+                until: None,
+                limit: Some(limit),
+                commitment: None,
+            },
+        )
+        .map_err(|e| format!("get_signatures_for_address: {e}"))?;
+
+    let mut entries = Vec::new();
+    for sig_info in signatures {
+        if sig_info.err.is_some() {
+            continue;
+        }
+        let signature: solana_signature::Signature = sig_info
+            .signature
+            .parse()
+            .map_err(|e| format!("bad signature '{}': {e}", sig_info.signature))?;
+
+        let tx = rpc
+            .get_transaction_with_config(
+                &signature,
+                RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Json),
+                    commitment: None,
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .map_err(|e| format!("get_transaction {}: {e}", sig_info.signature))?;
+
+        let EncodedTransaction::Json(ui_tx) = tx.transaction.transaction else {
+            continue;
+        };
+        let UiMessage::Raw(message) = ui_tx.message else {
+            continue; // requested Json (not JsonParsed) encoding, so this is always Raw
+        };
+
+        let program_id_str = program_id.to_string();
+        let Some(program_index) = message.account_keys.iter().position(|k| *k == program_id_str)
+        else {
+            continue; // this transaction never touched our program
+        };
+
+        for ix in &message.instructions {
+            if ix.program_id_index as usize != program_index {
+                continue; // a different program's instruction in the same tx
+            }
+            let Ok(raw) = bs58::decode(&ix.data).into_vec() else {
+                continue;
+            };
+            let kind = decode_instruction_kind(&raw);
+            if kind == HistoryEntryKind::Unknown {
+                continue;
+            }
+            entries.push(HistoryEntry {
+                signature: sig_info.signature.clone(),
+                block_time: sig_info.block_time,
+                kind,
+            });
+        }
+    }
+
+    Ok(entries)
+}
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cargo test --package family-app-core 2>&1 | tail -20`
+Expected: PASS — `history::tests` `12 passed; 0 failed; 1 ignored`, everything else unaffected.
+
+In `tools/family-app-core/src/lib.rs`, add:
+
+```rust
+pub mod history;
+```
+
+- [ ] **Step 6: Full workspace check and commit**
+
+Run: `cargo check --workspace 2>&1 | tail -15` then `cargo clippy --workspace --all-targets 2>&1 | tail -15` — expected: clean.
+
+```bash
+git add tools/family-app-core
+git commit -m "feat(family-app-core): read-only transaction history
+
+getSignaturesForAddress + getTransaction per signature, decoding each
+instruction by its Anchor discriminator (read from a throwaway instance
+of each known instruction type, never guessed). Unrecognized or
+truncated instructions decode as Unknown and are skipped rather than
+failing the whole fetch — a transaction can legitimately mix in other
+programs' instructions.
+
+Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
+```
+
+---
+
+### Task 6: BLE pairing (central role)
 
 **Files:**
 - Create: `tools/family-app-core/src/pairing.rs`
@@ -1529,14 +1919,13 @@ Claude-Session: https://claude.ai/code/session_01VLZAgeertuGTkdt8LXpiEJ"
 
 ---
 
-## Final verification (after all 5 tasks)
+## Final verification (after all 6 tasks)
 
 Run the full workspace suite once more end to end: `cargo test --workspace 2>&1 | grep -E "test result|FAILED"` (if `programs/family-vault`'s integration tests fail with a missing `.so`, run `cargo build-sbf` inside `programs/family-vault` first — a known, unrelated environment quirk seen repeatedly in this project, not a defect in this plan's work) and `cargo clippy --workspace --all-targets 2>&1 | tail -10`.
 
 ## Explicitly not in this plan (future work)
 
-- **Transaction history** (the design spec's MVP table row "История операций: read-only, decode past instructions/events for this vault"). Not built here — it needs `get_signatures_for_address` + `get_transaction` + decoding each of this program's instruction types from raw transaction data, which is a real chunk of work on its own (closer in size to Task 3 than a one-liner) and nothing else in this plan depends on it. Add it as its own task in a follow-up plan before calling family-app-core MVP-complete.
 - The Tauri shell, IPC commands, and every UI screen — a separate plan, once this one is reviewed and merged, per the family-app design spec's own architecture split (Rust core vs. Tauri shell).
 - `admin-cli` migrating to call `family_vault_client::builders` instead of its own inline copies — optional cleanup, not required for family-app to work.
 - Owner-rotation actions (`request`/`cancel`/`execute_owner_rotation`) — explicitly out of scope for the family-app MVP per the design spec.
-- Real end-to-end verification of Task 5 against a physical kiosk — needs a phone-scannable QR from a real device in first-run setup and is called out as manual in that task.
+- Real end-to-end verification of Task 6 against a physical kiosk — needs a phone-scannable QR from a real device in first-run setup and is called out as manual in that task.
