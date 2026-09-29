@@ -164,7 +164,12 @@ pub fn fetch_vault_snapshot(cfg: &ChainConfig, is_pool: bool) -> Result<VaultSna
         .map_err(map_client_error)?;
     let whole_unit_balance: u64 = balance.ui_amount.map(|f| f.round() as u64).unwrap_or(0);
 
-    decode_snapshot(&vault_bytes, &list_bytes, whole_unit_balance)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    decode_snapshot(&vault_bytes, &list_bytes, whole_unit_balance, now)
 }
 
 pub fn submit_withdraw(
@@ -263,10 +268,17 @@ fn map_client_error(err: solana_client::client_error::ClientError) -> ChainError
 /// without a live RPC endpoint. `whole_unit_balance` is the vault's token
 /// account balance already converted to whole units by the caller (see
 /// `fetch_vault_snapshot`, which reads it via a separate RPC call).
+/// `now` (unix seconds) filters out any beneficiary whose 48h cooldown
+/// (`active_after`) hasn't elapsed yet — see `hides_a_beneficiary_whose_
+/// cooldown_has_not_elapsed_yet` for why: showing a payee grandma can't
+/// actually send to yet would need a "cooldown" explanation, which breaks
+/// this project's plain-language rule. It reappears on its own once the
+/// cooldown passes and the next periodic refresh re-decodes.
 fn decode_snapshot(
     vault_bytes: &[u8],
     beneficiary_list_bytes: &[u8],
     whole_unit_balance: u64,
+    now: i64,
 ) -> Result<VaultSnapshot, ChainError> {
     use anchor_lang::AccountDeserialize;
     use family_vault::state::BeneficiaryList;
@@ -275,9 +287,16 @@ fn decode_snapshot(
         .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
 
     let beneficiaries = (0..list.count as usize)
-        .map(|i| {
+        .filter_map(|i| {
             let b = &list.entries[i];
-            ((i + 1) as u8, decode_beneficiary_name(&b.name, b.name_len))
+            if b.active_after > now {
+                return None;
+            }
+            // Keep the real on-chain index (`i + 1`) as the id even when
+            // earlier entries were filtered out — `fetch_beneficiary_
+            // addresses` (lib.rs) resolves a tapped id back to an address
+            // by this same index, so it must never be renumbered.
+            Some(((i + 1) as u8, decode_beneficiary_name(&b.name, b.name_len)))
         })
         .collect();
 
@@ -420,9 +439,124 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         let mut list_bytes = Vec::new();
         list.try_serialize(&mut list_bytes).unwrap();
 
-        let snapshot = decode_snapshot(&vault_bytes, &list_bytes, 3).unwrap();
+        let snapshot = decode_snapshot(&vault_bytes, &list_bytes, 3, 1_000).unwrap();
         assert_eq!(snapshot.balance_text, "3 USDC");
         assert_eq!(snapshot.beneficiaries, vec![(1u8, "Внук Саша".to_string())]);
+    }
+
+    /// A beneficiary added within the last 48h isn't payable yet (the
+    /// program's cooldown, `add_beneficiary.rs`'s `active_after`), so it
+    /// must not appear on the send screen at all — showing a payee grandma
+    /// then can't send to, right after a new family member pairs with the
+    /// kiosk, would need a "cooldown" explanation that breaks the
+    /// plain-language, no-jargon rule this project follows everywhere else.
+    /// It reappears automatically once `active_after` passes (the existing
+    /// 30s refresh re-fetches and re-decodes).
+    #[test]
+    fn hides_a_beneficiary_whose_cooldown_has_not_elapsed_yet() {
+        use anchor_lang::AccountSerialize;
+        use family_vault::state::{
+            Beneficiary, BeneficiaryList, Vault, BENEFICIARY_NAME_LEN, MAX_BENEFICIARIES,
+        };
+
+        let vault = Vault {
+            owner: Default::default(),
+            vault_token_account: Default::default(),
+            daily_limit: u64::MAX,
+            spent_today: 0,
+            last_reset_day: 0,
+            is_pool: false,
+            bump: 255,
+            seed_owner: Default::default(),
+        };
+        let mut vault_bytes = Vec::new();
+        vault.try_serialize(&mut vault_bytes).unwrap();
+
+        let mut ready_name = [0u8; BENEFICIARY_NAME_LEN];
+        let ready_src = "Дочка Маша".as_bytes();
+        ready_name[..ready_src.len()].copy_from_slice(ready_src);
+
+        let mut pending_name = [0u8; BENEFICIARY_NAME_LEN];
+        let pending_src = "Внук Саша".as_bytes();
+        pending_name[..pending_src.len()].copy_from_slice(pending_src);
+
+        let mut entries = [Beneficiary::default(); MAX_BENEFICIARIES];
+        entries[0] = Beneficiary {
+            address: Default::default(),
+            name: ready_name,
+            name_len: ready_src.len() as u8,
+            added_at: 0,
+            active_after: 500, // already elapsed by `now = 1_000`
+        };
+        entries[1] = Beneficiary {
+            address: Default::default(),
+            name: pending_name,
+            name_len: pending_src.len() as u8,
+            added_at: 900,
+            active_after: 1_500, // still in the future at `now = 1_000`
+        };
+        let list = BeneficiaryList {
+            vault: Default::default(),
+            count: 2,
+            entries,
+        };
+        let mut list_bytes = Vec::new();
+        list.try_serialize(&mut list_bytes).unwrap();
+
+        let snapshot = decode_snapshot(&vault_bytes, &list_bytes, 0, 1_000).unwrap();
+        // Only the elapsed-cooldown payee shows, and it keeps its real
+        // on-chain index (1) rather than being renumbered to close the gap
+        // — `fetch_beneficiary_addresses` resolves taps by that same index.
+        assert_eq!(
+            snapshot.beneficiaries,
+            vec![(1u8, "Дочка Маша".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_beneficiary_becomes_visible_exactly_when_its_cooldown_elapses() {
+        use anchor_lang::AccountSerialize;
+        use family_vault::state::{
+            Beneficiary, BeneficiaryList, Vault, BENEFICIARY_NAME_LEN, MAX_BENEFICIARIES,
+        };
+
+        let vault = Vault {
+            owner: Default::default(),
+            vault_token_account: Default::default(),
+            daily_limit: u64::MAX,
+            spent_today: 0,
+            last_reset_day: 0,
+            is_pool: false,
+            bump: 255,
+            seed_owner: Default::default(),
+        };
+        let mut vault_bytes = Vec::new();
+        vault.try_serialize(&mut vault_bytes).unwrap();
+
+        let mut name = [0u8; BENEFICIARY_NAME_LEN];
+        let src = "Внук Саша".as_bytes();
+        name[..src.len()].copy_from_slice(src);
+        let mut entries = [Beneficiary::default(); MAX_BENEFICIARIES];
+        entries[0] = Beneficiary {
+            address: Default::default(),
+            name,
+            name_len: src.len() as u8,
+            added_at: 0,
+            active_after: 1_000,
+        };
+        let list = BeneficiaryList {
+            vault: Default::default(),
+            count: 1,
+            entries,
+        };
+        let mut list_bytes = Vec::new();
+        list.try_serialize(&mut list_bytes).unwrap();
+
+        let still_pending = decode_snapshot(&vault_bytes, &list_bytes, 0, 999).unwrap();
+        assert_eq!(still_pending.beneficiaries, vec![]);
+
+        let now_active = decode_snapshot(&vault_bytes, &list_bytes, 0, 1_000).unwrap();
+        assert_eq!(now_active.beneficiaries, vec![(1u8, "Внук Саша".to_string())]);
     }
 
     #[test]
