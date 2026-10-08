@@ -6,7 +6,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ");
+declare_id!("38eQgWLzqqaaBPWzbcjYga6pp46GuGn5u2BhTwnJaLz9");
 
 #[program]
 pub mod family_vault {
