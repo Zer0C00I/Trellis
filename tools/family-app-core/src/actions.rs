@@ -296,8 +296,9 @@ fn fetch_vault_token_account_and_mint(
     Ok((vault_token_account, mint))
 }
 
-/// Opens a pool (family) vault for `owner`, then initializes its
-/// approvers list — the two steps a family always needs before adding
+/// Opens a pool (family) vault for `owner` with a `daily_limit` in the
+/// token's base units (not whole tokens; `u64::MAX` means unlimited), then
+/// initializes its approvers list — the two steps a family always needs before adding
 /// anyone. Returns the new vault's address. Adding the first approvers
 /// and payees is a separate call to `add_trusted_approver`/
 /// `add_beneficiary` per person, same as `admin-cli`.

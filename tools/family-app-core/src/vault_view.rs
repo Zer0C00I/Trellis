@@ -8,10 +8,11 @@
 //! sanitized, counts are clamped, and the account owner and discriminator
 //! are checked before any field is believed.
 //!
-//! RPC calls made by [`fetch_vault_view`] (5 in total):
+//! RPC calls made by [`fetch_vault_view`] (5 in total; they are separate
+//! reads, so the view is not an atomic snapshot):
 //! 1. `get_multiple_accounts([vault, beneficiary list, approvers])`
-//! 2. `get_account_data(vault token account)`
-//! 3. `get_account_data(mint)`
+//! 2. `get_account(vault token account)` (owner must be the SPL Token program)
+//! 3. `get_account(mint)` (owner must be the SPL Token program)
 //! 4. `get_multiple_accounts(request PDAs for nonces 0..100)`
 //! 5. `get_multiple_accounts(request PDAs for nonces 100..200)`
 
@@ -56,6 +57,10 @@ pub struct Payee {
 
 impl Payee {
     /// Whether the payee may be paid at `now_unix`.
+    ///
+    /// Advisory only: a caller normally passes the DEVICE clock, which may
+    /// be wrong. The program compares `active_after` with cluster time and
+    /// is authoritative; a payee shown as active can still be refused.
     pub fn is_active(&self, now_unix: i64) -> bool {
         now_unix >= self.active_after
     }
@@ -86,6 +91,11 @@ pub struct VaultView {
     /// Base units spent today. The program stores a counter that is only
     /// reset by the next withdrawal on a new UTC day, so this is the
     /// effective value: 0 when the stored day is not today.
+    ///
+    /// Advisory only: "today" comes from the DEVICE clock
+    /// ([`fetch_vault_view`]), which may be a day off. The program uses
+    /// cluster time and is authoritative; it enforces the limit regardless
+    /// of what is shown here.
     pub spent_today: u64,
     pub mint: Pubkey,
     pub decimals: u32,
@@ -101,12 +111,25 @@ pub struct VaultView {
     pub next_free_nonce: u64,
 }
 
+impl VaultView {
+    /// Base units still available today under the daily limit, or `None`
+    /// when the vault is unlimited. Never underflows. Advisory, like
+    /// [`VaultView::spent_today`]; the program only enforces the limit on
+    /// pool vaults (see [`VaultView::is_pool`]).
+    pub fn remaining_today(&self) -> Option<u64> {
+        self.daily_limit
+            .map(|limit| limit.saturating_sub(self.spent_today))
+    }
+}
+
 /// Turns untrusted on-chain name bytes into text safe to show or log.
 ///
 /// Only the first `name_len` bytes are used (`name_len` is clamped to the
 /// buffer, so a hostile length cannot index out of range), decoded as UTF-8
 /// lossily. Control characters and invisible direction/format characters
-/// (which could fake line breaks or reorder text) become U+FFFD.
+/// (which could fake line breaks or reorder text) become U+FFFD. Variation
+/// selectors are not touched, and lookalike (homoglyph) names cannot be
+/// sanitised: show the address too.
 pub fn sanitize_name(name: &[u8; BENEFICIARY_NAME_LEN], name_len: u8) -> String {
     let len = (name_len as usize).min(BENEFICIARY_NAME_LEN);
     String::from_utf8_lossy(&name[..len])
@@ -119,11 +142,26 @@ fn is_unsafe_char(c: char) -> bool {
     c.is_control()
         || matches!(
             c,
-            '\u{200B}'..='\u{200F}'   // zero-width and direction marks
+            '\u{00AD}'                // soft hyphen
+                | '\u{061C}'              // Arabic letter mark (bidi)
+                | '\u{180E}'              // Mongolian vowel separator
+                | '\u{200B}'..='\u{200F}' // zero-width and direction marks
                 | '\u{2028}'..='\u{202E}' // line/paragraph separators, bidi embeddings/overrides
                 | '\u{2060}'..='\u{2069}' // word joiner, invisible operators, bidi isolates
                 | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}' // interlinear annotation controls
+                | '\u{E0000}'..='\u{E007F}' // tag characters
         )
+}
+
+/// `Rejected` unless `actual` is the `expected` owning program.
+fn require_owner(actual: &Pubkey, expected: &Pubkey, what: &str) -> Result<(), ActionError> {
+    if actual != expected {
+        return Err(ActionError::Rejected(format!(
+            "{what} is not owned by the expected program"
+        )));
+    }
+    Ok(())
 }
 
 /// Checks the owner and the Anchor discriminator, then decodes.
@@ -133,20 +171,24 @@ fn decode_account<T: AccountDeserialize>(
     program_id: &Pubkey,
     what: &str,
 ) -> Result<T, ActionError> {
-    if owner != program_id {
-        return Err(ActionError::Rejected(format!(
-            "{what} is not owned by the family-vault program"
-        )));
-    }
+    require_owner(owner, program_id, what)?;
     T::try_deserialize(&mut &data[..])
         .map_err(|e| ActionError::Rejected(format!("decoding {what}: {e}")))
 }
 
-/// The amount held by an SPL token account, and its mint.
-fn decode_token_account(data: &[u8]) -> Result<(Pubkey, u64), ActionError> {
+/// The amount held by an SPL token account, and its mint. The account must
+/// be owned by the SPL Token program (`spl_token::id()`).
+fn decode_token_account(owner: &Pubkey, data: &[u8]) -> Result<(Pubkey, u64), ActionError> {
+    require_owner(owner, &spl_token::id(), "the vault token account")?;
     let account = spl_token::state::Account::unpack(data)
         .map_err(|e| ActionError::Rejected(format!("decoding the vault token account: {e}")))?;
     Ok((account.mint, account.amount))
+}
+
+/// The decimals of an SPL mint, which must be owned by the SPL Token program.
+fn decode_mint(owner: &Pubkey, data: &[u8]) -> Result<u32, ActionError> {
+    require_owner(owner, &spl_token::id(), "the mint")?;
+    decode_mint_decimals(data).map_err(ActionError::Rejected)
 }
 
 /// Index of the first empty slot, which is the nonce itself.
@@ -311,7 +353,13 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-/// Reads everything a UI needs to show one vault. A missing vault or
+/// Reads everything a UI needs to show one vault.
+///
+/// Time-dependent fields ([`VaultView::spent_today`]) use the DEVICE clock
+/// (`SystemTime::now`) and are advisory only: the program uses cluster time
+/// and is authoritative. Likewise pass your device time to
+/// [`Payee::is_active`] knowing it is only a hint.
+/// A missing vault or
 /// payee list is an error; a missing approvers account just means no
 /// guardians yet. See the module docs for the exact RPC calls.
 pub fn fetch_vault_view(
@@ -359,12 +407,10 @@ pub fn fetch_vault_view(
         .transpose()?;
 
     let token_account = to_client(vault_data.vault_token_account);
-    let token_data = rpc
-        .get_account_data(&token_account)
-        .map_err(map_client_error)?;
-    let (mint, token_balance) = decode_token_account(&token_data)?;
-    let mint_data = rpc.get_account_data(&mint).map_err(map_client_error)?;
-    let decimals = decode_mint_decimals(&mint_data).map_err(ActionError::Rejected)?;
+    let token = rpc.get_account(&token_account).map_err(map_client_error)?;
+    let (mint, token_balance) = decode_token_account(&token.owner, &token.data)?;
+    let mint_account = rpc.get_account(&mint).map_err(map_client_error)?;
+    let decimals = decode_mint(&mint_account.owner, &mint_account.data)?;
 
     let request_slots = fetch_request_accounts(rpc, program_id, vault, false)?;
 
@@ -639,6 +685,66 @@ mod tests {
         );
     }
 
+    #[test]
+    fn more_invisible_characters_are_replaced() {
+        for c in [
+            '\u{061C}',
+            '\u{00AD}',
+            '\u{180E}',
+            '\u{FFF9}',
+            '\u{FFFA}',
+            '\u{FFFB}',
+            '\u{E0000}',
+            '\u{E0041}',
+            '\u{E007F}',
+        ] {
+            let text = format!("a{c}b");
+            let out = sanitize_name(&name_bytes(text.as_bytes()), text.len() as u8);
+            assert_eq!(out, "a\u{FFFD}b", "U+{:04X}", c as u32);
+        }
+        // Neighbours of the ranges stay as they are.
+        for c in ['\u{FFF8}', '\u{FFFC}', '\u{E0080}', '\u{00AE}'] {
+            let text = format!("a{c}b");
+            let out = sanitize_name(&name_bytes(text.as_bytes()), text.len() as u8);
+            assert_eq!(out, text, "U+{:04X}", c as u32);
+        }
+    }
+
+    #[test]
+    fn remaining_today_is_limit_minus_spent_and_never_underflows() {
+        let mut view = assemble_view(inputs(slots_with(&[]))).unwrap();
+        view.daily_limit = Some(1_000);
+        view.spent_today = 40;
+        assert_eq!(view.remaining_today(), Some(960));
+        view.spent_today = 1_000;
+        assert_eq!(view.remaining_today(), Some(0));
+        view.spent_today = 5_000;
+        assert_eq!(view.remaining_today(), Some(0));
+        view.daily_limit = None;
+        assert_eq!(view.remaining_today(), None);
+    }
+
+    #[test]
+    fn token_account_and_mint_must_be_owned_by_the_spl_token_program() {
+        use spl_token::state::Mint;
+        let mint = Mint {
+            mint_authority: COption::None,
+            supply: 0,
+            decimals: 6,
+            is_initialized: true,
+            freeze_authority: COption::None,
+        };
+        let mut data = vec![0u8; Mint::LEN];
+        Mint::pack(mint, &mut data).unwrap();
+        assert_eq!(decode_mint(&spl_token::id(), &data).unwrap(), 6);
+        match decode_mint(&key(8), &data) {
+            Err(ActionError::Rejected(m)) => assert!(m.contains("the mint"), "{m}"),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+        assert!(require_owner(&key(1), &key(1), "x").is_ok());
+        assert!(require_owner(&key(1), &key(2), "x").is_err());
+    }
+
     fn serialized<T: AccountSerialize>(account: &T) -> Vec<u8> {
         let mut data = Vec::new();
         account.try_serialize(&mut data).unwrap();
@@ -681,8 +787,12 @@ mod tests {
         };
         let mut data = vec![0u8; spl_token::state::Account::LEN];
         spl_token::state::Account::pack(account, &mut data).unwrap();
-        assert_eq!(decode_token_account(&data).unwrap(), (key(4), 123_456));
-        assert!(decode_token_account(&data[..10]).is_err());
+        assert_eq!(
+            decode_token_account(&spl_token::id(), &data).unwrap(),
+            (key(4), 123_456)
+        );
+        assert!(decode_token_account(&spl_token::id(), &data[..10]).is_err());
+        assert!(decode_token_account(&key(8), &data).is_err());
     }
 
     // Requires a live RPC endpoint and a real vault. Run manually with

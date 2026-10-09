@@ -152,7 +152,12 @@ pub fn parse_decimal_amount(text: &str, decimals: u32) -> Result<u64, String> {
 
 /// Formats base units as an exact decimal string: trailing fractional zeros
 /// are trimmed and a trailing dot is never printed ("2500000", 6 -> "2.5").
+///
+/// `decimals` is clamped to 255, the most an SPL mint can declare (its
+/// `decimals` field is a `u8`), so a bogus value can never build a gigantic
+/// string. Real mints are unaffected.
 pub fn format_base_units(amount: u64, decimals: u32) -> String {
+    let decimals = decimals.min(u32::from(u8::MAX));
     if decimals == 0 {
         return amount.to_string();
     }
@@ -381,6 +386,17 @@ mod tests {
         assert_eq!(format_base_units(u64::MAX, 0), "18446744073709551615");
         assert_eq!(format_base_units(u64::MAX, 6), "18446744073709.551615");
         assert_eq!(format_base_units(5, 9), "0.000000005");
+    }
+
+    #[test]
+    fn format_base_units_clamps_absurd_decimals_to_255() {
+        let text = format_base_units(5, u32::MAX);
+        assert_eq!(text, format_base_units(5, 255));
+        assert!(text.len() <= 258, "{}", text.len());
+        assert!(text.starts_with("0.000"));
+        assert!(text.ends_with('5'));
+        assert_eq!(format_base_units(0, u32::MAX), "0");
+        assert_eq!(format_base_units(7, 256), format_base_units(7, 255));
     }
 
     #[test]
