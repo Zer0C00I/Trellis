@@ -32,6 +32,29 @@ use solana_signer::Signer;
 use solana_transaction_status_client_types::{TransactionConfirmationStatus, TransactionStatus};
 use std::time::{Duration, Instant};
 
+/// Called by `send_instructions` after the transaction is signed (so its
+/// signature is known) and BEFORE it is sent, with the signature and the
+/// last valid block height. A caller that must remember the operation (so
+/// it survives a crash during the confirm wait) writes its record here. If
+/// the hook fails, nothing is sent.
+pub type BeforeSend<'a> = &'a dyn Fn(&Signature, u64) -> Result<(), String>;
+
+/// Runs the hook, and only if it succeeds the `send` step. A failing hook
+/// means nothing was sent: the error says so.
+fn hook_then_send<T>(
+    signature: &Signature,
+    last_valid_block_height: u64,
+    before_send: BeforeSend,
+    send: impl FnOnce() -> Result<T, ActionError>,
+) -> Result<T, ActionError> {
+    before_send(signature, last_valid_block_height).map_err(|reason| {
+        ActionError::Rejected(format!(
+            "nothing was sent: could not record the operation before sending ({reason})"
+        ))
+    })?;
+    send()
+}
+
 /// A zero amount is never a meaningful transfer; refuse it before any RPC.
 fn require_nonzero(amount_base_units: u64) -> Result<(), ActionError> {
     if amount_base_units == 0 {
@@ -138,7 +161,13 @@ fn send_error(
 /// The transaction is signed once, sent, and then its signature is polled
 /// for up to ~60s (this only bounds how long the call blocks), or until its
 /// blockhash has expired. A few consecutive failed status lookups are
-/// tolerated. Retry rule for callers:
+/// tolerated.
+///
+/// `before_send` runs after signing and before the network is touched (see
+/// [`BeforeSend`]); if it fails, nothing is sent and the result is
+/// `Rejected`. A caller that records the operation there has the record on
+/// disk before any money can move, so a crash or close during the wait
+/// cannot lose it. Retry rule for callers:
 ///
 /// - `Ok(signature)`: confirmed on chain. Never resend.
 /// - `Rejected` / `NoConnection`: the transaction was NOT accepted (the node
@@ -158,6 +187,7 @@ pub fn send_instructions(
     payer: &Keypair,
     instructions: &[Instruction],
     extra_signers: &[&Keypair],
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     let (blockhash, last_valid_block_height) = rpc
         .get_latest_blockhash_with_commitment(rpc.commitment())
@@ -176,10 +206,10 @@ pub fn send_instructions(
         signature,
         last_valid_block_height,
     };
-    let signature = match rpc.send_transaction(&tx) {
-        Ok(returned) => returned,
-        Err(e) => return Err(send_error(e, signature, last_valid_block_height)),
-    };
+    let signature = hook_then_send(&signature, last_valid_block_height, before_send, || {
+        rpc.send_transaction(&tx)
+            .map_err(|e| send_error(e, signature, last_valid_block_height))
+    })?;
 
     let deadline = Instant::now() + CONFIRM_DEADLINE;
     let mut consecutive_errors = 0u32;
@@ -315,6 +345,7 @@ pub fn open_pool_vault(
     owner: &Keypair,
     mint: &Pubkey,
     daily_limit: u64,
+    before_send: BeforeSend,
 ) -> Result<Pubkey, ActionError> {
     let (vault, _) = vault_pda(program_id, &owner.pubkey(), true);
     let init_vault = build_initialize_vault_instruction(
@@ -330,7 +361,7 @@ pub fn open_pool_vault(
     // One transaction, so a pool vault either exists with its approvers list
     // or not at all. Two transactions could leave a vault without approvers
     // that a retry can never repair (`initialize_vault` fails once the PDA exists).
-    send_instructions(rpc, owner, &[init_vault, init_approvers], &[])?;
+    send_instructions(rpc, owner, &[init_vault, init_approvers], &[], before_send)?;
 
     Ok(vault)
 }
@@ -345,6 +376,7 @@ pub fn deposit(
     depositor: &Keypair,
     vault: &Pubkey,
     amount_base_units: u64,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     require_nonzero(amount_base_units)?;
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
@@ -357,7 +389,7 @@ pub fn deposit(
         &mint,
         amount_base_units,
     );
-    send_instructions(rpc, depositor, &[ix], &[])
+    send_instructions(rpc, depositor, &[ix], &[], before_send)
 }
 
 /// Sends `amount_base_units` (the token's smallest unit) from the vault to
@@ -372,6 +404,7 @@ pub fn send(
     vault: &Pubkey,
     recipient: &Pubkey,
     amount_base_units: u64,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     require_nonzero(amount_base_units)?;
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
@@ -385,7 +418,7 @@ pub fn send(
         recipient,
         amount_base_units,
     );
-    send_instructions(rpc, owner, &[ix], &[])
+    send_instructions(rpc, owner, &[ix], &[], before_send)
 }
 
 pub fn add_beneficiary(
@@ -395,9 +428,10 @@ pub fn add_beneficiary(
     vault: &Pubkey,
     name: &str,
     address: &Pubkey,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     let ix = build_add_beneficiary_instruction(program_id, &owner.pubkey(), vault, name, address);
-    send_instructions(rpc, owner, &[ix], &[])
+    send_instructions(rpc, owner, &[ix], &[], before_send)
 }
 
 /// Two distinct trusted approvers, not the owner — skips the normal 48h
@@ -410,6 +444,7 @@ pub fn add_beneficiary_urgent(
     vault: &Pubkey,
     name: &str,
     address: &Pubkey,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     let ix = build_add_beneficiary_urgent_instruction(
         program_id,
@@ -419,7 +454,7 @@ pub fn add_beneficiary_urgent(
         name,
         address,
     );
-    send_instructions(rpc, approver_one, &[ix], &[approver_two])
+    send_instructions(rpc, approver_one, &[ix], &[approver_two], before_send)
 }
 
 /// `existing_approver` is required (must co-sign) when adding a
@@ -434,6 +469,7 @@ pub fn add_trusted_approver(
     vault: &Pubkey,
     address: &Pubkey,
     existing_approver: Option<&Keypair>,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     let ix = build_add_trusted_approver_instruction(
         program_id,
@@ -443,7 +479,7 @@ pub fn add_trusted_approver(
         existing_approver.map(|k| k.pubkey()),
     );
     let extra: Vec<&Keypair> = existing_approver.into_iter().collect();
-    send_instructions(rpc, owner, &[ix], &extra)
+    send_instructions(rpc, owner, &[ix], &extra, before_send)
 }
 
 /// Approves a pending over-limit withdrawal by nonce. Reads the pending
@@ -456,6 +492,7 @@ pub fn approve_withdrawal(
     signer: &Keypair,
     vault: &Pubkey,
     nonce: u64,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     let (pending_withdrawal, _) = family_vault_client::request_pda(program_id, vault, nonce);
     let pw_bytes = rpc
@@ -476,7 +513,7 @@ pub fn approve_withdrawal(
         &recipient,
         nonce,
     );
-    send_instructions(rpc, signer, &[ix], &[])
+    send_instructions(rpc, signer, &[ix], &[], before_send)
 }
 
 /// Requests an over-limit withdrawal of `amount_base_units` (the token's
@@ -505,6 +542,7 @@ pub fn request_withdrawal(
     recipient: &Pubkey,
     amount_base_units: u64,
     nonce: u64,
+    before_send: BeforeSend,
 ) -> Result<Signature, ActionError> {
     require_nonzero(amount_base_units)?;
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
@@ -518,7 +556,7 @@ pub fn request_withdrawal(
         amount_base_units,
         nonce,
     );
-    send_instructions(rpc, owner, &[ix], &[])
+    send_instructions(rpc, owner, &[ix], &[], before_send)
 }
 
 #[cfg(test)]
@@ -542,6 +580,50 @@ mod tests {
             err,
             confirmation_status,
         }
+    }
+
+    #[test]
+    fn a_failing_hook_means_rejected_and_nothing_is_sent() {
+        let sent = std::cell::Cell::new(false);
+        let hook = |_: &Signature, _: u64| Err("disk full".to_string());
+        let result = hook_then_send(&Signature::default(), 7, &hook, || {
+            sent.set(true);
+            Ok(())
+        });
+        assert!(!sent.get());
+        match result {
+            Err(ActionError::Rejected(text)) => {
+                assert!(text.contains("nothing was sent"));
+                assert!(text.contains("disk full"));
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_hook_sees_the_transactions_signature_and_runs_before_the_send() {
+        let payer = Keypair::new();
+        let tx = solana_transaction::Transaction::new_signed_with_payer(
+            &[],
+            Some(&payer.pubkey()),
+            &[&payer],
+            Default::default(),
+        );
+        let signature = tx.signatures[0];
+        let order = std::cell::RefCell::new(Vec::new());
+        let seen = std::cell::RefCell::new(None);
+        let hook = |sig: &Signature, height: u64| {
+            order.borrow_mut().push("hook");
+            *seen.borrow_mut() = Some((*sig, height));
+            Ok(())
+        };
+        let result = hook_then_send(&signature, 42, &hook, || {
+            order.borrow_mut().push("send");
+            Ok(1)
+        });
+        assert_eq!(result.unwrap(), 1);
+        assert_eq!(*order.borrow(), vec!["hook", "send"]);
+        assert_eq!(*seen.borrow(), Some((signature, 42)));
     }
 
     #[test]
@@ -643,8 +725,10 @@ mod tests {
         let who = Keypair::new();
         let vault = Pubkey::new_unique();
         let other = Pubkey::new_unique();
-        assert_zero_rejected(deposit(&rpc, &program_id, &who, &vault, 0));
-        assert_zero_rejected(send(&rpc, &program_id, &who, &vault, &other, 0));
+        assert_zero_rejected(deposit(&rpc, &program_id, &who, &vault, 0, &|_, _| Ok(())));
+        assert_zero_rejected(send(&rpc, &program_id, &who, &vault, &other, 0, &|_, _| {
+            Ok(())
+        }));
         assert_zero_rejected(request_withdrawal(
             &rpc,
             &program_id,
@@ -653,6 +737,7 @@ mod tests {
             &other,
             0,
             7,
+            &|_, _| Ok(()),
         ));
     }
 

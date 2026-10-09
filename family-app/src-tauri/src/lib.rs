@@ -26,6 +26,13 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
             std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+            // The key and the pending record live here: owner only.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700))
+                    .map_err(|e| e.to_string())?;
+            }
             let identity = generate_or_load_identity(&data_dir.join(config::IDENTITY_FILE))
                 .map_err(|e| e.to_string())?;
             // `confirmed`, so a screen refreshed right after a send shows it.

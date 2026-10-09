@@ -2,7 +2,8 @@
 //! 1. refuses while an earlier operation's outcome is unknown,
 //! 2. re-reads the vault and re-checks the rule (the screen may be stale),
 //! 3. parses amounts exactly,
-//! 4. records an `Unconfirmed` result so the rule in (1) survives a restart.
+//! 4. writes the pending record BEFORE sending (core's before-send hook), so
+//!    the rule in (1) survives a crash or close during the confirm wait.
 
 use family_app_core::actions as core;
 use family_app_core::wallet::request_devnet_airdrop;
@@ -10,8 +11,8 @@ use family_vault_client::fetch_mint_decimals;
 use tauri::State;
 
 use super::{
-    acquire_busy, blocking, ensure_no_pending, failure, finish, load_view, not_allowed,
-    parse_amount, parse_pubkey,
+    acquire_busy, blocking, ensure_no_pending, finish, load_view, not_allowed, parse_amount,
+    parse_pubkey, run_money,
 };
 use crate::config::{usdc_mint, AIRDROP_LAMPORTS};
 use crate::dto::{ActionOkDto, ErrorDto, VaultRefDto};
@@ -31,9 +32,18 @@ pub async fn deposit(
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         let amount = parse_amount(&amount, view.decimals)?;
-        let result = core::deposit(&st.rpc, &st.program_id, &st.identity, &view.vault, amount);
         let what = format!("Пополнение на {}", money(amount, view.decimals));
-        finish(&st, &what, result, "Деньги отправлены на счёт.")
+        let result = run_money(&st, &what, |hook| {
+            core::deposit(
+                &st.rpc,
+                &st.program_id,
+                &st.identity,
+                &view.vault,
+                amount,
+                hook,
+            )
+        });
+        finish(result, "Деньги отправлены на счёт.")
     })
     .await
 }
@@ -77,29 +87,33 @@ pub async fn send_money(
                 "На счёте не хватает денег для этой суммы.",
             )),
             SendPlan::Direct => {
-                let result = core::send(
-                    &st.rpc,
-                    &st.program_id,
-                    &st.identity,
-                    &view.vault,
-                    &recipient,
-                    amount,
-                );
-                finish(&st, &what, result, "Деньги отправлены.")
+                let result = run_money(&st, &what, |hook| {
+                    core::send(
+                        &st.rpc,
+                        &st.program_id,
+                        &st.identity,
+                        &view.vault,
+                        &recipient,
+                        amount,
+                        hook,
+                    )
+                });
+                finish(result, "Деньги отправлены.")
             }
             SendPlan::Request => {
-                let result = core::request_withdrawal(
-                    &st.rpc,
-                    &st.program_id,
-                    &st.identity,
-                    &view.vault,
-                    &recipient,
-                    amount,
-                    view.next_free_nonce,
-                );
+                let result = run_money(&st, &what, |hook| {
+                    core::request_withdrawal(
+                        &st.rpc,
+                        &st.program_id,
+                        &st.identity,
+                        &view.vault,
+                        &recipient,
+                        amount,
+                        view.next_free_nonce,
+                        hook,
+                    )
+                });
                 finish(
-                    &st,
-                    &what,
                     result,
                     "Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.",
                 )
@@ -134,18 +148,19 @@ pub async fn add_payee(
             ));
         }
         let address = parse_pubkey(&address, "Получатель")?;
-        let result = core::add_beneficiary(
-            &st.rpc,
-            &st.program_id,
-            &st.identity,
-            &view.vault,
-            &name,
-            &address,
-        );
         let what = format!("Добавление получателя «{name}»");
+        let result = run_money(&st, &what, |hook| {
+            core::add_beneficiary(
+                &st.rpc,
+                &st.program_id,
+                &st.identity,
+                &view.vault,
+                &name,
+                &address,
+                hook,
+            )
+        });
         finish(
-            &st,
-            &what,
             result,
             "Получатель добавлен. Пользоваться им можно будет через 48 часов.",
         )
@@ -170,17 +185,18 @@ pub async fn add_guardian(
             ));
         }
         let address = parse_pubkey(&address, "Доверенное лицо")?;
-        let result = core::add_trusted_approver(
-            &st.rpc,
-            &st.program_id,
-            &st.identity,
-            &view.vault,
-            &address,
-            None,
-        );
+        let result = run_money(&st, "Добавление доверенного лица", |hook| {
+            core::add_trusted_approver(
+                &st.rpc,
+                &st.program_id,
+                &st.identity,
+                &view.vault,
+                &address,
+                None,
+                hook,
+            )
+        });
         finish(
-            &st,
-            "Добавление доверенного лица",
             result,
             "Доверенное лицо добавлено.",
         )
@@ -213,9 +229,17 @@ pub async fn approve_request(
             "Одобрение перевода на {}",
             money(request.amount, view.decimals)
         );
-        let result =
-            core::approve_withdrawal(&st.rpc, &st.program_id, &st.identity, &view.vault, nonce);
-        finish(&st, &what, result, "Перевод одобрен.")
+        let result = run_money(&st, &what, |hook| {
+            core::approve_withdrawal(
+                &st.rpc,
+                &st.program_id,
+                &st.identity,
+                &view.vault,
+                nonce,
+                hook,
+            )
+        });
+        finish(result, "Перевод одобрен.")
     })
     .await
 }
@@ -234,14 +258,16 @@ pub async fn open_family_account(
         let decimals = fetch_mint_decimals(&st.rpc, &mint)
             .map_err(|e| ErrorDto::from(family_app_core::ActionError::Rejected(e)))?;
         let limit = parse_amount(&daily_limit, decimals)?;
-        match core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit) {
-            Ok(vault) => Ok(VaultRefDto {
-                address: vault.to_string(),
-                address_short: short_address(&vault),
-                mine: true,
-            }),
-            Err(error) => Err(failure(&st, "Открытие семейного счёта", error)),
-        }
+        let vault = run_money(
+            &st,
+            "Открытие семейного счёта",
+            |hook| core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit, hook),
+        )?;
+        Ok(VaultRefDto {
+            address: vault.to_string(),
+            address_short: short_address(&vault),
+            mine: true,
+        })
     })
     .await
 }

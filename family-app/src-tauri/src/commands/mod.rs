@@ -7,6 +7,7 @@ pub mod actions;
 pub mod pairing;
 pub mod read;
 
+use family_app_core::actions::BeforeSend;
 use family_app_core::vault_view::{fetch_vault_view, VaultView};
 use family_app_core::ActionError;
 use solana_pubkey::Pubkey;
@@ -116,70 +117,77 @@ pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
     }
 }
 
-/// Remembers an unconfirmed operation so the rule above survives a restart.
-/// Returns why it could not be saved, if so.
-pub fn record_unconfirmed(state: &AppState, what: &str, error: &ActionError) -> Option<String> {
-    if let ActionError::Unconfirmed {
-        signature,
+/// Whether the pending record must be forgotten after a core call returned.
+/// Only `Unconfirmed` keeps it: every other outcome is settled (it landed,
+/// the node refused it, it failed on chain, or nothing was sent at all).
+pub fn should_clear<T>(result: &Result<T, ActionError>) -> bool {
+    !matches!(result, Err(ActionError::Unconfirmed { .. }))
+}
+
+/// Builds the record the hook writes before anything is sent.
+pub fn pending_record(
+    what: &str,
+    signature: &Signature,
+    last_valid_block_height: u64,
+) -> PendingTx {
+    PendingTx {
+        signature: signature.to_string(),
         last_valid_block_height,
-    } = error
-    {
-        let record = PendingTx {
-            signature: signature.to_string(),
-            last_valid_block_height: *last_valid_block_height,
-            what: what.to_string(),
-        };
-        return pending::save(&state.pending_path(), &record).err();
-    }
-    None
-}
-
-/// Pure part: if the record could not be saved, tell the person not to
-/// repeat the operation and keep the signature and the reason in `details`.
-pub fn apply_save_failure(dto: ErrorDto, signature: &str, failure: Option<String>) -> ErrorDto {
-    match failure {
-        None => dto,
-        Some(reason) => ErrorDto {
-            kind: dto.kind,
-            message: format!(
-                "{} Приложение не смогло запомнить эту операцию. НЕ повторяйте её, пока не проверите историю счёта.",
-                dto.message
-            ),
-            details: Some(format!(
-                "signature: {signature}; запись не сохранена: {reason}"
-            )),
-        },
+        what: what.to_string(),
     }
 }
 
-/// Converts a failed core call into the command error, recording `Unconfirmed`.
-pub fn failure(state: &AppState, what: &str, error: ActionError) -> ErrorDto {
-    let failure = record_unconfirmed(state, what, &error);
-    let signature = match &error {
-        ActionError::Unconfirmed { signature, .. } => Some(signature.to_string()),
-        _ => None,
-    };
-    let dto = ErrorDto::from(error);
-    match signature {
-        Some(sig) => apply_save_failure(dto, &sig, failure),
-        None => dto,
-    }
+/// What the person sees when the record could not be written (so nothing
+/// was sent).
+pub fn record_failed_dto(reason: String) -> ErrorDto {
+    ErrorDto::new(
+        "internal",
+        "Не удалось записать операцию на этом устройстве, поэтому ничего не было отправлено. Попробуйте ещё раз.",
+    )
+    .with_details(reason)
 }
 
-/// Turns a core result into the command result, recording `Unconfirmed`.
-pub fn finish(
+/// Runs one money operation with the "record before sending" rule: the
+/// pending record is written by the core's before-send hook, i.e. after
+/// signing and before the network is touched, so a crash or close during
+/// the confirm wait cannot lose it. Afterwards the record is cleared unless
+/// the outcome is still unknown (`Unconfirmed`).
+pub fn run_money<T>(
     state: &AppState,
     what: &str,
-    result: Result<Signature, ActionError>,
+    op: impl FnOnce(BeforeSend) -> Result<T, ActionError>,
+) -> Result<T, ErrorDto> {
+    let path = state.pending_path();
+    let save_error = std::cell::RefCell::new(None::<String>);
+    let hook = |signature: &Signature, last_valid_block_height: u64| {
+        let record = pending_record(what, signature, last_valid_block_height);
+        pending::save(&path, &record).inspect_err(|e| {
+            *save_error.borrow_mut() = Some(e.clone());
+        })
+    };
+    let result = op(&hook);
+    if let Some(reason) = save_error.into_inner() {
+        // Nothing was sent. Do not clear: the file may belong to another
+        // operation that the failed save refused to overwrite.
+        return Err(record_failed_dto(reason));
+    }
+    if should_clear(&result) {
+        // If this fails the record stays and blocks money commands until
+        // "Проверить" settles it: the safe side.
+        let _ = pending::clear(&path);
+    }
+    result.map_err(ErrorDto::from)
+}
+
+/// Turns a settled core result into the command result.
+pub fn finish(
+    result: Result<Signature, ErrorDto>,
     ok_message: &str,
 ) -> Result<ActionOkDto, ErrorDto> {
-    match result {
-        Ok(signature) => Ok(ActionOkDto {
-            signature: signature.to_string(),
-            message: ok_message.to_string(),
-        }),
-        Err(error) => Err(failure(state, what, error)),
-    }
+    result.map(|signature| ActionOkDto {
+        signature: signature.to_string(),
+        message: ok_message.to_string(),
+    })
 }
 
 pub fn not_allowed(text: &str) -> ErrorDto {
@@ -190,23 +198,51 @@ pub fn not_allowed(text: &str) -> ErrorDto {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_saved_record_leaves_the_error_unchanged() {
-        let dto = ErrorDto::new("unconfirmed", "Не знаем.").with_details("d");
-        assert_eq!(apply_save_failure(dto.clone(), "SIG", None), dto);
+    fn sig() -> Signature {
+        Signature::from([3u8; 64])
     }
 
     #[test]
-    fn a_failed_save_warns_and_keeps_signature_and_reason() {
-        let dto = apply_save_failure(
-            ErrorDto::new("unconfirmed", "Не знаем."),
-            "SIG123",
-            Some("disk full".to_string()),
-        );
-        assert!(dto.message.starts_with("Не знаем."));
-        assert!(dto.message.contains("НЕ повторяйте"));
-        let details = dto.details.unwrap();
-        assert!(details.contains("SIG123"));
-        assert!(details.contains("disk full"));
+    fn the_record_carries_what_signature_and_height() {
+        let r = pending_record("Отправка 5 USDC", &sig(), 77);
+        assert_eq!(r.what, "Отправка 5 USDC");
+        assert_eq!(r.signature, sig().to_string());
+        assert_eq!(r.last_valid_block_height, 77);
+    }
+
+    #[test]
+    fn the_hook_record_is_written_without_overwriting() {
+        let path = std::env::temp_dir().join(format!(
+            "family-app-hook-{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let record = pending_record("x", &sig(), 5);
+        pending::save(&path, &record).unwrap();
+        assert_eq!(pending::load(&path).unwrap(), Some(record.clone()));
+        assert!(pending::save(&path, &pending_record("y", &sig(), 6)).is_err());
+        pending::clear(&path).unwrap();
+    }
+
+    #[test]
+    fn only_unconfirmed_keeps_the_record() {
+        assert!(should_clear::<()>(&Ok(())));
+        assert!(should_clear::<()>(&Err(ActionError::NoConnection)));
+        assert!(should_clear::<()>(&Err(ActionError::Rejected("x".into()))));
+        assert!(!should_clear::<()>(&Err(ActionError::Unconfirmed {
+            signature: sig(),
+            last_valid_block_height: 1,
+        })));
+    }
+
+    #[test]
+    fn a_failed_record_save_says_nothing_was_sent_and_to_retry() {
+        let dto = record_failed_dto("disk full".to_string());
+        assert_eq!(dto.kind, "internal");
+        assert!(dto.message.contains("ничего не было отправлено"));
+        assert!(dto.message.contains("Попробуйте ещё раз"));
+        assert_eq!(dto.details.as_deref(), Some("disk full"));
     }
 }
