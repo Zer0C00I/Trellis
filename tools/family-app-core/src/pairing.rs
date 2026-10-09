@@ -102,17 +102,23 @@ pub fn pair_with_kiosk(qr_text: &str, name: &str, my_pubkey: Pubkey) -> Result<(
     // panic with "cannot start a runtime from within a runtime" even if the
     // caller is itself async.
     std::thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_time()
-                    .build()
-                    .map_err(ble)?;
-                runtime.block_on(run(&frame))
-            })
+        std::thread::Builder::new()
+            .name("family-app-pairing".to_string())
+            .spawn_scoped(scope, || build_runtime()?.block_on(run(&frame)))
+            .map_err(ble)?
             .join()
             .unwrap_or_else(|_| Err(PairingError::Ble("pairing thread panicked".to_string())))
     })
+}
+
+/// The BlueZ backend talks to D-Bus through `dbus-tokio`, which registers
+/// file descriptors with the runtime's IO driver. A runtime built with only
+/// `enable_time()` panics there ("IO is disabled"), so every driver is on.
+fn build_runtime() -> Result<tokio::runtime::Runtime, PairingError> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(ble)
 }
 
 async fn run(frame: &[u8]) -> Result<(), PairingError> {
@@ -130,34 +136,51 @@ async fn run(frame: &[u8]) -> Result<(), PairingError> {
         PairingError::Ble,
     )
     .await?;
-    let found = find_kiosk(&adapter).await;
+    let found = find_kiosks(&adapter).await;
     // Best effort: a failure to stop scanning must not mask the outcome.
     let _ = tokio::time::timeout(STEP_TIMEOUT, adapter.stop_scan()).await;
-    let kiosk = found?;
 
-    let result = talk_to_kiosk(&kiosk, frame).await;
-    let _ = tokio::time::timeout(STEP_TIMEOUT, kiosk.disconnect()).await;
-    result
+    // BlueZ also reports devices it has cached, which may be out of range, so
+    // a failed connection moves on to the next candidate. Any other outcome
+    // (success, or the kiosk rejecting the code) is final: a kiosk answered.
+    let mut last_error = PairingError::KioskNotFound;
+    for kiosk in found? {
+        let result = talk_to_kiosk(&kiosk, frame).await;
+        let _ = tokio::time::timeout(STEP_TIMEOUT, kiosk.disconnect()).await;
+        match result {
+            Err(PairingError::ConnectFailed(e)) => last_error = PairingError::ConnectFailed(e),
+            other => return other,
+        }
+    }
+    Err(last_error)
 }
 
-/// Polls the adapter's discovered devices until one advertises the pairing
-/// service or `SCAN_TIMEOUT` passes. The service filter is applied by BlueZ
-/// when scanning, and re-checked here because other platforms (and cached
-/// devices) may report peripherals the filter would have excluded.
-async fn find_kiosk(
+/// Polls the adapter's discovered devices until at least one advertises the
+/// pairing service or `SCAN_TIMEOUT` passes, and returns every such device.
+/// The service filter is applied by BlueZ when scanning, and re-checked here
+/// because other platforms (and cached devices) may report peripherals the
+/// filter would have excluded.
+async fn find_kiosks(
     adapter: &impl Central<Peripheral = Peripheral>,
-) -> Result<Peripheral, PairingError> {
+) -> Result<Vec<Peripheral>, PairingError> {
     let deadline = tokio::time::Instant::now() + SCAN_TIMEOUT;
     loop {
-        let peripherals = step(adapter.peripherals(), PairingError::Ble).await?;
-        for peripheral in peripherals {
+        let mut found = Vec::new();
+        for peripheral in step(adapter.peripherals(), PairingError::Ble).await? {
+            // Never let the per-device lookups run past the scan deadline.
+            let budget = deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .min(STEP_TIMEOUT);
             let advertised = matches!(
-                tokio::time::timeout(STEP_TIMEOUT, peripheral.properties()).await,
+                tokio::time::timeout(budget, peripheral.properties()).await,
                 Ok(Ok(Some(props))) if props.services.contains(&SERVICE_UUID)
             );
             if advertised {
-                return Ok(peripheral);
+                found.push(peripheral);
             }
+        }
+        if !found.is_empty() {
+            return Ok(found);
         }
         if tokio::time::Instant::now() >= deadline {
             return Err(PairingError::KioskNotFound);
@@ -197,6 +220,20 @@ mod tests {
             Pubkey::new_from_array([1u8; 32]),
         );
         assert!(matches!(err, Err(PairingError::BadQrText)));
+    }
+
+    // The BlueZ backend registers file descriptors with the runtime. This
+    // fails with "IO is disabled" if the runtime is built without the IO
+    // driver, which no other offline test would notice.
+    #[cfg(unix)]
+    #[test]
+    fn the_pairing_runtime_can_register_file_descriptors() {
+        let (a, _b) = std::os::unix::net::UnixStream::pair().unwrap();
+        a.set_nonblocking(true).unwrap();
+        let runtime = build_runtime().unwrap();
+        runtime.block_on(async {
+            tokio::io::unix::AsyncFd::new(a).expect("IO driver must be enabled");
+        });
     }
 
     #[test]

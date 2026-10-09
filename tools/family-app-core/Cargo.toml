@@ -20,7 +20,7 @@ solana-transaction-status-client-types = "=4.2.2"
 solana-transaction = { version = "4.1.6", features = ["wincode"] }
 spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
 spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
-tokio = { version = "=1.53.2", features = ["rt", "time"] }
+tokio = { version = "=1.53.2", features = ["net", "rt", "time"] }
 uuid = "=1.27.0"
 
 [lints.rust]
