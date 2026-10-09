@@ -26,7 +26,7 @@ use family_vault::state::{BeneficiaryList, TrustedApprovers};
 use solana_account_decoder_client_types::UiAccountEncoding;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
-use solana_client::rpc_filter::{Memcmp, MemcmpEncodedBytes, RpcFilterType};
+use solana_client::rpc_filter::{Memcmp, RpcFilterType};
 use solana_pubkey::Pubkey;
 
 fn scan_for_pubkey_at_offset(
@@ -39,10 +39,8 @@ fn scan_for_pubkey_at_offset(
     let config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::DataSize(data_size),
-            RpcFilterType::Memcmp(Memcmp::new(
-                offset,
-                MemcmpEncodedBytes::Bytes(needle.to_bytes().to_vec()),
-            )),
+            // base58 rather than a raw byte array: every RPC provider accepts it.
+            RpcFilterType::Memcmp(Memcmp::new_base58_encoded(offset, &needle.to_bytes())),
         ]),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64),
@@ -169,12 +167,73 @@ mod tests {
         );
     }
 
+    // The offsets must point at the right bytes of a real serialized account,
+    // not just agree with a formula that mirrors the implementation.
+    #[test]
+    fn offsets_point_at_the_right_bytes_of_a_real_beneficiary_list() {
+        use anchor_lang::AccountSerialize;
+        use family_vault::state::{Beneficiary, BeneficiaryList};
+
+        let empty = Beneficiary {
+            address: anchor_lang::prelude::Pubkey::default(),
+            name: [0u8; BENEFICIARY_NAME_LEN],
+            name_len: 0,
+            added_at: 0,
+            active_after: 0,
+        };
+        let mut entries = [empty; MAX_BENEFICIARIES];
+        for (slot, entry) in entries.iter_mut().enumerate() {
+            entry.address = anchor_lang::prelude::Pubkey::new_from_array([slot as u8 + 1; 32]);
+        }
+        let list = BeneficiaryList {
+            vault: anchor_lang::prelude::Pubkey::new_from_array([0xAA; 32]),
+            count: MAX_BENEFICIARIES as u8,
+            entries,
+        };
+        let mut bytes = Vec::new();
+        list.try_serialize(&mut bytes).unwrap();
+
+        assert_eq!(bytes.len(), BeneficiaryList::SPACE);
+        assert_eq!(beneficiary_address_offset(0), 41);
+        assert_eq!(beneficiary_address_offset(1), 122);
+        assert_eq!(beneficiary_address_offset(9), 770);
+        for slot in 0..MAX_BENEFICIARIES {
+            let at = beneficiary_address_offset(slot);
+            assert_eq!(&bytes[at..at + 32], &[slot as u8 + 1; 32], "slot {slot}");
+        }
+    }
+
+    #[test]
+    fn offsets_point_at_the_right_bytes_of_a_real_approvers_list() {
+        use anchor_lang::AccountSerialize;
+        use family_vault::state::TrustedApprovers;
+
+        let mut entries = [anchor_lang::prelude::Pubkey::default(); MAX_APPROVERS];
+        for (slot, entry) in entries.iter_mut().enumerate() {
+            *entry = anchor_lang::prelude::Pubkey::new_from_array([slot as u8 + 1; 32]);
+        }
+        let list = TrustedApprovers {
+            vault: anchor_lang::prelude::Pubkey::new_from_array([0xBB; 32]),
+            count: MAX_APPROVERS as u8,
+            entries,
+        };
+        let mut bytes = Vec::new();
+        list.try_serialize(&mut bytes).unwrap();
+
+        assert_eq!(bytes.len(), TrustedApprovers::SPACE);
+        assert_eq!(approver_offset(0), 41);
+        assert_eq!(approver_offset(4), 169);
+        for slot in 0..MAX_APPROVERS {
+            let at = approver_offset(slot);
+            assert_eq!(&bytes[at..at + 32], &[slot as u8 + 1; 32], "slot {slot}");
+        }
+    }
+
     // Requires a live RPC endpoint with real BeneficiaryList/TrustedApprovers
     // accounts to scan. Run manually with
     // `cargo test -p family-app-core discovery::tests::discovers_a_real_vault -- --ignored --nocapture`
-    // after setting the constants below to a program id / pubkey known (from
-    // devnet) to actually appear in at least one vault's beneficiary or
-    // approver list.
+    // with DISCOVERY_TEST_PUBKEY set to a pubkey known (from devnet) to
+    // actually appear in at least one vault's beneficiary or approver list.
     #[test]
     #[ignore = "needs a live RPC endpoint and a known devnet vault membership"]
     fn discovers_a_real_vault() {
