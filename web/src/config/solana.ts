@@ -7,7 +7,7 @@ export const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC || 'https://api.devnet
 
 // Trellis program deployed on Devnet (matches declare_id! in programs/family-vault/src/lib.rs).
 export const PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_PROGRAM_ID || '38eQgWLzqqaaBPWzbcjYga6pp46GuGn5u2BhTwnJaLz9'
+  process.env.NEXT_PUBLIC_PROGRAM_ID || '9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ'
 );
 
 // Circle's official USDC mint on Devnet (SPL Token program, 6 decimals).

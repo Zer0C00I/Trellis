@@ -8,7 +8,7 @@
 import idlJson from './family_vault.json';
 
 export type FamilyVault = {
-  "address": "38eQgWLzqqaaBPWzbcjYga6pp46GuGn5u2BhTwnJaLz9",
+  "address": "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ",
   "metadata": {
     "name": "familyVault",
     "version": "0.1.0",

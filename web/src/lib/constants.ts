@@ -1,16 +1,12 @@
 import { PublicKey } from '@solana/web3.js';
+import { PROGRAM_ID, USDC_MINT, USDC_DECIMALS } from '@/config/solana';
 
 // ─── Program & Token Constants ───────────────────────────────────────────────
-export const FAMILY_VAULT_PROGRAM_ID = new PublicKey(
-  // Replace with actual deployed program ID
-  '11111111111111111111111111111111'
-);
-
-export const USDC_DEVNET_MINT = new PublicKey(
-  '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
-);
-
-export const USDC_DECIMALS = 6;
+// Single source of truth lives in config/solana.ts; these are aliases kept so
+// existing imports keep working.
+export const FAMILY_VAULT_PROGRAM_ID = PROGRAM_ID;
+export const USDC_DEVNET_MINT = USDC_MINT;
+export { USDC_DECIMALS };
 
 // ─── Mock Mode ───────────────────────────────────────────────────────────────
 // Set to true for demo/development before the Anchor program is deployed.
