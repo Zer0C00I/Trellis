@@ -424,7 +424,7 @@ export default function Home() {
             </div>
 
             <div>
-              <h4 className="text-white font-semibold mb-6 text-sm">Developers</h4>
+              <h4 className="text-white font-semibold mb-6 text-sm">Docs & Social</h4>
               <ul className="space-y-4 text-sm font-medium">
                 <li>
                   <Link href="/docs" className="hover:text-emerald-400 transition-colors">
@@ -432,9 +432,18 @@ export default function Home() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="https://github.com/Zer0C00I/Trellis" className="hover:text-emerald-400 transition-colors">
-                    GitHub
+                  <Link
+                    href="https://x.com/TrellisVault"
+                    target="_blank"
+                    className="hover:text-emerald-400 transition-colors"
+                  >
+                    X (Twitter)
                   </Link>
+                </li>
+                <li>
+                  <a href="mailto:trellisvault@gmail.com" className="hover:text-emerald-400 transition-colors">
+                    Contact
+                  </a>
                 </li>
               </ul>
             </div>
