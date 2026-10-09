@@ -73,6 +73,15 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
     }
 }
 
+/// Maps an error from `send_transaction`: only a connection-level failure
+/// leaves the outcome unknown; anything else is the node refusing it.
+fn send_error(err: solana_client::client_error::ClientError, signature: Signature) -> ActionError {
+    match map_client_error(err) {
+        ActionError::NoConnection => ActionError::Unconfirmed(signature),
+        other => other,
+    }
+}
+
 /// Sends one or more instructions in a single transaction, signed by
 /// `payer` plus any `extra_signers` (e.g. a second trusted approver for
 /// `add_beneficiary_urgent`, or an existing approver co-signing a new
@@ -82,9 +91,11 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
 /// for up to ~60s (or until its blockhash expires). Retry rule for callers:
 ///
 /// - `Ok(signature)`: confirmed on chain. Never resend.
-/// - `Rejected` / `NoConnection`: the transaction was NOT sent (or failed on
-///   chain), so building a fresh transaction and retrying is safe.
-/// - `Unconfirmed(signature)`: it was sent but the outcome is unknown. Do
+/// - `Rejected` / `NoConnection`: the transaction was NOT accepted (the node
+///   refused it, it failed on chain, or no connection could be made before
+///   signing), so building a fresh transaction and retrying is safe.
+/// - `Unconfirmed(signature)`: it was sent (or the connection dropped while
+///   sending) and the outcome is unknown. Do
 ///   NOT retry with a new transaction (new blockhash, would pay twice).
 ///   Call [`confirm_signature`] first; only `Failed`, or `NotFound` after the
 ///   transaction's blockhash has expired (about 90s after sending), makes a
@@ -106,8 +117,15 @@ pub fn send_instructions(
         &signers,
         blockhash,
     );
-    // An error here means the node never accepted it: nothing was sent.
-    let signature = rpc.send_transaction(&tx).map_err(map_client_error)?;
+    // The signature is known before sending, so a lost response cannot hide it.
+    let signature = tx.signatures[0];
+    let signature = match rpc.send_transaction(&tx) {
+        Ok(returned) => returned,
+        // A node rejection (preflight failure) means the transaction was not
+        // accepted. A connection error might have struck after the request
+        // arrived, so the transaction may still land: outcome unknown.
+        Err(e) => return Err(send_error(e, signature)),
+    };
 
     let deadline = Instant::now() + CONFIRM_DEADLINE;
     loop {
@@ -482,6 +500,28 @@ mod tests {
         assert!(matches!(
             whole_units_to_base_units(1, 20),
             Err(ActionError::Rejected(_))
+        ));
+    }
+
+    #[test]
+    fn a_connection_failure_while_sending_is_unconfirmed_not_a_safe_retry() {
+        let signature = Signature::from([9u8; 64]);
+        let io = solana_client::client_error::ClientError::from(std::io::Error::other("reset"));
+        assert!(matches!(
+            send_error(io, signature),
+            ActionError::Unconfirmed(s) if s == signature
+        ));
+    }
+
+    #[test]
+    fn a_node_rejection_while_sending_stays_rejected() {
+        let signature = Signature::from([9u8; 64]);
+        let custom = solana_client::client_error::ClientError::from(
+            solana_client::client_error::ClientErrorKind::Custom("preflight failed".into()),
+        );
+        assert!(matches!(
+            send_error(custom, signature),
+            ActionError::Rejected(_)
         ));
     }
 }
