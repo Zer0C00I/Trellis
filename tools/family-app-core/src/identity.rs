@@ -26,9 +26,11 @@ impl std::error::Error for IdentityError {}
 
 /// Loads the identity at `path` if it exists, otherwise generates a fresh
 /// one and persists it there (`solana_keypair::write_keypair_file` sets
-/// `0600` permissions on unix automatically). Resumable: calling this
-/// again after a crash mid-first-launch just loads what was already
-/// written, exactly like the kiosk's own bootstrap.
+/// `0600` permissions on unix automatically). Calling this again after a
+/// crash that happened after the file was fully written just loads it. The
+/// write is not atomic, so a crash in the middle of it can leave a partial
+/// file, which the next call reports as an error rather than silently
+/// replacing it.
 pub fn generate_or_load_identity(path: &Path) -> Result<Keypair, IdentityError> {
     if path.exists() {
         return solana_keypair::read_keypair_file(path)
