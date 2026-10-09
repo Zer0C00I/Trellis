@@ -1,0 +1,9 @@
+{
+  "name": "family-app-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "smoke": "node tools/smoke.mjs"
+  }
+}
