@@ -9,6 +9,13 @@
 //! `Result` so a future Tauri (or test) caller decides what to do with a
 //! failure.
 //!
+//! Money-moving actions report an unknown outcome as
+//! `ActionError::Unconfirmed { signature, last_valid_block_height }`: store
+//! both, resolve with `actions::confirm_signature`, and only retry after
+//! `Failed` or `Expired`. `actions::request_withdrawal` takes an explicit
+//! nonce (from `VaultView::next_free_nonce`) that must be stored and reused
+//! on retry.
+//!
 //! See `docs/superpowers/specs/2026-09-23-family-app-design.md`.
 
 pub mod actions;

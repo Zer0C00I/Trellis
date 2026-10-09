@@ -96,7 +96,8 @@ pub struct VaultView {
     pub guardians: Vec<Pubkey>,
     /// Unexecuted requests among nonces `0..NONCE_SCAN_LIMIT`, by nonce.
     pub pending: Vec<PendingRequest>,
-    /// The smallest nonce in the window with no request account.
+    /// The smallest nonce in the window with no request account. Pass it to
+    /// `actions::request_withdrawal`, store it, and reuse it on retry.
     pub next_free_nonce: u64,
 }
 

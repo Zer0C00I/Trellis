@@ -12,7 +12,6 @@
 
 use crate::error::map_client_error;
 pub use crate::error::ActionError;
-use crate::vault_view::next_free_nonce;
 use anchor_lang::AccountDeserialize;
 use family_vault::state::{PendingWithdrawal, Vault};
 use family_vault_client::builders::{
@@ -477,11 +476,16 @@ pub fn approve_withdrawal(
 /// `decimals` from `VaultView`) from a pool vault, to be later confirmed
 /// with `approve_withdrawal`. Zero is `Rejected` before any RPC.
 ///
-/// The request nonce is chosen here: the smallest unused one, from
-/// `vault_view::next_free_nonce` (which errors when the scan window is
-/// full). Returns the confirmed signature and the nonce used; the UI can
-/// later find the request in `VaultView::pending` under that nonce. If two
-/// requests race for the same nonce the program rejects the second one. Not part of the MVP's default
+/// The caller picks `nonce`: take it from `VaultView::next_free_nonce` (or
+/// `vault_view::next_free_nonce`), and STORE it before calling. On
+/// `ActionError::Unconfirmed`, resolve with [`confirm_signature`] and, when
+/// a retry is safe, retry with the SAME nonce, never a fresh one. The
+/// request account is created with `init` at a PDA derived from the nonce,
+/// so a second attempt with the same nonce can succeed only once (a
+/// duplicate fails with "account already in use"). A new nonce would create
+/// a second, identical pending request, and two approvals could then each
+/// move the amount. If another device took the nonce first, the program
+/// rejects this request and no funds move. Not part of the MVP's default
 /// "send" flow (that goes straight through `send`/`Withdraw` for
 /// within-limit amounts) but needed once a pool vault's daily limit is
 /// exceeded.
@@ -492,10 +496,10 @@ pub fn request_withdrawal(
     vault: &Pubkey,
     recipient: &Pubkey,
     amount_base_units: u64,
-) -> Result<(Signature, u64), ActionError> {
+    nonce: u64,
+) -> Result<Signature, ActionError> {
     require_nonzero(amount_base_units)?;
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let nonce = next_free_nonce(rpc, program_id, vault)?;
 
     let ix = build_request_withdrawal_instruction(
         program_id,
@@ -506,8 +510,7 @@ pub fn request_withdrawal(
         amount_base_units,
         nonce,
     );
-    let signature = send_instructions(rpc, owner, &[ix], &[])?;
-    Ok((signature, nonce))
+    send_instructions(rpc, owner, &[ix], &[])
 }
 
 #[cfg(test)]
@@ -614,6 +617,7 @@ mod tests {
             &vault,
             &other,
             0,
+            7,
         ));
     }
 
