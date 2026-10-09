@@ -3,11 +3,10 @@
 //! every rule and sentence as pure, tested functions, and the `ui/` folder
 //! only displays what these return.
 
-// Removed in Task 4, once the commands use every item.
-#![allow(dead_code)]
-
+mod commands;
 mod config;
 mod dto;
+mod pending;
 mod state;
 mod text;
 mod view;
@@ -40,7 +39,24 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            commands::read::app_info,
+            commands::read::wallet,
+            commands::read::list_vaults,
+            commands::read::load_vault,
+            commands::read::load_history,
+            commands::read::pending_status,
+            commands::read::check_pending,
+            commands::actions::deposit,
+            commands::actions::send_money,
+            commands::actions::add_payee,
+            commands::actions::add_guardian,
+            commands::actions::approve_request,
+            commands::actions::open_family_account,
+            commands::actions::get_test_sol,
+            commands::pairing::pair_with_qr,
+            commands::pairing::pair_with_pin,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Trellis Family app");
 }
