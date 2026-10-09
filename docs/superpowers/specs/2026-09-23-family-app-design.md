@@ -198,8 +198,16 @@ one, the MVP simply opens the first one found. Adding a switcher later is
 a UI-only change, not an architecture change — the discovery layer
 already returns the full list.
 
-`getProgramAccounts` with memcmp filters is a single RPC call with no
-extra indexing infrastructure needed at MVP scale. A future off-chain
+`getProgramAccounts`'s filters are ANDed together within one call, so
+checking "does any of up to 10 beneficiary slots / 5 approver slots equal
+my pubkey" cannot be done in a single call — Solana has no OR filter.
+MVP discovery instead issues one filtered `getProgramAccounts` call per
+possible slot index (10 for `BeneficiaryList`, 5 for `TrustedApprovers`:
+15 RPC calls total), each scoped by account size plus a `memcmp` at that
+slot's exact byte offset, and merges/dedupes the results client-side. No
+extra indexing infrastructure is still needed at MVP scale — 15 calls is
+fine for an app that runs this on launch and on manual refresh, not in a
+hot loop. A future off-chain
 indexer (mentioned in earlier session discussion as a possible future
 component) would only ever be a read-through cache in front of this same
 call, added if/when `getProgramAccounts` scan cost becomes a real

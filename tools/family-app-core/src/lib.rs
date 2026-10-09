@@ -8,4 +8,5 @@
 //!
 //! See `docs/superpowers/specs/2026-09-23-family-app-design.md`.
 
+pub mod discovery;
 pub mod identity;
