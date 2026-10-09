@@ -181,40 +181,34 @@ becomes Linux-only, which is accepted: the kiosk hardware is Linux.
 No config file points family-app at "its" vault — unlike kiosk, which is
 provisioned once and always serves one specific device's own vault.
 family-app instead discovers, on every launch (or refresh), every vault
-its pubkey participates in:
+its pubkey participates in or owns:
 
 ```
-for slot in 0..MAX_BENEFICIARIES:   // 10 calls
-  getProgramAccounts(program_id, [dataSize(BeneficiaryList::SPACE),
-                                  memcmp(offset(entries[slot].address), my_pubkey)])
-for slot in 0..MAX_APPROVERS:       // 5 calls
-  getProgramAccounts(program_id, [dataSize(TrustedApprovers::SPACE),
-                                  memcmp(offset(entries[slot]), my_pubkey)])
-merge and dedupe the `vault` field of every match
+getProgramAccounts(program_id, [dataSize(BeneficiaryList::SPACE)])   // 1 request
+getProgramAccounts(program_id, [dataSize(TrustedApprovers::SPACE)])  // 1 request
+keep every list whose live entries (the first `count`) contain my_pubkey,
+collect its `vault` field, dedupe
+getMultipleAccounts([pool_pda(me), personal_pda(me)])                // vaults I own
 ```
 
-This is architecturally already multi-vault-capable — one pubkey can
-appear in any number of vaults' beneficiary/approver lists — with no
-extra design needed. **MVP scope decision: the UI itself only supports
-one vault at a time** (no vault switcher); if discovery finds more than
-one, the MVP simply opens the first one found. Adding a switcher later is
-a UI-only change, not an architecture change — the discovery layer
-already returns the full list.
+This is architecturally multi-vault-capable: one pubkey can appear in any
+number of vaults' lists and can own up to two vaults. **MVP scope decision:
+the UI shows one vault at a time**; when discovery finds more than one, a
+small picker lets the person switch (needed because the same person can be
+a guardian on a relative's vault and also own a family account).
 
-`getProgramAccounts`'s filters are ANDed together within one call, so
-checking "does any of up to 10 beneficiary slots / 5 approver slots equal
-my pubkey" cannot be done in a single call — Solana has no OR filter.
-MVP discovery instead issues one filtered `getProgramAccounts` call per
-possible slot index (10 for `BeneficiaryList`, 5 for `TrustedApprovers`:
-15 RPC calls total), each scoped by account size plus a `memcmp` at that
-slot's exact byte offset, and merges/dedupes the results client-side. No
-extra indexing infrastructure is still needed at MVP scale — 15 calls is
-fine for an app that runs this on launch and on manual refresh, not in a
-hot loop. A future off-chain
-indexer (mentioned in earlier session discussion as a possible future
-component) would only ever be a read-through cache in front of this same
-call, added if/when `getProgramAccounts` scan cost becomes a real
-problem — not needed for a hackathon MVP.
+`getProgramAccounts` filters are ANDed, so "is my key in any of the 10
+payee slots" cannot be a single filtered call, and one filtered call per
+slot (15 requests) was measured to be unusable on the public Devnet node:
+it allows 10 `getProgramAccounts` calls per 10 seconds per IP, so the 11th
+request is answered with HTTP 429 and `retry-after: 10`, making every
+launch take 20 seconds or more (parallel requests only trigger more 429s).
+Discovery therefore asks for every list of one kind, filtered only by
+exact account size (2 requests, about 135 ms), and checks for the key on
+the client. Each list is 851 (payees) or 201 (guardians) bytes, so this is
+fine at MVP scale (a thousand vaults is about a megabyte). A deployment
+with many vaults should put an indexer, or a provider that supports
+server-side filtering, in front of the same two requests.
 
 ## MVP Scope
 
