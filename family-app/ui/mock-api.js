@@ -1,5 +1,5 @@
 // A scripted stand-in for the Rust commands: same names, same shapes as
-// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|lowsol
+// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|stuck|lowsol|offline
 const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,9 +58,9 @@ const history = () => [
   { signature: 's4', text: 'Счёт открыт', time: now() - 86400 * 40 },
 ];
 
-let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], lowsol: [pool] }[scenario] ?? [pool];
+let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
 let solGot = false;
-let pendingTx = scenario === 'unconfirmed' ? { what: 'Отправка 5 USDC', signature: 'sig123' } : null;
+let pendingTx = scenario.startsWith('unconfirmed') ? { what: 'Отправка 5 USDC', signature: 'sig123' } : null;
 let waitingPolls = 0;
 let moved = 0; // every deposit/send changes the balance, as on a real chain
 const setBalance = () => {
@@ -79,7 +79,7 @@ const handlers = {
   app_info: () => ({ address: ME, address_short: short(ME), network: 'devnet' }),
   wallet: () => {
     if (scenario === 'offline') throw err('network', 'Нет связи с сетью. Ничего не списано.');
-    return !solGot && ['lowsol', 'empty', 'waiting'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
+    return !solGot && ['lowsol', 'empty', 'waiting', 'stuck'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
   },
   list_vaults: () => {
     if (scenario === 'waiting' && ++waitingPolls >= 3) vaults = [grandma];
@@ -95,6 +95,7 @@ const handlers = {
   check_pending: () => {
     if (!pendingTx) return { status: 'none', message: 'Ничего не ожидает проверки.' };
     pendingTx = null;
+    if (scenario === 'unconfirmed-failed') return { status: 'failed', message: 'Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз.' };
     return { status: 'confirmed', message: 'Операция прошла.' };
   },
   deposit: () => {

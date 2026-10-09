@@ -35,10 +35,11 @@ const ctx = {
     location.hash = `#/${route}`;
   },
   onLeave: (fn) => leaveHooks.push(fn),
-  setWaiting: (waiting) => update({ waiting }),
+  setWaiting: (waiting) => update({ waiting, pairHint: !waiting && store.waiting }),
   // A success message that outlives the re-render that fresh data causes.
-  notify: (text) => {
+  notify: (text, kind = 'ok') => {
     store.notice = text;
+    store.noticeKind = kind;
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => {
       store.notice = null;
@@ -137,7 +138,8 @@ function pendingBanner() {
     check.disabled = true;
     try {
       const r = await call('check_pending');
-      ctx.notify(r.message); // survives the re-render below
+      // survives the re-render below; a check that did not go through is not a success
+      ctx.notify(r.message, { confirmed: 'ok', waiting: 'warn' }[r.status] ?? 'info');
       await loadPending();
       if (r.status !== 'waiting') await loadAll();
     } catch (e) {
@@ -151,7 +153,7 @@ function pendingBanner() {
 
 function noticeBanner() {
   if (!store.notice) return null;
-  const el = banner('ok', store.notice);
+  const el = banner(store.noticeKind, store.notice);
   el.id = 'notice';
   return el;
 }

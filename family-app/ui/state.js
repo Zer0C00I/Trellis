@@ -7,7 +7,9 @@ export const store = {
   vault: null, // VaultDto
   history: [], // [{ signature, text, time }]
   pending: null, // { what, signature } while an operation's outcome is unknown
-  notice: null, // text of a success message still on screen
+  notice: null, // text of a message still on screen
+  noticeKind: 'ok', // 'ok' | 'info' | 'warn'
+  pairHint: false, // the person came back from a waiting that never ended
   loaded: false,
   everLoaded: false, // a refresh has succeeded at least once
   waiting: false, // first launch: the kiosk took our code, waiting for the chain

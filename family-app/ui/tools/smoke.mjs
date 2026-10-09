@@ -183,6 +183,21 @@ try {
     await until("document.body.innerText.includes('Личный счёт')", 'vault shown', 30000);
   });
 
+  test('first launch: stuck waiting can be abandoned and the code entered again', async () => {
+    await open('stuck');
+    await fill('input[autocomplete=name]', 'Внук Саша');
+    await fill('input[placeholder^="fvpair1"]', '123456');
+    await click('Передать устройству');
+    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
+    await click('Ввести код заново');
+    await until("document.querySelector('input[autocomplete=name]') && document.querySelector('input[placeholder^=\"fvpair1\"]')", 'pair form back');
+    assert.doesNotMatch(await text(), /Ждём, пока вас добавят/);
+    await fill('input[autocomplete=name]', 'Внук Саша');
+    await fill('input[placeholder^="fvpair1"]', '123456');
+    await click('Передать устройству');
+    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting again');
+  });
+
   test('first launch: a new key can reach the address and the test-SOL button before any vault exists', async () => {
     await open('empty');
     await until("document.body.innerText.includes('Ваш адрес и комиссии')", 'address card');
@@ -217,6 +232,20 @@ try {
     await until("!document.body.innerText.includes('Не закончена операция')", 'warning cleared');
     await sleep(300);
     assert.match(await text(), /Операция прошла\./);
+  });
+
+  test('a failed check is shown as an info notice, a confirmed one as a success notice', async () => {
+    await open('unconfirmed-failed');
+    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+    await click('Проверить');
+    await until("document.getElementById('notice')", 'notice');
+    assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
+    assert.match(await text(), /деньги не списаны/);
+    await open('unconfirmed');
+    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+    await click('Проверить');
+    await until("document.getElementById('notice')", 'notice');
+    assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
   });
 
   test('while an operation is unconfirmed the money buttons are disabled', async () => {
