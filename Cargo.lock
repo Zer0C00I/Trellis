@@ -2874,6 +2874,7 @@ name = "family-app-core"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "bs58",
  "family-vault",
  "family-vault-client",
  "solana-account-decoder-client-types",
@@ -2884,6 +2885,7 @@ dependencies = [
  "solana-signature",
  "solana-signer",
  "solana-transaction 4.1.6",
+ "solana-transaction-status-client-types",
  "spl-associated-token-account",
  "spl-token",
 ]
