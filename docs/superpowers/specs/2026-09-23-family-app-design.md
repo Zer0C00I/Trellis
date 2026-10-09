@@ -222,7 +222,7 @@ the UI:
 | Пополнить | `deposit` |
 | Отправить | `send` / `withdraw` |
 | Добавить получателя | `add-beneficiary` |
-| Добавить получателя срочно | `add-beneficiary-urgent` (needs 2 distinct trusted people) |
+| Добавить получателя срочно | `add-beneficiary-urgent` (needs 2 distinct trusted people; the urgent path is not in the first release: it needs two signers and a co-signing transport) |
 | Доверенные лица (список + добавление) | `add-approver` |
 | Одобрить перевод | `approve-withdrawal` (needed once a transfer exceeds the pool vault's daily limit) |
 | История операций | read-only: decode past instructions/events for this vault |
@@ -255,8 +255,9 @@ logic.
 
 ## Data Flow & Error Handling
 
-Same polling pattern as kiosk: periodic refresh (interval TBD in the
-plan — kiosk uses 30s) plus refresh-on-return-to-foreground, no push, no
+Same polling pattern as kiosk: refresh every 60 s (the public Devnet node
+rate-limits), 5 s polling only while waiting for the first vault, plus
+refresh on return to foreground, no push, no
 websocket. Reuses `kiosk-gui/src/chain.rs`'s two-state `ChainError` model
 (`NoConnection` vs `ProgramRejected`) directly rather than inventing a
 third error taxonomy — extract it to `family-vault-client` if/when the
@@ -278,7 +279,7 @@ working MVP.
 
 ## Explicitly Out of Scope (MVP)
 
-- Multi-vault switcher UI (architecture supports it; UI doesn't in MVP).
+- A rich multi-vault experience (merged history, combined balances, naming). The MVP shows one vault at a time with a small picker.
 - Push notifications / background watcher service.
 - Importing an existing wallet / seed phrase (contradicts the project's
   core no-seed-phrase principle).
