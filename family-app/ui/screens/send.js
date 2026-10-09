@@ -1,5 +1,5 @@
 import { call } from '../api.js';
-import { banner, button, card, field, withFeedback } from '../components.js';
+import { banner, button, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 
 export function render(ctx) {
@@ -23,7 +23,7 @@ export function render(ctx) {
     ),
   );
 
-  const go = button('Отправить', async () => {
+  const go = moneyButton('Отправить', async () => {
     const r = await withFeedback(go, out, () => call('send_money', { vault: v.address, recipient: chosen.address, amount: amount.value }));
     if (r.ok) {
       amount.value = '';
@@ -35,7 +35,7 @@ export function render(ctx) {
   const notReady = v.payees.filter((p) => !p.active);
   return h('div', { class: 'stack' },
     card('Кому отправить', h('fieldset', { class: 'choices' }, h('legend', { class: 'sr-only' }, 'Получатель'), options)),
-    card('Сколько', field('Сумма (USDC)', amount, v.remaining_today ? `Сегодня без одобрения можно ещё ${v.remaining_today}.` : null), go, out),
+    card('Сколько', field('Сумма (USDC)', amount, v.remaining_today ? `Сегодня без одобрения можно ещё ${v.remaining_today}.` : null), go, lockHint(), out),
     notReady.length ? banner('info', `Ещё нельзя использовать: ${notReady.map((p) => `${p.name} (${p.status.toLowerCase()})`).join(', ')}.`) : null,
   );
 }

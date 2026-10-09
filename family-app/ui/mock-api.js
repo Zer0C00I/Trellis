@@ -67,11 +67,20 @@ const setBalance = () => {
   pool.balance = `${(250.5 + moved).toFixed(2).replace(/\.?0+$/, '')} USDC`;
 };
 
+// Test hook: the chain moves on its own (someone else paid in).
+globalThis.__mockBump = () => {
+  moved += 1;
+  setBalance();
+};
+
 const err = (kind, message, details) => ({ kind, message, details: details ?? null });
 
 const handlers = {
   app_info: () => ({ address: ME, address_short: short(ME), network: 'devnet' }),
-  wallet: () => (!solGot && ['lowsol', 'empty', 'waiting'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false }),
+  wallet: () => {
+    if (scenario === 'offline') throw err('network', 'Нет связи с сетью. Ничего не списано.');
+    return !solGot && ['lowsol', 'empty', 'waiting'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
+  },
   list_vaults: () => {
     if (scenario === 'waiting' && ++waitingPolls >= 3) vaults = [grandma];
     return vaults.map((v) => ({ address: v.address, address_short: v.address_short, mine: v.is_owner }));

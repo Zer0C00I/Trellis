@@ -1,5 +1,5 @@
 import { call } from '../api.js';
-import { banner, button, card, field, withFeedback } from '../components.js';
+import { banner, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 
 export function render(ctx) {
@@ -17,7 +17,7 @@ export function render(ctx) {
     const name = h('input', { type: 'text', maxlength: 16, placeholder: 'Например: Внучка Анна' });
     const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Адрес получателя' });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = button('Добавить получателя', async () => {
+    const go = moneyButton('Добавить получателя', async () => {
       const r = await withFeedback(go, out, () => call('add_payee', { vault: v.address, name: name.value, address: address.value }));
       if (r.ok) {
         name.value = '';
@@ -26,7 +26,7 @@ export function render(ctx) {
         await ctx.refresh();
       }
     });
-    root.append(card('Добавить получателя', field('Имя', name), field('Адрес', address, 'Человек присылает вам свой адрес со вкладки «Я».'), go, out));
+    root.append(card('Добавить получателя', field('Имя', name), field('Адрес', address, 'Человек присылает вам свой адрес со вкладки «Я».'), go, lockHint(), out));
   }
 
   const guardians = h('ul', { class: 'list' });
@@ -39,7 +39,7 @@ export function render(ctx) {
   if (v.permissions.add_guardian) {
     const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Адрес доверенного лица' });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = button('Добавить доверенное лицо', async () => {
+    const go = moneyButton('Добавить доверенное лицо', async () => {
       const r = await withFeedback(go, out, () => call('add_guardian', { vault: v.address, address: address.value }));
       if (r.ok) {
         address.value = '';
@@ -47,7 +47,7 @@ export function render(ctx) {
         await ctx.refresh();
       }
     });
-    root.append(card('Добавить доверенное лицо', field('Адрес', address), go, out));
+    root.append(card('Добавить доверенное лицо', field('Адрес', address), go, lockHint(), out));
   } else if (v.is_owner) {
     root.append(banner('info', 'Добавить ещё одно доверенное лицо с этого устройства нельзя: нужна подпись уже добавленного.'));
   }

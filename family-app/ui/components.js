@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { store } from './state.js';
 
 export function banner(kind, text, ...extra) {
   return h('div', { class: `banner banner-${kind}`, role: kind === 'error' ? 'alert' : 'status' }, h('p', {}, text), ...extra);
@@ -16,6 +17,16 @@ export function errorBanner(e) {
 
 export function button(label, onclick, opts = {}) {
   return h('button', { type: 'button', class: `btn ${opts.secondary ? 'btn-secondary' : ''}`, onclick, disabled: opts.disabled }, label);
+}
+
+// A button that moves money: locked while an earlier operation's outcome is
+// unknown, so nobody pays twice. Put `lockHint()` next to it.
+export function moneyButton(label, onclick, opts = {}) {
+  return button(label, onclick, { ...opts, disabled: Boolean(opts.disabled || store.pending) });
+}
+
+export function lockHint() {
+  return store.pending ? h('p', { class: 'hint' }, 'Сначала проверьте прошлую операцию: кнопка наверху.') : null;
 }
 
 export function field(label, input, hint) {

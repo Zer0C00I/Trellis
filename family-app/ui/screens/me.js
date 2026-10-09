@@ -27,6 +27,6 @@ export function render(ctx) {
   return h('div', { class: 'stack' },
     card('Ваш адрес', h('p', {}, 'Так вас находят в сети. Этот адрес можно отправлять родственникам, чтобы они добавили вас получателем.'), h('code', { class: 'address' }, store.info.address), h('div', { class: 'row' }, copy, copyOut)),
     card('Комиссии', h('p', {}, `На адресе: ${store.wallet?.sol ?? '…'} SOL`), store.wallet?.low_sol ? banner('warn', 'SOL почти нет. Без них нельзя ничего отправить или одобрить.') : null, faucet, out),
-    card('О приложении', h('p', { class: 'muted' }, `Сеть: ${store.info.network}. Это учебный прототип без аудита: используйте только тестовые деньги.`)),
+    card('О приложении', h('p', { class: 'muted' }, `Сеть: ${store.info.network === 'devnet' ? 'тестовая (Devnet)' : store.info.network}. Это учебный прототип без аудита: используйте только тестовые деньги.`)),
   );
 }

@@ -1,5 +1,5 @@
 import { call } from '../api.js';
-import { banner, button, card, errorBanner, field, withFeedback } from '../components.js';
+import { banner, button, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 import { formatTime } from '../format.js';
 
@@ -12,8 +12,8 @@ export function render(ctx) {
   root.append(
     h('section', { class: 'card hero' },
       h('p', { class: 'muted' }, v.title),
-      h('p', { class: 'balance', 'aria-label': `Баланс: ${v.balance}` }, v.balance),
-      v.remaining_today ? h('p', {}, `Сегодня можно отправить ещё ${v.remaining_today}`, v.daily_limit ? ` из ${v.daily_limit}` : '') : null,
+      h('p', { class: 'balance', 'aria-label': `Баланс: ${v.balance}` }, h('span', { class: 'nowrap' }, v.balance)),
+      v.remaining_today ? h('p', {}, 'Сегодня можно отправить ещё ', h('span', { class: 'nowrap' }, v.remaining_today), v.daily_limit ? [' из ', h('span', { class: 'nowrap' }, v.daily_limit)] : null) : null,
       h('p', { class: 'muted' }, role),
     ),
   );
@@ -36,7 +36,7 @@ export function render(ctx) {
     if (depositBox.childElementCount) return depositBox.replaceChildren();
     const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 25 или 2.50' });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = button('Пополнить', async () => {
+    const go = moneyButton('Пополнить', async () => {
       const r = await withFeedback(go, out, () => call('deposit', { vault: v.address, amount: amount.value }));
       if (r.ok) {
         amount.value = '';
@@ -44,7 +44,7 @@ export function render(ctx) {
         await ctx.refresh();
       }
     });
-    depositBox.append(card('Пополнить счёт', field('Сумма (USDC)', amount, 'Деньги берутся с вашего адреса. Тестовые USDC можно получить на faucet.circle.com.'), go, out));
+    depositBox.append(card('Пополнить счёт', field('Сумма (USDC)', amount, 'Деньги берутся с вашего адреса. Тестовые USDC можно получить на faucet.circle.com.'), go, lockHint(), out));
   }
 
   const list = h('ul', { class: 'list' });

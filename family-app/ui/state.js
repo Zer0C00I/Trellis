@@ -9,6 +9,8 @@ export const store = {
   pending: null, // { what, signature } while an operation's outcome is unknown
   notice: null, // text of a success message still on screen
   loaded: false,
+  everLoaded: false, // a refresh has succeeded at least once
+  waiting: false, // first launch: the kiosk took our code, waiting for the chain
   loadError: null, // ErrorDto when the last refresh failed
 };
 

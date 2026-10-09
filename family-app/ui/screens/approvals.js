@@ -1,5 +1,5 @@
 import { call } from '../api.js';
-import { banner, button, card, withFeedback } from '../components.js';
+import { banner, card, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 import { formatTime } from '../format.js';
 
@@ -9,7 +9,7 @@ export function render(ctx) {
 
   const items = v.pending.map((r) => {
     const out = h('div', { 'aria-live': 'polite' });
-    const approve = button('Одобрить', async () => {
+    const approve = moneyButton('Одобрить', async () => {
       const result = await withFeedback(approve, out, () => call('approve_request', { vault: v.address, nonce: r.nonce }));
       if (result.ok) {
         ctx.notify(result.value.message);
@@ -20,7 +20,7 @@ export function render(ctx) {
       `Перевод ${r.amount}`,
       h('p', {}, 'Получатель: ', h('code', {}, r.to_short)),
       h('p', { class: 'muted' }, `Запрошен: ${formatTime(r.requested_at)}`),
-      v.permissions.approve ? approve : banner('info', 'Одобрить может только доверенное лицо.'),
+      v.permissions.approve ? [approve, lockHint()] : banner('info', 'Одобрить может только доверенное лицо.'),
       out,
     );
   });

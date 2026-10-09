@@ -20,6 +20,7 @@ const TABS = [
   ['me', 'Я'],
 ];
 const REFRESH_MS = 60_000;
+const WAITING_POLL_MS = 5_000;
 const NOTICE_MS = 10_000;
 const SELECTED_KEY = 'trellis.selectedVault';
 
@@ -34,6 +35,7 @@ const ctx = {
     location.hash = `#/${route}`;
   },
   onLeave: (fn) => leaveHooks.push(fn),
+  setWaiting: (waiting) => update({ waiting }),
   // A success message that outlives the re-render that fresh data causes.
   notify: (text) => {
     store.notice = text;
@@ -79,13 +81,18 @@ function isTyping() {
 }
 
 let lastSnapshot = '';
+let loadSeq = 0;
 
 // `background` refreshes (timers, returning to the app) change nothing on
 // screen unless the data really changed, and never interrupt typing.
-async function loadAll({ background = false } = {}) {
+// `select` is the vault the person asked for: it only becomes the selection
+// once it has loaded. Only the newest call may write the store, so a slow
+// older answer never overwrites a fresher one.
+async function loadAll({ background = false, select = null } = {}) {
+  const seq = ++loadSeq;
   try {
     const [wallet, vaults] = await Promise.all([call('wallet'), call('list_vaults')]);
-    let selected = store.selected;
+    let selected = select ?? store.selected;
     if (!vaults.some((v) => v.address === selected)) {
       selected = vaults.find((v) => v.address === remembered())?.address ?? vaults[0]?.address ?? null;
     }
@@ -94,15 +101,16 @@ async function loadAll({ background = false } = {}) {
     if (selected) {
       vault = await call('load_vault', { vault: selected });
       history = await call('load_history', { vault: selected, decimals: vault.decimals });
-      remember(selected);
     }
+    if (seq !== loadSeq) return;
+    if (selected) remember(selected);
     const snapshot = JSON.stringify({ wallet, vaults, selected, vault, history });
     const unchanged = store.loaded && !store.loadError && snapshot === lastSnapshot;
     if (unchanged || (background && isTyping())) return;
     lastSnapshot = snapshot;
-    update({ wallet, vaults, selected, vault, history, loaded: true, loadError: null });
+    update({ wallet, vaults, selected, vault, history, loaded: true, everLoaded: true, loadError: null, waiting: vault ? false : store.waiting });
   } catch (e) {
-    if (background && isTyping()) return;
+    if (seq !== loadSeq || (background && isTyping())) return;
     update({ loaded: true, loadError: e });
   }
 }
@@ -114,10 +122,7 @@ function header() {
           'select',
           {
             'aria-label': 'Выбрать счёт',
-            onchange: (ev) => {
-              update({ selected: ev.target.value });
-              loadAll();
-            },
+            onchange: (ev) => loadAll({ select: ev.target.value }),
           },
           store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, `${v.mine ? 'Мой счёт' : 'Счёт родственника'} ${v.address_short}`)),
         )
@@ -132,7 +137,7 @@ function pendingBanner() {
     check.disabled = true;
     try {
       const r = await call('check_pending');
-      out.replaceChildren(banner(r.status === 'waiting' ? 'warn' : 'info', r.message));
+      ctx.notify(r.message); // survives the re-render below
       await loadPending();
       if (r.status !== 'waiting') await loadAll();
     } catch (e) {
@@ -168,6 +173,11 @@ function render() {
   clear(root);
   if (!store.loaded) return root.append(h('p', { class: 'center' }, 'Загрузка…'));
 
+  if (!store.vault && store.loadError && !store.everLoaded) {
+    // Never offer "open a new account" because of a network error.
+    root.append(h('main', { class: 'content' }, h('h1', {}, 'Не удалось загрузить'), errorBanner(store.loadError), button('Повторить', retry)));
+    return;
+  }
   if (!store.vault) {
     root.append(h('main', { class: 'content' }, noticeBanner(), store.loadError ? errorBanner(store.loadError) : null, pendingBanner(), first.render(ctx)));
     return;
@@ -189,8 +199,18 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => {
   if (document.visibilityState === 'visible') loadAll({ background: true });
 }, REFRESH_MS);
+// First launch, code accepted: look for the new vault every few seconds. The
+// tick does nothing once a vault is on screen (loadAll clears `waiting`).
+setInterval(() => {
+  if (store.waiting && !store.vault) loadAll({ background: true });
+}, WAITING_POLL_MS);
 
-(async () => {
+function retry() {
+  update({ loaded: false, loadError: null });
+  start();
+}
+
+async function start() {
   render();
   try {
     update({ info: await call('app_info') });
@@ -199,4 +219,6 @@ setInterval(() => {
   }
   await loadPending();
   await loadAll();
-})();
+}
+
+start();

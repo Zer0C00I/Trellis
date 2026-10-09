@@ -3,23 +3,18 @@
 //     shows), then wait until the chain says so;
 //  2. open a family account of your own.
 import { call } from '../api.js';
-import { button, card, errorBanner, field, banner, withFeedback } from '../components.js';
+import { button, card, errorBanner, field, banner, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 import { classifyPairingInput } from '../input.js';
 
 export function render(ctx) {
   const { store } = ctx;
   const root = h('div', { class: 'stack' });
-  let waiting = false;
-  let timer = null;
-
-  const stopWaiting = () => clearInterval(timer);
-
   function draw() {
     root.replaceChildren(
       h('h1', {}, 'Добро пожаловать'),
       h('p', { class: 'lead' }, 'Это приложение для близких: оно помогает следить за счётом родственника и одобрять переводы.'),
-      waiting ? waitingCard() : pairCard(),
+      store.waiting ? waitingCard() : pairCard(),
       openCard(),
       addressCard(),
     );
@@ -43,9 +38,8 @@ export function render(ctx) {
       if (!r.ok) return;
       // The kiosk accepted the code, but it may still fail to register us on
       // the chain: keep looking until a vault actually shows up.
-      waiting = true;
-      draw();
-      timer = setInterval(() => ctx.refresh({ background: true }), 5000);
+      // The shell keeps polling (see app.js) and remembers this across re-renders.
+      ctx.setWaiting(true);
     });
     return card(
       'Меня добавляет родственник',
@@ -68,7 +62,7 @@ export function render(ctx) {
   function openCard() {
     const limit = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 100' });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = button('Открыть семейный счёт', async () => {
+    const go = moneyButton('Открыть семейный счёт', async () => {
       const r = await withFeedback(go, out, () => call('open_family_account', { dailyLimit: limit.value }));
       if (r.ok) await ctx.refresh();
     });
@@ -77,6 +71,7 @@ export function render(ctx) {
       h('p', {}, 'Общий счёт семьи в долларах (USDC). Чтобы тратить с него, нужны получатели и доверенные лица.'),
       field('Сколько можно отправить за день без одобрения (USDC)', limit),
       go,
+      lockHint(),
       out,
     );
   }
@@ -108,6 +103,5 @@ export function render(ctx) {
   }
 
   draw();
-  ctx.onLeave(stopWaiting);
   return root;
 }
