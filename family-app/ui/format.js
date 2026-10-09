@@ -18,11 +18,18 @@ function parts(ms, timeZone) {
 
 // "сегодня, 14:32", "5 окт., 09:05", "5 окт. 2025, 09:05"; '' if unknown.
 export function formatTime(unixSeconds, nowMs = Date.now(), timeZone = undefined) {
-  if (unixSeconds == null) return '';
-  const t = parts(unixSeconds * 1000, timeZone);
-  const n = parts(nowMs, timeZone);
-  const clock = `${t.hour}:${t.minute}`;
-  if (t.year === n.year && t.month === n.month && t.day === n.day) return `сегодня, ${clock}`;
-  const date = `${Number(t.day)} ${MONTHS[Number(t.month) - 1]}`;
-  return t.year === n.year ? `${date}, ${clock}` : `${date} ${t.year}, ${clock}`;
+  if (typeof unixSeconds !== 'number' || !Number.isFinite(unixSeconds) || Math.abs(unixSeconds) >= 1e11) {
+    return '';
+  }
+  if (typeof nowMs !== 'number' || !Number.isFinite(nowMs)) nowMs = Date.now();
+  try {
+    const t = parts(unixSeconds * 1000, timeZone);
+    const n = parts(nowMs, timeZone);
+    const clock = `${t.hour}:${t.minute}`;
+    if (t.year === n.year && t.month === n.month && t.day === n.day) return `сегодня, ${clock}`;
+    const date = `${Number(t.day)} ${MONTHS[Number(t.month) - 1]}`;
+    return t.year === n.year ? `${date}, ${clock}` : `${date} ${t.year}, ${clock}`;
+  } catch {
+    return '';
+  }
 }

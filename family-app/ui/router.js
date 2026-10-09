@@ -1,5 +1,5 @@
 // Hash routes: "#/home", "#/send", ... Unknown or empty -> "home".
-export const ROUTES = ['home', 'send', 'people', 'approvals', 'me'];
+export const ROUTES = Object.freeze(['home', 'send', 'people', 'approvals', 'me']);
 
 export function parseRoute(hash) {
   const name = String(hash ?? '').replace(/^#\/?/, '').split('?')[0];
