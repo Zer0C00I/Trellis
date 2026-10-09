@@ -7,7 +7,10 @@
 #![allow(dead_code)]
 
 mod config;
+mod dto;
 mod state;
+mod text;
+mod view;
 
 use std::sync::Arc;
 
