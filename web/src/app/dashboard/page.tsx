@@ -5,7 +5,6 @@ import { LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/web3.js';
 import { BN, ProgramAccount } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { BeneficiaryTable } from '../../components/dashboard/BeneficiaryTable';
-import { GuardianApprovalModal } from '../../components/dashboard/GuardianApprovalModal';
 import { AddBeneficiaryModal } from '../../components/dashboard/AddBeneficiaryModal';
 import { AddApproverModal } from '../../components/dashboard/AddApproverModal';
 import { DepositUsdcModal } from '../../components/dashboard/DepositUsdcModal';
@@ -38,7 +37,6 @@ export default function Dashboard() {
   const { connected } = useWallet();
   const { program, provider } = useAnchorProvider();
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isApproverModalOpen, setIsApproverModalOpen] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [refreshCounter, setRefreshCounter] = useState(0);
@@ -278,7 +276,7 @@ export default function Dashboard() {
       <div className="flex justify-between items-end relative z-10">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Vault Dashboard</h1>
-          <p className="text-slate-400 font-light mt-3 text-lg">Manage beneficiaries and approve high-value transactions.</p>
+          <p className="text-slate-400 font-light mt-3 text-lg">Manage beneficiaries and guardians for your vault.</p>
           {vaultPda && (
             <a
               href={explorerAddressUrl(vaultPda.toBase58())}
@@ -296,11 +294,11 @@ export default function Dashboard() {
           {pendingRequests.length > 0 ? (
             <Button
               variant="outline"
-              className="border-yellow-500/50 text-yellow-500 hover:bg-yellow-500/10 gap-2 shadow-[0_0_15px_rgba(234,179,8,0.15)] rounded-xl"
-              onClick={() => setIsModalOpen(true)}
+              className="border-yellow-500/50 text-yellow-500 hover:bg-transparent cursor-default gap-2 shadow-[0_0_15px_rgba(234,179,8,0.15)] rounded-xl"
+              title="Waiting for a guardian to approve from their own device. The vault owner cannot approve their own withdrawals."
             >
               <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
-              {pendingRequests.length} Pending Approval{pendingRequests.length > 1 ? 's' : ''}
+              {pendingRequests.length} Awaiting Guardian{pendingRequests.length > 1 ? 's' : ''}
             </Button>
           ) : (
             <Button
@@ -308,7 +306,7 @@ export default function Dashboard() {
               className="border-white/10 text-slate-500 bg-white/[0.02] gap-2 cursor-default rounded-xl"
             >
               <span className="h-2 w-2 rounded-full bg-slate-700" />
-              0 Pending Approvals
+              No Pending Requests
             </Button>
           )}
         </div>
@@ -395,14 +393,6 @@ export default function Dashboard() {
           onClose={() => setIsDepositOpen(false)}
           vaultPda={vaultPda}
           vaultTokenAccount={summary.vaultTokenAccount}
-          onSuccess={refresh}
-        />
-      )}
-      {pendingRequests.length > 0 && (
-        <GuardianApprovalModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          request={pendingRequests[0]}
           onSuccess={refresh}
         />
       )}

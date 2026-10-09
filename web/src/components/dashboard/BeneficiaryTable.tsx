@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
 import { useAnchorProvider } from '../../config/useAnchorProvider';
 
 interface Beneficiary {
   publicKey: PublicKey;
   name: string;
   address: PublicKey;
-  addedAt: number; // Unix timestamp
+  activeAfter: number; // Unix timestamp; payee can be paid from this moment
 }
 
 interface BeneficiaryTableProps {
@@ -46,7 +45,7 @@ export function BeneficiaryTable({ vaultPda, refreshCounter }: BeneficiaryTableP
               publicKey: entry.address,
               name: nameStr,
               address: entry.address,
-              addedAt: entry.addedAt.toNumber(),
+              activeAfter: entry.activeAfter.toNumber(),
             });
           }
         }
@@ -64,16 +63,14 @@ export function BeneficiaryTable({ vaultPda, refreshCounter }: BeneficiaryTableP
     };
   }, [program, vaultPda, refreshCounter]);
 
-  const getStatusBadge = (addedAt: number) => {
-    const now = Date.now() / 1000;
-    const cooldownPeriod = 48 * 3600; // 48 hours
-    const timeElapsed = now - addedAt;
-    
-    if (timeElapsed >= cooldownPeriod) {
+  // The program enforces the cooldown itself and stores the exact moment the
+  // payee becomes usable, so show that rather than recomputing 48h client-side.
+  const getStatusBadge = (activeAfter: number) => {
+    const remainingSecs = activeAfter - Date.now() / 1000;
+    if (remainingSecs <= 0) {
       return <Badge className="bg-emerald-500/20 text-emerald-500 border-emerald-500/50">🟢 Active</Badge>;
     }
-    
-    const remainingHours = Math.ceil((cooldownPeriod - timeElapsed) / 3600);
+    const remainingHours = Math.ceil(remainingSecs / 3600);
     return <Badge variant="outline" className="text-yellow-500 border-yellow-500/50">🟡 Cooldown Pending: {remainingHours}h remaining</Badge>;
   };
 
@@ -85,17 +82,16 @@ export function BeneficiaryTable({ vaultPda, refreshCounter }: BeneficiaryTableP
             <TableHead className="text-zinc-400">Name</TableHead>
             <TableHead className="text-zinc-400">Address</TableHead>
             <TableHead className="text-zinc-400">Status</TableHead>
-            <TableHead className="text-zinc-400 text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading ? (
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-zinc-500 py-8">Loading beneficiaries...</TableCell>
+              <TableCell colSpan={3} className="text-center text-zinc-500 py-8">Loading beneficiaries...</TableCell>
             </TableRow>
           ) : beneficiaries.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="text-center text-zinc-500 py-8">No beneficiaries registered yet.</TableCell>
+              <TableCell colSpan={3} className="text-center text-zinc-500 py-8">No beneficiaries registered yet.</TableCell>
             </TableRow>
           ) : (
             beneficiaries.map((b) => (
@@ -104,12 +100,7 @@ export function BeneficiaryTable({ vaultPda, refreshCounter }: BeneficiaryTableP
                 <TableCell className="font-mono text-sm text-zinc-400">
                   {b.address.toString().slice(0, 4)}...{b.address.toString().slice(-4)}
                 </TableCell>
-                <TableCell>{getStatusBadge(b.addedAt)}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 hover:bg-red-400/10">
-                    Remove
-                  </Button>
-                </TableCell>
+                <TableCell>{getStatusBadge(b.activeAfter)}</TableCell>
               </TableRow>
             ))
           )}
