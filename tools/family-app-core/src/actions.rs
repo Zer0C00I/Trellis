@@ -43,14 +43,9 @@ impl fmt::Display for ActionError {
 
 impl std::error::Error for ActionError {}
 
-/// Converts a whole-token amount into the token's base units. Checked: a
-/// silent wrap-around here would move a different amount of money than the
-/// caller asked for.
 fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, ActionError> {
-    10u64
-        .checked_pow(decimals)
-        .and_then(|scale| amount_whole_units.checked_mul(scale))
-        .ok_or_else(|| ActionError::Rejected("amount is too large".to_string()))
+    family_vault_client::whole_units_to_base_units(amount_whole_units, decimals)
+        .map_err(ActionError::Rejected)
 }
 
 fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {

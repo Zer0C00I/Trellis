@@ -24,8 +24,8 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_token::solana_program::program_pack::Pack;
 
-use registry::{PersonEntry, VaultEntry};
 use family_vault_client::{to_anchor, to_client};
+use registry::{PersonEntry, VaultEntry};
 
 /// `family-vault` only exports its declared id as `anchor_lang::prelude::Pubkey`
 /// (via `declare_id!`) — this tool needs it in the client-era `solana_pubkey`
@@ -319,7 +319,13 @@ fn cmd_create_vault(args: &[String]) {
         system_program: to_anchor(system_program_id()),
     }
     .to_account_metas(None);
-    match send_ix(&rpc, init_approvers_accounts, init_approvers_data, &owner, &[]) {
+    match send_ix(
+        &rpc,
+        init_approvers_accounts,
+        init_approvers_data,
+        &owner,
+        &[],
+    ) {
         Ok(sig) => println!("  approvers list initialized, signature: {sig}"),
         Err(e) => {
             eprintln!("init-approvers (during create-vault) failed: {e}");
@@ -371,7 +377,11 @@ fn cmd_create_vault(args: &[String]) {
         }
     }
 
-    println!("account '{name}' fully opened (pool vault, {} approver(s), {} payee(s))", approver_names.len(), beneficiary_names.len());
+    println!(
+        "account '{name}' fully opened (pool vault, {} approver(s), {} payee(s))",
+        approver_names.len(),
+        beneficiary_names.len()
+    );
 }
 
 fn cmd_deposit(args: &[String]) {
@@ -407,7 +417,14 @@ fn cmd_deposit(args: &[String]) {
             std::process::exit(1);
         })
         .mint;
-    let amount = amount_whole_units * 10u64.pow(fetch_mint_decimals(&rpc, &mint));
+    let amount = family_vault_client::whole_units_to_base_units(
+        amount_whole_units,
+        fetch_mint_decimals(&rpc, &mint),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
 
     let depositor_token_account =
         spl_associated_token_account::get_associated_token_address(&depositor.pubkey(), &mint);
@@ -554,7 +571,14 @@ fn cmd_send(args: &[String]) {
     let mint = spl_token::state::Account::unpack(&vta_bytes).unwrap().mint;
     let recipient_token_account =
         spl_associated_token_account::get_associated_token_address(&recipient, &mint);
-    let amount = amount_whole_units * 10u64.pow(fetch_mint_decimals(&rpc, &mint));
+    let amount = family_vault_client::whole_units_to_base_units(
+        amount_whole_units,
+        fetch_mint_decimals(&rpc, &mint),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
 
     let data = family_vault::instruction::Withdraw { amount }.data();
     let accounts = family_vault::accounts::Withdraw {

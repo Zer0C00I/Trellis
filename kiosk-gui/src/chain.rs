@@ -90,8 +90,9 @@ pub fn format_amount(whole_units: u64) -> String {
     format!("{whole_units} USDC")
 }
 
-pub fn parse_amount_to_base_units(whole_units: u64, decimals: u32) -> u64 {
-    whole_units * 10u64.pow(decimals)
+pub fn parse_amount_to_base_units(whole_units: u64, decimals: u32) -> Result<u64, ChainError> {
+    family_vault_client::whole_units_to_base_units(whole_units, decimals)
+        .map_err(ChainError::ProgramRejected)
 }
 
 /// Reads decimals live from the Mint account rather than assuming a fixed
@@ -213,7 +214,7 @@ pub fn submit_withdraw(
     let beneficiary_list_pubkey_anchor = family_vault_client::to_anchor(beneficiary_list_pubkey);
 
     let decimals = fetch_mint_decimals(&rpc, &cfg.mint)?;
-    let amount_base_units = parse_amount_to_base_units(amount_whole_units, decimals);
+    let amount_base_units = parse_amount_to_base_units(amount_whole_units, decimals)?;
 
     let ix_data: Vec<u8> = family_vault::instruction::Withdraw {
         amount: amount_base_units,
@@ -376,14 +377,19 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
 
     #[test]
     fn converts_whole_units_to_base_units_using_the_given_decimals() {
-        assert_eq!(parse_amount_to_base_units(1, 6), 1_000_000);
-        assert_eq!(parse_amount_to_base_units(10, 6), 10_000_000);
-        assert_eq!(parse_amount_to_base_units(0, 6), 0);
+        assert_eq!(parse_amount_to_base_units(1, 6).unwrap(), 1_000_000);
+        assert_eq!(parse_amount_to_base_units(10, 6).unwrap(), 10_000_000);
+        assert_eq!(parse_amount_to_base_units(0, 6).unwrap(), 0);
         // A different mint's decimals must actually change the result —
         // this is the whole point of taking decimals as a parameter
         // instead of a hardcoded constant.
-        assert_eq!(parse_amount_to_base_units(1, 9), 1_000_000_000);
-        assert_eq!(parse_amount_to_base_units(5, 0), 5);
+        assert_eq!(parse_amount_to_base_units(1, 9).unwrap(), 1_000_000_000);
+        assert_eq!(parse_amount_to_base_units(5, 0).unwrap(), 5);
+    }
+
+    #[test]
+    fn an_amount_that_would_overflow_is_an_error_not_a_wrong_send() {
+        assert!(parse_amount_to_base_units(u64::MAX, 6).is_err());
     }
 
     #[test]

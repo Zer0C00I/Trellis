@@ -89,6 +89,16 @@ pub fn decode_mint_decimals(mint_account_data: &[u8]) -> Result<u32, String> {
         .map_err(|e| format!("could not decode mint account: {e}"))
 }
 
+/// Converts a whole-token amount into the token's base units (`amount *
+/// 10^decimals`). Checked: a silent wrap-around would move a different
+/// amount of money than the caller asked for.
+pub fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, String> {
+    10u64
+        .checked_pow(decimals)
+        .and_then(|scale| amount_whole_units.checked_mul(scale))
+        .ok_or_else(|| "amount is too large".to_string())
+}
+
 /// Reads decimals live from the Mint account — different SPL tokens
 /// (real USDC, wrapped SOL, a custom demo token) declare different
 /// decimals, so this can't be a hardcoded constant.
@@ -187,6 +197,26 @@ mod tests {
     fn decode_mint_decimals_rejects_garbage() {
         let data = vec![0u8; 3];
         assert!(decode_mint_decimals(&data).is_err());
+    }
+
+    #[test]
+    fn whole_units_convert_using_the_given_decimals() {
+        assert_eq!(whole_units_to_base_units(5, 6), Ok(5_000_000));
+        assert_eq!(whole_units_to_base_units(0, 6), Ok(0));
+        assert_eq!(whole_units_to_base_units(7, 0), Ok(7));
+        assert_eq!(whole_units_to_base_units(1, 9), Ok(1_000_000_000));
+    }
+
+    #[test]
+    fn whole_units_refuse_to_overflow_instead_of_wrapping() {
+        assert!(whole_units_to_base_units(u64::MAX, 6).is_err());
+        // 10^20 does not fit in a u64 at all.
+        assert!(whole_units_to_base_units(1, 20).is_err());
+        // The largest amount that still fits is accepted.
+        assert_eq!(
+            whole_units_to_base_units(u64::MAX / 1_000_000, 6),
+            Ok(u64::MAX / 1_000_000 * 1_000_000)
+        );
     }
 
     #[test]
