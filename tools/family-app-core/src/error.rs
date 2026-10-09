@@ -9,6 +9,11 @@ pub enum ActionError {
     NoConnection,
     /// RPC responded but the program/transaction rejected the request.
     Rejected(String),
+    /// The transaction was sent but its outcome is unknown: it may or may
+    /// not have landed. Do NOT retry by building a new transaction (a new
+    /// blockhash makes it a different transaction and could pay twice);
+    /// resolve it first with `actions::confirm_signature`.
+    Unconfirmed(solana_signature::Signature),
 }
 
 impl fmt::Display for ActionError {
@@ -16,6 +21,10 @@ impl fmt::Display for ActionError {
         match self {
             ActionError::NoConnection => write!(f, "no connection to RPC endpoint"),
             ActionError::Rejected(msg) => write!(f, "rejected: {msg}"),
+            ActionError::Unconfirmed(signature) => write!(
+                f,
+                "sent, but not confirmed yet (signature {signature}); check before retrying"
+            ),
         }
     }
 }
@@ -53,6 +62,26 @@ mod tests {
         assert!(matches!(
             map_client_error(client_err),
             ActionError::Rejected(_)
+        ));
+    }
+
+    #[test]
+    fn unconfirmed_display_says_sent_unconfirmed_and_check_before_retrying() {
+        let signature = solana_signature::Signature::from([7u8; 64]);
+        let text = ActionError::Unconfirmed(signature).to_string();
+        assert!(text.contains("sent, but not confirmed yet"), "{text}");
+        assert!(text.contains(&signature.to_string()), "{text}");
+        assert!(text.contains("check before retrying"), "{text}");
+    }
+
+    #[test]
+    fn connection_errors_stay_no_connection_not_unconfirmed() {
+        // Reqwest errors are built by the HTTP stack; Io is the constructible one.
+        let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
+        let client_err: solana_client::client_error::ClientError = io_err.into();
+        assert!(matches!(
+            map_client_error(client_err),
+            ActionError::NoConnection
         ));
     }
 }

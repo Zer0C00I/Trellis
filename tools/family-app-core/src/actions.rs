@@ -22,7 +22,10 @@ use solana_client::rpc_client::RpcClient;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
+use solana_signature::Signature;
 use solana_signer::Signer;
+use solana_transaction_status_client_types::{TransactionConfirmationStatus, TransactionStatus};
+use std::time::{Duration, Instant};
 
 fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, ActionError> {
     family_vault_client::whole_units_to_base_units(amount_whole_units, decimals)
@@ -34,22 +37,67 @@ fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {
     decode_mint_decimals(&data).map_err(ActionError::Rejected)
 }
 
+/// How long `send_instructions` polls for a verdict before giving up with
+/// `Unconfirmed`. A blockhash is valid for roughly 60-90s.
+const CONFIRM_DEADLINE: Duration = Duration::from_secs(60);
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// What one look at a signature's status means for the polling loop.
+enum Poll {
+    /// Not seen yet, or only `processed` (could still be dropped).
+    Pending,
+    /// The verdict: `Ok` = confirmed/finalized, `Err(Rejected)` = failed on chain.
+    Done(Result<(), ActionError>),
+}
+
+fn classify_status(status: Option<TransactionStatus>) -> Poll {
+    let Some(status) = status else {
+        return Poll::Pending;
+    };
+    if let Some(err) = status.err {
+        // The transaction executed and failed: it definitely did not take effect.
+        return Poll::Done(Err(ActionError::Rejected(err.to_string())));
+    }
+    let confirmed = match status.confirmation_status {
+        Some(
+            TransactionConfirmationStatus::Confirmed | TransactionConfirmationStatus::Finalized,
+        ) => true,
+        Some(TransactionConfirmationStatus::Processed) => false,
+        // Older nodes omit confirmation_status; `None` confirmations means rooted.
+        None => status.confirmations.is_none_or(|c| c > 1),
+    };
+    if confirmed {
+        Poll::Done(Ok(()))
+    } else {
+        Poll::Pending
+    }
+}
+
 /// Sends one or more instructions in a single transaction, signed by
 /// `payer` plus any `extra_signers` (e.g. a second trusted approver for
 /// `add_beneficiary_urgent`, or an existing approver co-signing a new
 /// one).
 ///
-/// Caution for callers: the transaction is sent first and then polled for
-/// confirmation, so `NoConnection` (or a `Rejected` expiry) can mean the
-/// outcome is *unknown*, not that nothing happened. Check the account state
-/// before offering a retry, or a payment may go out twice.
+/// The transaction is signed once, sent, and then its signature is polled
+/// for up to ~60s (or until its blockhash expires). Retry rule for callers:
+///
+/// - `Ok(signature)`: confirmed on chain. Never resend.
+/// - `Rejected` / `NoConnection`: the transaction was NOT sent (or failed on
+///   chain), so building a fresh transaction and retrying is safe.
+/// - `Unconfirmed(signature)`: it was sent but the outcome is unknown. Do
+///   NOT retry with a new transaction (new blockhash, would pay twice).
+///   Call [`confirm_signature`] first; only `Failed`, or `NotFound` after the
+///   transaction's blockhash has expired (about 90s after sending), makes a
+///   retry safe.
 pub fn send_instructions(
     rpc: &RpcClient,
     payer: &Keypair,
     instructions: &[Instruction],
     extra_signers: &[&Keypair],
-) -> Result<solana_signature::Signature, ActionError> {
-    let blockhash = rpc.get_latest_blockhash().map_err(map_client_error)?;
+) -> Result<Signature, ActionError> {
+    let (blockhash, last_valid_block_height) = rpc
+        .get_latest_blockhash_with_commitment(rpc.commitment())
+        .map_err(map_client_error)?;
     let mut signers: Vec<&Keypair> = vec![payer];
     signers.extend_from_slice(extra_signers);
     let tx = solana_transaction::Transaction::new_signed_with_payer(
@@ -58,8 +106,68 @@ pub fn send_instructions(
         &signers,
         blockhash,
     );
-    rpc.send_and_confirm_transaction(&tx)
-        .map_err(map_client_error)
+    // An error here means the node never accepted it: nothing was sent.
+    let signature = rpc.send_transaction(&tx).map_err(map_client_error)?;
+
+    let deadline = Instant::now() + CONFIRM_DEADLINE;
+    loop {
+        // Any failure to poll leaves the outcome unknown, whatever its kind.
+        let response = rpc
+            .get_signature_statuses(&[signature])
+            .map_err(|_| ActionError::Unconfirmed(signature))?;
+        match classify_status(response.value.into_iter().next().flatten()) {
+            Poll::Done(result) => return result.map(|()| signature),
+            Poll::Pending => {}
+        }
+        if Instant::now() >= deadline {
+            return Err(ActionError::Unconfirmed(signature));
+        }
+        // Stop early once the blockhash has expired; a failed height lookup
+        // just means "keep polling until the deadline".
+        if rpc
+            .get_block_height()
+            .is_ok_and(|height| height > last_valid_block_height)
+        {
+            return Err(ActionError::Unconfirmed(signature));
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// What the network knows about a signature, for resolving an
+/// `ActionError::Unconfirmed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignatureOutcome {
+    /// Landed and confirmed or finalized without error.
+    Confirmed,
+    /// Landed and failed (the transaction error text); it had no effect.
+    Failed(String),
+    /// This node has no record of it. It may still land until its blockhash
+    /// expires (about 90s after sending); only then is a retry safe.
+    NotFound,
+}
+
+/// Looks a signature up (including ledger history) so a UI can settle an
+/// `Unconfirmed` before offering a retry. A signature that is only
+/// `processed` is still in flight and is reported as
+/// `Err(ActionError::Unconfirmed(signature))`.
+pub fn confirm_signature(
+    rpc: &RpcClient,
+    signature: &Signature,
+) -> Result<SignatureOutcome, ActionError> {
+    let response = rpc
+        .get_signature_statuses_with_history(&[*signature])
+        .map_err(map_client_error)?;
+    let status = response.value.into_iter().next().flatten();
+    if status.is_none() {
+        return Ok(SignatureOutcome::NotFound);
+    }
+    match classify_status(status) {
+        Poll::Done(Ok(())) => Ok(SignatureOutcome::Confirmed),
+        Poll::Done(Err(ActionError::Rejected(msg))) => Ok(SignatureOutcome::Failed(msg)),
+        Poll::Done(Err(other)) => Err(other),
+        Poll::Pending => Err(ActionError::Unconfirmed(*signature)),
+    }
 }
 
 fn fetch_vault(rpc: &RpcClient, vault: &Pubkey) -> Result<Vault, ActionError> {
@@ -120,7 +228,7 @@ pub fn deposit(
     depositor: &Keypair,
     vault: &Pubkey,
     amount_whole_units: u64,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
@@ -145,7 +253,7 @@ pub fn send(
     vault: &Pubkey,
     recipient: &Pubkey,
     amount_whole_units: u64,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
@@ -169,7 +277,7 @@ pub fn add_beneficiary(
     vault: &Pubkey,
     name: &str,
     address: &Pubkey,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let ix = build_add_beneficiary_instruction(program_id, &owner.pubkey(), vault, name, address);
     send_instructions(rpc, owner, &[ix], &[])
 }
@@ -184,7 +292,7 @@ pub fn add_beneficiary_urgent(
     vault: &Pubkey,
     name: &str,
     address: &Pubkey,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let ix = build_add_beneficiary_urgent_instruction(
         program_id,
         &approver_one.pubkey(),
@@ -208,7 +316,7 @@ pub fn add_trusted_approver(
     vault: &Pubkey,
     address: &Pubkey,
     existing_approver: Option<&Keypair>,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let ix = build_add_trusted_approver_instruction(
         program_id,
         &owner.pubkey(),
@@ -230,7 +338,7 @@ pub fn approve_withdrawal(
     signer: &Keypair,
     vault: &Pubkey,
     nonce: u64,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let (pending_withdrawal, _) = family_vault_client::request_pda(program_id, vault, nonce);
     let pw_bytes = rpc
         .get_account_data(&pending_withdrawal)
@@ -266,7 +374,7 @@ pub fn request_withdrawal(
     recipient: &Pubkey,
     amount_whole_units: u64,
     nonce: u64,
-) -> Result<solana_signature::Signature, ActionError> {
+) -> Result<Signature, ActionError> {
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
@@ -286,6 +394,76 @@ pub fn request_withdrawal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn status(
+        err: Option<solana_transaction::TransactionError>,
+        confirmation_status: Option<TransactionConfirmationStatus>,
+        confirmations: Option<usize>,
+    ) -> TransactionStatus {
+        TransactionStatus {
+            slot: 1,
+            confirmations,
+            status: match &err {
+                Some(e) => Err(e.clone()),
+                None => Ok(()),
+            },
+            err,
+            confirmation_status,
+        }
+    }
+
+    #[test]
+    fn no_status_yet_is_pending() {
+        assert!(matches!(classify_status(None), Poll::Pending));
+    }
+
+    #[test]
+    fn processed_only_is_still_pending() {
+        let s = status(
+            None,
+            Some(TransactionConfirmationStatus::Processed),
+            Some(0),
+        );
+        assert!(matches!(classify_status(Some(s)), Poll::Pending));
+    }
+
+    #[test]
+    fn confirmed_without_error_is_done_ok() {
+        let s = status(
+            None,
+            Some(TransactionConfirmationStatus::Confirmed),
+            Some(5),
+        );
+        assert!(matches!(classify_status(Some(s)), Poll::Done(Ok(()))));
+    }
+
+    #[test]
+    fn finalized_without_error_is_done_ok() {
+        let s = status(None, Some(TransactionConfirmationStatus::Finalized), None);
+        assert!(matches!(classify_status(Some(s)), Poll::Done(Ok(()))));
+    }
+
+    #[test]
+    fn a_status_with_an_error_is_rejected_with_the_error_text() {
+        let tx_err = solana_transaction::TransactionError::AccountNotFound;
+        let s = status(
+            Some(tx_err.clone()),
+            Some(TransactionConfirmationStatus::Confirmed),
+            Some(3),
+        );
+        match classify_status(Some(s)) {
+            Poll::Done(Err(ActionError::Rejected(msg))) => assert_eq!(msg, tx_err.to_string()),
+            _ => panic!("expected Done(Err(Rejected))"),
+        }
+    }
+
+    #[test]
+    fn a_status_from_an_old_node_without_confirmation_status_uses_confirmations() {
+        let rooted = status(None, None, None);
+        assert!(matches!(classify_status(Some(rooted)), Poll::Done(Ok(()))));
+        let fresh = status(None, None, Some(0));
+        assert!(matches!(classify_status(Some(fresh)), Poll::Pending));
+    }
 
     #[test]
     fn converts_whole_units_to_base_units() {

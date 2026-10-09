@@ -198,7 +198,8 @@ pub fn fetch_history(
                 ActionError::NoConnection => return Err(ActionError::NoConnection),
                 // One unavailable transaction (pruned, not found, odd encoding)
                 // must not hide the rest of the history.
-                ActionError::Rejected(_) => continue,
+                // (`map_client_error` never yields `Unconfirmed`.)
+                ActionError::Rejected(_) | ActionError::Unconfirmed(_) => continue,
             },
         };
 
