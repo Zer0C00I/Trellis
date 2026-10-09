@@ -436,6 +436,8 @@ pub fn add_beneficiary(
 
 /// Two distinct trusted approvers, not the owner — skips the normal 48h
 /// cooldown. See `family_vault::instructions::add_beneficiary_urgent`.
+// The mandatory `before_send` hook is the eighth argument.
+#[allow(clippy::too_many_arguments)]
 pub fn add_beneficiary_urgent(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -534,6 +536,8 @@ pub fn approve_withdrawal(
 /// "send" flow (that goes straight through `send`/`Withdraw` for
 /// within-limit amounts) but needed once a pool vault's daily limit is
 /// exceeded.
+// The mandatory `before_send` hook is the eighth argument.
+#[allow(clippy::too_many_arguments)]
 pub fn request_withdrawal(
     rpc: &RpcClient,
     program_id: &Pubkey,
