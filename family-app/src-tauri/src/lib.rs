@@ -36,6 +36,7 @@ pub fn run() {
                 rpc: Arc::new(rpc),
                 program_id: config::program_id(),
                 data_dir,
+                busy: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             });
             Ok(())
         })

@@ -10,8 +10,8 @@ use family_vault_client::fetch_mint_decimals;
 use tauri::State;
 
 use super::{
-    blocking, ensure_no_pending, finish, load_view, not_allowed, parse_amount, parse_pubkey,
-    record_unconfirmed,
+    acquire_busy, blocking, ensure_no_pending, failure, finish, load_view, not_allowed,
+    parse_amount, parse_pubkey,
 };
 use crate::config::{usdc_mint, AIRDROP_LAMPORTS};
 use crate::dto::{ActionOkDto, ErrorDto, VaultRefDto};
@@ -27,6 +27,7 @@ pub async fn deposit(
 ) -> Result<ActionOkDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         let amount = parse_amount(&amount, view.decimals)?;
@@ -48,6 +49,7 @@ pub async fn send_money(
 ) -> Result<ActionOkDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         let now = super::now_unix();
@@ -116,6 +118,7 @@ pub async fn add_payee(
 ) -> Result<ActionOkDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).add_payee {
@@ -158,6 +161,7 @@ pub async fn add_guardian(
 ) -> Result<ActionOkDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).add_guardian {
@@ -192,6 +196,7 @@ pub async fn approve_request(
 ) -> Result<ActionOkDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).approve {
@@ -223,6 +228,7 @@ pub async fn open_family_account(
 ) -> Result<VaultRefDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let mint = usdc_mint();
         let decimals = fetch_mint_decimals(&st.rpc, &mint)
@@ -234,10 +240,7 @@ pub async fn open_family_account(
                 address_short: short_address(&vault),
                 mine: true,
             }),
-            Err(error) => {
-                record_unconfirmed(&st, "Открытие семейного счёта", &error);
-                Err(error.into())
-            }
+            Err(error) => Err(failure(&st, "Открытие семейного счёта", error)),
         }
     })
     .await

@@ -9,7 +9,7 @@ use family_app_core::wallet::{sol_balance, LOW_SOL_LAMPORTS};
 use family_vault_client::format_base_units;
 use tauri::State;
 
-use super::{blocking, load_view, now_unix, parse_pubkey};
+use super::{blocking, load_pending, load_view, now_unix, parse_pubkey};
 use crate::dto::{
     AppInfoDto, ErrorDto, HistoryLineDto, PendingTxDto, ResolutionDto, VaultDto, VaultRefDto,
     WalletDto,
@@ -107,9 +107,7 @@ pub async fn load_history(
 /// The operation whose outcome is still unknown, if any.
 #[tauri::command]
 pub fn pending_status(state: State<'_, AppState>) -> Result<Option<PendingTxDto>, ErrorDto> {
-    let record = pending::load(&state.pending_path()).map_err(|e| {
-        ErrorDto::new("internal", "Не удалось прочитать записи приложения.").with_details(e)
-    })?;
+    let record = load_pending(&state)?;
     Ok(record.map(|p| PendingTxDto {
         what: p.what,
         signature: p.signature,
@@ -122,9 +120,7 @@ pub fn pending_status(state: State<'_, AppState>) -> Result<Option<PendingTxDto>
 pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
-        let record = pending::load(&st.pending_path()).map_err(|e| {
-            ErrorDto::new("internal", "Не удалось прочитать записи приложения.").with_details(e)
-        })?;
+        let record = load_pending(&st)?;
         let Some(record) = record else {
             return Ok(ResolutionDto {
                 status: "none",

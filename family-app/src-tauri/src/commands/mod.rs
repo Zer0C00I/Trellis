@@ -14,7 +14,7 @@ use solana_signature::Signature;
 
 use crate::dto::{ActionOkDto, ErrorDto};
 use crate::pending::{self, PendingTx};
-use crate::state::AppState;
+use crate::state::{AppState, BusyGuard};
 use crate::text::error_dto;
 
 impl From<ActionError> for ErrorDto {
@@ -69,12 +69,42 @@ pub fn load_view(state: &AppState, vault: &str) -> Result<VaultView, ErrorDto> {
     Ok(fetch_vault_view(&state.rpc, &state.program_id, &vault)?)
 }
 
+/// Reads the pending record. A corrupt one is moved aside (never deleted)
+/// and reported once, so it cannot block every money command forever.
+pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
+    let path = state.pending_path();
+    match pending::load(&path) {
+        Ok(record) => Ok(record),
+        Err(pending::LoadError::Io(e)) => Err(ErrorDto::new(
+            "internal",
+            "Не удалось прочитать записи приложения.",
+        )
+        .with_details(e)),
+        Err(pending::LoadError::Corrupt(why)) => match pending::quarantine(&path) {
+            Ok(moved) => Err(ErrorDto::new(
+                "blocked",
+                "Запись о прошлой операции оказалась повреждена, и мы не можем узнать, чем она кончилась. Проверьте историю счёта и свой кошелёк, прежде чем повторять перевод. Запись сохранена отдельно, приложение снова работает.",
+            )
+            .with_details(moved.display().to_string())),
+            Err(e) => Err(ErrorDto::new(
+                "internal",
+                "Не удалось прочитать записи приложения.",
+            )
+            .with_details(format!("{why}; {e}"))),
+        },
+    }
+}
+
+/// Only one money command may run at a time: the pending record is written
+/// only after a send returns, so without this a double tap could pay twice.
+pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
+    BusyGuard::acquire(&state.busy)
+        .ok_or_else(|| ErrorDto::new("blocked", "Подождите: предыдущая операция ещё выполняется."))
+}
+
 /// While an operation's outcome is unknown nothing else may move money.
 pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
-    let waiting = pending::load(&state.pending_path()).map_err(|e| {
-        ErrorDto::new("internal", "Не удалось прочитать записи приложения.").with_details(e)
-    })?;
-    match waiting {
+    match load_pending(state)? {
         None => Ok(()),
         Some(p) => Err(ErrorDto::new(
             "blocked",
@@ -87,7 +117,8 @@ pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
 }
 
 /// Remembers an unconfirmed operation so the rule above survives a restart.
-pub fn record_unconfirmed(state: &AppState, what: &str, error: &ActionError) {
+/// Returns why it could not be saved, if so.
+pub fn record_unconfirmed(state: &AppState, what: &str, error: &ActionError) -> Option<String> {
     if let ActionError::Unconfirmed {
         signature,
         last_valid_block_height,
@@ -98,9 +129,40 @@ pub fn record_unconfirmed(state: &AppState, what: &str, error: &ActionError) {
             last_valid_block_height: *last_valid_block_height,
             what: what.to_string(),
         };
-        // If this fails the user still sees the "unconfirmed" screen; the
-        // worst case is that a restart forgets it, never a silent success.
-        let _ = pending::save(&state.pending_path(), &record);
+        return pending::save(&state.pending_path(), &record).err();
+    }
+    None
+}
+
+/// Pure part: if the record could not be saved, tell the person not to
+/// repeat the operation and keep the signature and the reason in `details`.
+pub fn apply_save_failure(dto: ErrorDto, signature: &str, failure: Option<String>) -> ErrorDto {
+    match failure {
+        None => dto,
+        Some(reason) => ErrorDto {
+            kind: dto.kind,
+            message: format!(
+                "{} Приложение не смогло запомнить эту операцию. НЕ повторяйте её, пока не проверите историю счёта.",
+                dto.message
+            ),
+            details: Some(format!(
+                "signature: {signature}; запись не сохранена: {reason}"
+            )),
+        },
+    }
+}
+
+/// Converts a failed core call into the command error, recording `Unconfirmed`.
+pub fn failure(state: &AppState, what: &str, error: ActionError) -> ErrorDto {
+    let failure = record_unconfirmed(state, what, &error);
+    let signature = match &error {
+        ActionError::Unconfirmed { signature, .. } => Some(signature.to_string()),
+        _ => None,
+    };
+    let dto = ErrorDto::from(error);
+    match signature {
+        Some(sig) => apply_save_failure(dto, &sig, failure),
+        None => dto,
     }
 }
 
@@ -116,13 +178,35 @@ pub fn finish(
             signature: signature.to_string(),
             message: ok_message.to_string(),
         }),
-        Err(error) => {
-            record_unconfirmed(state, what, &error);
-            Err(error.into())
-        }
+        Err(error) => Err(failure(state, what, error)),
     }
 }
 
 pub fn not_allowed(text: &str) -> ErrorDto {
     ErrorDto::new("blocked", text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_record_leaves_the_error_unchanged() {
+        let dto = ErrorDto::new("unconfirmed", "Не знаем.").with_details("d");
+        assert_eq!(apply_save_failure(dto.clone(), "SIG", None), dto);
+    }
+
+    #[test]
+    fn a_failed_save_warns_and_keeps_signature_and_reason() {
+        let dto = apply_save_failure(
+            ErrorDto::new("unconfirmed", "Не знаем."),
+            "SIG123",
+            Some("disk full".to_string()),
+        );
+        assert!(dto.message.starts_with("Не знаем."));
+        assert!(dto.message.contains("НЕ повторяйте"));
+        let details = dto.details.unwrap();
+        assert!(details.contains("SIG123"));
+        assert!(details.contains("disk full"));
+    }
 }

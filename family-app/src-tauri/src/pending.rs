@@ -19,14 +19,41 @@ pub struct PendingTx {
     pub what: String,
 }
 
-pub fn load(path: &Path) -> Result<Option<PendingTx>, String> {
+/// Why the record could not be read. A corrupt file is told apart from an
+/// I/O problem because only the former may be moved aside (`quarantine`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadError {
+    Corrupt(String),
+    Io(String),
+}
+
+pub fn load(path: &Path) -> Result<Option<PendingTx>, LoadError> {
     match std::fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map(Some)
-            .map_err(|e| format!("could not read {}: {e}", path.display())),
+            .map_err(|e| LoadError::Corrupt(format!("could not parse {}: {e}", path.display()))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("could not read {}: {e}", path.display())),
+        Err(e) => Err(LoadError::Io(format!(
+            "could not read {}: {e}",
+            path.display()
+        ))),
     }
+}
+
+/// Moves an unreadable record aside as `<name>.corrupt-<unix seconds>` in
+/// the same directory. Never deletes it: it may be the only trace of an
+/// operation that moved money.
+pub fn quarantine(path: &Path) -> Result<std::path::PathBuf, String> {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".corrupt-{secs}"));
+    let target = path.with_file_name(name);
+    std::fs::rename(path, &target)
+        .map_err(|e| format!("could not move {} aside: {e}", path.display()))?;
+    Ok(target)
 }
 
 /// Refuses to replace an existing record: an unresolved operation must
@@ -111,5 +138,31 @@ mod tests {
         let path = temp_path("twice");
         clear(&path).unwrap();
         clear(&path).unwrap();
+    }
+
+    #[test]
+    fn load_reports_garbage_as_corrupt_not_io() {
+        let path = temp_path("garbage");
+        std::fs::write(&path, b"{ nope").unwrap();
+        assert!(matches!(load(&path), Err(LoadError::Corrupt(_))));
+        clear(&path).unwrap();
+    }
+
+    #[test]
+    fn quarantine_renames_and_keeps_the_bytes() {
+        let path = temp_path("quarantine");
+        std::fs::write(&path, b"precious garbage").unwrap();
+        let moved = quarantine(&path).unwrap();
+        assert!(!path.exists());
+        assert!(moved.to_string_lossy().contains(".corrupt-"));
+        assert_eq!(moved.parent(), path.parent());
+        assert_eq!(std::fs::read(&moved).unwrap(), b"precious garbage");
+        assert_eq!(load(&path).unwrap(), None);
+        std::fs::remove_file(&moved).unwrap();
+    }
+
+    #[test]
+    fn quarantining_a_missing_file_is_an_error() {
+        assert!(quarantine(&temp_path("missing")).is_err());
     }
 }
