@@ -199,7 +199,7 @@ pub fn fetch_history(
                 // One unavailable transaction (pruned, not found, odd encoding)
                 // must not hide the rest of the history.
                 // (`map_client_error` never yields `Unconfirmed`.)
-                ActionError::Rejected(_) | ActionError::Unconfirmed(_) => continue,
+                ActionError::Rejected(_) | ActionError::Unconfirmed { .. } => continue,
             },
         };
 

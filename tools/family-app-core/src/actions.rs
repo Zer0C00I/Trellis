@@ -24,6 +24,7 @@ use family_vault_client::builders::{
 };
 use family_vault_client::{to_client, vault_pda};
 use solana_client::rpc_client::RpcClient;
+use solana_client::rpc_config::CommitmentConfig;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
@@ -43,16 +44,25 @@ fn require_nonzero(amount_base_units: u64) -> Result<(), ActionError> {
 }
 
 /// How long `send_instructions` polls for a verdict before giving up with
-/// `Unconfirmed`. A blockhash is valid for roughly 60-90s.
+/// `Unconfirmed`. This is only how long the call blocks; it says nothing
+/// about when a retry becomes safe (that is decided by block height, see
+/// [`confirm_signature`]).
 const CONFIRM_DEADLINE: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// What one look at a signature's status means for the polling loop.
+/// How many consecutive failed status lookups `send_instructions` rides out
+/// before giving up. The 4th failure in a row ends the wait.
+const MAX_CONSECUTIVE_POLL_ERRORS: u32 = 3;
+
+/// What one look at a signature's status means.
+#[derive(Debug, PartialEq, Eq)]
 enum Poll {
     /// Not seen yet, or only `processed` (could still be dropped).
     Pending,
-    /// The verdict: `Ok` = confirmed/finalized, `Err(Rejected)` = failed on chain.
-    Done(Result<(), ActionError>),
+    /// Confirmed or finalized without error.
+    Confirmed,
+    /// Executed and failed (the transaction error text): it had no effect.
+    Failed(String),
 }
 
 fn classify_status(status: Option<TransactionStatus>) -> Poll {
@@ -61,7 +71,7 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
     };
     if let Some(err) = status.err {
         // The transaction executed and failed: it definitely did not take effect.
-        return Poll::Done(Err(ActionError::Rejected(err.to_string())));
+        return Poll::Failed(err.to_string());
     }
     let confirmed = match status.confirmation_status {
         Some(
@@ -72,18 +82,45 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
         None => status.confirmations.is_none_or(|c| c > 1),
     };
     if confirmed {
-        Poll::Done(Ok(()))
+        Poll::Confirmed
     } else {
         Poll::Pending
     }
 }
 
-/// Maps an error from `send_transaction`: only a connection-level failure
-/// leaves the outcome unknown; anything else is the node refusing it.
-fn send_error(err: solana_client::client_error::ClientError, signature: Signature) -> ActionError {
-    match map_client_error(err) {
-        ActionError::NoConnection => ActionError::Unconfirmed(signature),
-        other => other,
+/// Counts consecutive failed status lookups. Returns the new count and
+/// whether the caller must give up (more than [`MAX_CONSECUTIVE_POLL_ERRORS`]
+/// failures in a row). A successful lookup resets the count.
+fn track_poll_result(consecutive_errors: u32, lookup_succeeded: bool) -> (u32, bool) {
+    if lookup_succeeded {
+        return (0, false);
+    }
+    let count = consecutive_errors.saturating_add(1);
+    (count, count > MAX_CONSECUTIVE_POLL_ERRORS)
+}
+
+/// Maps an error from `send_transaction`. Once the request may have reached
+/// the node, only a DEFINITE refusal is `Rejected`: an RPC error response
+/// (preflight failure, unhealthy node, ... - in solana-rpc-client 4.2.2 a
+/// preflight failure arrives as `RpcError::RpcResponseError` with
+/// `SendTransactionPreflightFailure` data, see `http_sender.rs`) or a
+/// `TransactionError`. Everything else (I/O, HTTP transport, unparsable or
+/// mismatched responses, JSON errors, middleware, custom) can happen AFTER
+/// the node accepted the transaction, so the outcome is `Unconfirmed`.
+fn send_error(
+    err: solana_client::client_error::ClientError,
+    signature: Signature,
+    last_valid_block_height: u64,
+) -> ActionError {
+    use solana_client::client_error::ClientErrorKind;
+    use solana_client::rpc_request::RpcError;
+    match err.kind() {
+        ClientErrorKind::RpcError(RpcError::RpcResponseError { .. })
+        | ClientErrorKind::TransactionError(_) => map_client_error(err),
+        _ => ActionError::Unconfirmed {
+            signature,
+            last_valid_block_height,
+        },
     }
 }
 
@@ -93,18 +130,23 @@ fn send_error(err: solana_client::client_error::ClientError, signature: Signatur
 /// one).
 ///
 /// The transaction is signed once, sent, and then its signature is polled
-/// for up to ~60s (or until its blockhash expires). Retry rule for callers:
+/// for up to ~60s (this only bounds how long the call blocks), or until its
+/// blockhash has expired. A few consecutive failed status lookups are
+/// tolerated. Retry rule for callers:
 ///
 /// - `Ok(signature)`: confirmed on chain. Never resend.
 /// - `Rejected` / `NoConnection`: the transaction was NOT accepted (the node
-///   refused it, it failed on chain, or no connection could be made before
-///   signing), so building a fresh transaction and retrying is safe.
-/// - `Unconfirmed(signature)`: it was sent (or the connection dropped while
-///   sending) and the outcome is unknown. Do
-///   NOT retry with a new transaction (new blockhash, would pay twice).
-///   Call [`confirm_signature`] first; only `Failed`, or `NotFound` after the
-///   transaction's blockhash has expired (about 90s after sending), makes a
-///   retry safe.
+///   definitely refused it, it failed on chain, or no connection could be
+///   made before anything was sent), so building a fresh transaction and
+///   retrying is safe.
+/// - `Unconfirmed { signature, last_valid_block_height }`: it was sent (or
+///   the connection broke while sending) and the outcome is unknown. Do NOT
+///   retry with a new transaction (new blockhash, would pay twice). Call
+///   [`confirm_signature`] with both values, as often as needed. A retry is
+///   safe only after it returns `Failed` (landed with an error) or `Expired`
+///   (not found and the chain is past `last_valid_block_height`, so it can
+///   never land). `StillPossible` means: do not retry, check again later.
+///   For `request_withdrawal` the retry must additionally reuse the same nonce.
 pub fn send_instructions(
     rpc: &RpcClient,
     payer: &Keypair,
@@ -124,37 +166,50 @@ pub fn send_instructions(
     );
     // The signature is known before sending, so a lost response cannot hide it.
     let signature = tx.signatures[0];
+    let unconfirmed = ActionError::Unconfirmed {
+        signature,
+        last_valid_block_height,
+    };
     let signature = match rpc.send_transaction(&tx) {
         Ok(returned) => returned,
-        // A node rejection (preflight failure) means the transaction was not
-        // accepted. A connection error might have struck after the request
-        // arrived, so the transaction may still land: outcome unknown.
-        Err(e) => return Err(send_error(e, signature)),
+        Err(e) => return Err(send_error(e, signature, last_valid_block_height)),
     };
 
     let deadline = Instant::now() + CONFIRM_DEADLINE;
+    let mut consecutive_errors = 0u32;
     loop {
-        // Any failure to poll leaves the outcome unknown, whatever its kind.
-        let response = rpc
-            .get_signature_statuses(&[signature])
-            .map_err(|_| ActionError::Unconfirmed(signature))?;
-        match classify_status(response.value.into_iter().next().flatten()) {
-            Poll::Done(result) => return result.map(|()| signature),
-            Poll::Pending => {}
+        let lookup = rpc.get_signature_statuses(&[signature]);
+        let (count, give_up) = track_poll_result(consecutive_errors, lookup.is_ok());
+        consecutive_errors = count;
+        if give_up {
+            return Err(unconfirmed);
+        }
+        if let Ok(response) = lookup {
+            match classify_status(response.value.into_iter().next().flatten()) {
+                Poll::Confirmed => return Ok(signature),
+                Poll::Failed(msg) => return Err(ActionError::Rejected(msg)),
+                Poll::Pending => {}
+            }
         }
         if Instant::now() >= deadline {
-            return Err(ActionError::Unconfirmed(signature));
+            return Err(unconfirmed);
         }
         // Stop early once the blockhash has expired; a failed height lookup
         // just means "keep polling until the deadline".
-        if rpc
-            .get_block_height()
-            .is_ok_and(|height| height > last_valid_block_height)
-        {
-            return Err(ActionError::Unconfirmed(signature));
+        if current_block_height(rpc).is_ok_and(|height| height > last_valid_block_height) {
+            return Err(unconfirmed);
         }
         std::thread::sleep(POLL_INTERVAL);
     }
+}
+
+/// The node's block height at the `confirmed` commitment level, regardless
+/// of the client's own commitment. `confirmed` can only trail the leader's
+/// tip, never run ahead of it, so "confirmed height is past the last valid
+/// height" really means the blockhash can no longer be accepted; it also
+/// does not lag as far behind as `finalized` (the default client level).
+fn current_block_height(rpc: &RpcClient) -> Result<u64, solana_client::client_error::ClientError> {
+    rpc.get_block_height_with_commitment(CommitmentConfig::confirmed())
 }
 
 /// What the network knows about a signature, for resolving an
@@ -164,33 +219,61 @@ pub enum SignatureOutcome {
     /// Landed and confirmed or finalized without error.
     Confirmed,
     /// Landed and failed (the transaction error text); it had no effect.
+    /// Safe to retry.
     Failed(String),
-    /// This node has no record of it. It may still land until its blockhash
-    /// expires (about 90s after sending); only then is a retry safe.
-    NotFound,
+    /// Not found, and the chain is past the transaction's last valid block
+    /// height: it can never land. Safe to retry.
+    Expired,
+    /// Not found, or only `processed`, and the blockhash has not expired: it
+    /// may still land. Do NOT retry; check again later.
+    StillPossible,
 }
 
-/// Looks a signature up (including ledger history) so a UI can settle an
-/// `Unconfirmed` before offering a retry. A signature that is only
-/// `processed` is still in flight and is reported as
-/// `Err(ActionError::Unconfirmed(signature))`.
+/// The pure decision behind [`confirm_signature`].
+///
+/// `last_valid_block_height` is inclusive (a transaction can still land at
+/// exactly that height), so `Expired` needs `current_block_height` strictly
+/// greater. A status that exists but is not yet `confirmed` is never
+/// `Expired`: the transaction was seen, so it may still be finalized.
+fn settle(
+    status: Option<TransactionStatus>,
+    current_block_height: u64,
+    last_valid_block_height: u64,
+) -> SignatureOutcome {
+    match (status.is_some(), classify_status(status)) {
+        (_, Poll::Confirmed) => SignatureOutcome::Confirmed,
+        (_, Poll::Failed(msg)) => SignatureOutcome::Failed(msg),
+        (true, Poll::Pending) => SignatureOutcome::StillPossible,
+        (false, Poll::Pending) => {
+            if current_block_height > last_valid_block_height {
+                SignatureOutcome::Expired
+            } else {
+                SignatureOutcome::StillPossible
+            }
+        }
+    }
+}
+
+/// Resolves an `ActionError::Unconfirmed` by asking the node about the
+/// signature (`get_signature_statuses_with_history`, i.e. with
+/// `searchTransactionHistory`) and its block height (at `confirmed`
+/// commitment). See [`SignatureOutcome`] and [`settle`] for the rules.
+///
+/// The block height is read BEFORE the status on purpose: if the height was
+/// already past `last_valid_block_height` and the status read afterwards
+/// still finds nothing, the transaction cannot have landed in between. The
+/// reverse order could miss a transaction that lands between the two reads.
 pub fn confirm_signature(
     rpc: &RpcClient,
     signature: &Signature,
+    last_valid_block_height: u64,
 ) -> Result<SignatureOutcome, ActionError> {
+    let height = current_block_height(rpc).map_err(map_client_error)?;
     let response = rpc
         .get_signature_statuses_with_history(&[*signature])
         .map_err(map_client_error)?;
     let status = response.value.into_iter().next().flatten();
-    if status.is_none() {
-        return Ok(SignatureOutcome::NotFound);
-    }
-    match classify_status(status) {
-        Poll::Done(Ok(())) => Ok(SignatureOutcome::Confirmed),
-        Poll::Done(Err(ActionError::Rejected(msg))) => Ok(SignatureOutcome::Failed(msg)),
-        Poll::Done(Err(other)) => Err(other),
-        Poll::Pending => Err(ActionError::Unconfirmed(*signature)),
-    }
+    Ok(settle(status, height, last_valid_block_height))
 }
 
 fn fetch_vault(rpc: &RpcClient, vault: &Pubkey) -> Result<Vault, ActionError> {
@@ -430,6 +513,8 @@ pub fn request_withdrawal(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_client::client_error::{ClientError, ClientErrorKind};
+    use solana_client::rpc_request::{RpcError, RpcResponseErrorData};
 
     fn status(
         err: Option<solana_transaction::TransactionError>,
@@ -450,7 +535,7 @@ mod tests {
 
     #[test]
     fn no_status_yet_is_pending() {
-        assert!(matches!(classify_status(None), Poll::Pending));
+        assert_eq!(classify_status(None), Poll::Pending);
     }
 
     #[test]
@@ -460,7 +545,7 @@ mod tests {
             Some(TransactionConfirmationStatus::Processed),
             Some(0),
         );
-        assert!(matches!(classify_status(Some(s)), Poll::Pending));
+        assert_eq!(classify_status(Some(s)), Poll::Pending);
     }
 
     #[test]
@@ -470,13 +555,13 @@ mod tests {
             Some(TransactionConfirmationStatus::Confirmed),
             Some(5),
         );
-        assert!(matches!(classify_status(Some(s)), Poll::Done(Ok(()))));
+        assert_eq!(classify_status(Some(s)), Poll::Confirmed);
     }
 
     #[test]
     fn finalized_without_error_is_done_ok() {
         let s = status(None, Some(TransactionConfirmationStatus::Finalized), None);
-        assert!(matches!(classify_status(Some(s)), Poll::Done(Ok(()))));
+        assert_eq!(classify_status(Some(s)), Poll::Confirmed);
     }
 
     #[test]
@@ -487,18 +572,15 @@ mod tests {
             Some(TransactionConfirmationStatus::Confirmed),
             Some(3),
         );
-        match classify_status(Some(s)) {
-            Poll::Done(Err(ActionError::Rejected(msg))) => assert_eq!(msg, tx_err.to_string()),
-            _ => panic!("expected Done(Err(Rejected))"),
-        }
+        assert_eq!(classify_status(Some(s)), Poll::Failed(tx_err.to_string()));
     }
 
     #[test]
     fn a_status_from_an_old_node_without_confirmation_status_uses_confirmations() {
         let rooted = status(None, None, None);
-        assert!(matches!(classify_status(Some(rooted)), Poll::Done(Ok(()))));
+        assert_eq!(classify_status(Some(rooted)), Poll::Confirmed);
         let fresh = status(None, None, Some(0));
-        assert!(matches!(classify_status(Some(fresh)), Poll::Pending));
+        assert_eq!(classify_status(Some(fresh)), Poll::Pending);
     }
 
     /// Nothing listens here; any RPC attempt would give NoConnection, not
@@ -535,25 +617,177 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn a_connection_failure_while_sending_is_unconfirmed_not_a_safe_retry() {
-        let signature = Signature::from([9u8; 64]);
-        let io = solana_client::client_error::ClientError::from(std::io::Error::other("reset"));
-        assert!(matches!(
-            send_error(io, signature),
-            ActionError::Unconfirmed(s) if s == signature
-        ));
+    const SIG: [u8; 64] = [9u8; 64];
+    const LAST_VALID: u64 = 1_000;
+
+    fn client_err(kind: solana_client::client_error::ClientErrorKind) -> ClientError {
+        ClientError::from(kind)
+    }
+
+    fn assert_unconfirmed(err: ActionError) {
+        match err {
+            ActionError::Unconfirmed {
+                signature,
+                last_valid_block_height,
+            } => {
+                assert_eq!(signature, Signature::from(SIG));
+                assert_eq!(last_valid_block_height, LAST_VALID);
+            }
+            other => panic!("expected Unconfirmed, got {other:?}"),
+        }
+    }
+
+    fn sent(err: ClientError) -> ActionError {
+        send_error(err, Signature::from(SIG), LAST_VALID)
     }
 
     #[test]
-    fn a_node_rejection_while_sending_stays_rejected() {
-        let signature = Signature::from([9u8; 64]);
-        let custom = solana_client::client_error::ClientError::from(
-            solana_client::client_error::ClientErrorKind::Custom("preflight failed".into()),
-        );
-        assert!(matches!(
-            send_error(custom, signature),
-            ActionError::Rejected(_)
+    fn io_error_while_sending_is_unconfirmed() {
+        assert_unconfirmed(sent(ClientError::from(std::io::Error::other("reset"))));
+    }
+
+    #[test]
+    fn parse_error_while_sending_is_unconfirmed() {
+        assert_unconfirmed(sent(client_err(ClientErrorKind::RpcError(
+            RpcError::ParseError("Signature".into()),
+        ))));
+    }
+
+    #[test]
+    fn mismatched_signature_request_error_is_unconfirmed() {
+        assert_unconfirmed(sent(client_err(ClientErrorKind::RpcError(
+            RpcError::RpcRequestError("RPC node returned mismatched signature".into()),
+        ))));
+    }
+
+    #[test]
+    fn for_user_error_while_sending_is_unconfirmed() {
+        assert_unconfirmed(sent(client_err(ClientErrorKind::RpcError(
+            RpcError::ForUser("odd".into()),
+        ))));
+    }
+
+    #[test]
+    fn serde_json_error_while_sending_is_unconfirmed() {
+        let json_err = serde_json::from_str::<u8>("not json").unwrap_err();
+        assert_unconfirmed(sent(client_err(ClientErrorKind::SerdeJson(json_err))));
+    }
+
+    #[test]
+    fn custom_error_while_sending_is_unconfirmed() {
+        assert_unconfirmed(sent(client_err(ClientErrorKind::Custom("x".into()))));
+    }
+
+    #[test]
+    fn an_rpc_error_response_while_sending_is_rejected() {
+        let refused = client_err(ClientErrorKind::RpcError(RpcError::RpcResponseError {
+            code: -32002,
+            message: "Transaction simulation failed".into(),
+            data: RpcResponseErrorData::Empty,
+        }));
+        match sent(refused) {
+            ActionError::Rejected(msg) => assert!(msg.contains("simulation failed"), "{msg}"),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_transaction_error_while_sending_is_rejected() {
+        let refused = client_err(ClientErrorKind::TransactionError(
+            solana_transaction::TransactionError::AccountNotFound,
         ));
+        assert!(matches!(sent(refused), ActionError::Rejected(_)));
+    }
+
+    #[test]
+    fn up_to_three_consecutive_poll_errors_are_tolerated_the_fourth_is_not() {
+        let mut count = 0;
+        for _ in 0..3 {
+            let (c, give_up) = track_poll_result(count, false);
+            assert!(!give_up);
+            count = c;
+        }
+        assert_eq!(count, 3);
+        let (count, give_up) = track_poll_result(count, false);
+        assert_eq!(count, 4);
+        assert!(give_up);
+    }
+
+    #[test]
+    fn a_successful_poll_resets_the_error_count() {
+        assert_eq!(track_poll_result(3, true), (0, false));
+        let (c, give_up) = track_poll_result(0, false);
+        assert_eq!((c, give_up), (1, false));
+        assert_eq!(track_poll_result(u32::MAX, false).0, u32::MAX); // saturates
+    }
+
+    #[test]
+    fn settle_confirmed_and_finalized() {
+        let c = status(
+            None,
+            Some(TransactionConfirmationStatus::Confirmed),
+            Some(2),
+        );
+        assert_eq!(
+            settle(Some(c), LAST_VALID + 500, LAST_VALID),
+            SignatureOutcome::Confirmed
+        );
+        let f = status(None, Some(TransactionConfirmationStatus::Finalized), None);
+        assert_eq!(settle(Some(f), 0, LAST_VALID), SignatureOutcome::Confirmed);
+    }
+
+    #[test]
+    fn settle_processed_only_is_still_possible_even_past_expiry() {
+        let p = status(
+            None,
+            Some(TransactionConfirmationStatus::Processed),
+            Some(0),
+        );
+        assert_eq!(
+            settle(Some(p.clone()), 0, LAST_VALID),
+            SignatureOutcome::StillPossible
+        );
+        assert_eq!(
+            settle(Some(p), LAST_VALID + 500, LAST_VALID),
+            SignatureOutcome::StillPossible
+        );
+    }
+
+    #[test]
+    fn settle_error_is_failed() {
+        let tx_err = solana_transaction::TransactionError::AccountNotFound;
+        let s = status(
+            Some(tx_err.clone()),
+            Some(TransactionConfirmationStatus::Finalized),
+            None,
+        );
+        assert_eq!(
+            settle(Some(s), 0, LAST_VALID),
+            SignatureOutcome::Failed(tx_err.to_string())
+        );
+    }
+
+    #[test]
+    fn settle_not_found_before_expiry_is_still_possible() {
+        assert_eq!(
+            settle(None, LAST_VALID - 1, LAST_VALID),
+            SignatureOutcome::StillPossible
+        );
+    }
+
+    #[test]
+    fn settle_not_found_at_the_last_valid_height_is_still_possible() {
+        assert_eq!(
+            settle(None, LAST_VALID, LAST_VALID),
+            SignatureOutcome::StillPossible
+        );
+    }
+
+    #[test]
+    fn settle_not_found_after_expiry_is_expired() {
+        assert_eq!(
+            settle(None, LAST_VALID + 1, LAST_VALID),
+            SignatureOutcome::Expired
+        );
     }
 }

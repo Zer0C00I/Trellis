@@ -2948,6 +2948,7 @@ dependencies = [
  "btleplug",
  "family-vault",
  "family-vault-client",
+ "serde_json",
  "solana-account-decoder-client-types",
  "solana-client",
  "solana-instruction",
