@@ -132,8 +132,14 @@ impl VaultView {
 /// sanitised: show the address too.
 pub fn sanitize_name(name: &[u8; BENEFICIARY_NAME_LEN], name_len: u8) -> String {
     let len = (name_len as usize).min(BENEFICIARY_NAME_LEN);
-    String::from_utf8_lossy(&name[..len])
-        .chars()
+    sanitize_text(&String::from_utf8_lossy(&name[..len]))
+}
+
+/// Replaces every character that could spoof or break UI text (see
+/// [`sanitize_name`]) with U+FFFD. For any text that came from the chain,
+/// such as a name decoded from transaction history.
+pub fn sanitize_text(text: &str) -> String {
+    text.chars()
         .map(|c| if is_unsafe_char(c) { '\u{FFFD}' } else { c })
         .collect()
 }
@@ -812,5 +818,12 @@ mod tests {
         let view = fetch_vault_view(&rpc, &program_id, &vault).unwrap();
         println!("{view:#?}");
         assert_eq!(view.vault, vault);
+    }
+
+    #[test]
+    fn sanitize_text_replaces_control_and_bidi_characters() {
+        assert_eq!(sanitize_text("Саша"), "Саша");
+        assert_eq!(sanitize_text("a\nb"), "a\u{FFFD}b");
+        assert_eq!(sanitize_text("x\u{202E}y"), "x\u{FFFD}y");
     }
 }

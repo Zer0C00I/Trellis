@@ -25,5 +25,6 @@ pub mod history;
 pub mod identity;
 pub mod pairing;
 pub mod vault_view;
+pub mod wallet;
 
 pub use error::ActionError;

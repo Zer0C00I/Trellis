@@ -12,8 +12,8 @@ use std::time::Duration;
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use family_vault_client::pairing::{
-    decode_qr_payload, encode_frame, FrameError, PairingRequest, PAIRING_CHARACTERISTIC_UUID_U128,
-    SERVICE_UUID_U128,
+    auth_from_pin, decode_qr_payload, encode_frame, AuthField, FrameError, PairingRequest,
+    PAIRING_CHARACTERISTIC_UUID_U128, SERVICE_UUID_U128,
 };
 use solana_pubkey::Pubkey;
 use uuid::Uuid;
@@ -33,6 +33,8 @@ pub enum PairingError {
     /// The scanned QR text is not a kiosk pairing code. No Bluetooth
     /// activity happened.
     BadQrText,
+    /// The fallback code is not exactly six digits.
+    BadPin,
     /// The name cannot be encoded (empty, too long, control characters).
     BadName(String),
     /// No Bluetooth adapter on this machine.
@@ -54,6 +56,7 @@ impl fmt::Display for PairingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::BadQrText => write!(f, "not a valid kiosk pairing code"),
+            Self::BadPin => write!(f, "the code must be exactly six digits"),
             Self::BadName(e) => write!(f, "invalid name: {e}"),
             Self::NoAdapter => write!(f, "no Bluetooth adapter available"),
             Self::KioskNotFound => write!(f, "no kiosk in pairing mode found nearby"),
@@ -110,12 +113,30 @@ async fn step<T, E: fmt::Display>(
 /// reported before any Bluetooth activity.
 pub fn pair_with_kiosk(qr_text: &str, name: &str, my_pubkey: Pubkey) -> Result<(), PairingError> {
     let auth = decode_qr_payload(qr_text).ok_or(PairingError::BadQrText)?;
-    let frame = encode_frame(&PairingRequest {
+    pair_with_auth(auth, name, my_pubkey)
+}
+
+/// Same as [`pair_with_kiosk`] for the six-digit fallback code the kiosk
+/// shows under its QR (for a phone whose camera cannot scan). The code is
+/// guessable, so the kiosk limits wrong attempts and locks out for a while;
+/// a wrong code surfaces as `WriteRejected`.
+pub fn pair_with_kiosk_pin(pin: &str, name: &str, my_pubkey: Pubkey) -> Result<(), PairingError> {
+    let auth = auth_from_pin(pin.trim()).map_err(|_| PairingError::BadPin)?;
+    pair_with_auth(auth, name, my_pubkey)
+}
+
+/// The frame the kiosk expects, for any kind of credential.
+fn build_frame(auth: AuthField, name: &str, my_pubkey: Pubkey) -> Result<Vec<u8>, PairingError> {
+    encode_frame(&PairingRequest {
         auth,
         pubkey: my_pubkey,
         name: name.to_string(),
     })
-    .map_err(|e| PairingError::BadName(bad_name_reason(e).to_string()))?;
+    .map_err(|e| PairingError::BadName(bad_name_reason(e).to_string()))
+}
+
+fn pair_with_auth(auth: AuthField, name: &str, my_pubkey: Pubkey) -> Result<(), PairingError> {
+    let frame = build_frame(auth, name, my_pubkey)?;
 
     // A dedicated thread has no ambient tokio context, so `block_on` cannot
     // panic with "cannot start a runtime from within a runtime" even if the
@@ -230,6 +251,30 @@ mod tests {
     use super::*;
     use family_vault_client::pairing::decode_qr_payload;
     use solana_pubkey::Pubkey;
+
+    #[test]
+    fn rejects_a_fallback_code_that_is_not_six_digits_before_any_bluetooth() {
+        for bad in ["", "12345", "1234567", "12345a", "١٢٣٤٥٦", "12 456"] {
+            let err = pair_with_kiosk_pin(bad, "Саша", Pubkey::new_from_array([1u8; 32]));
+            assert!(matches!(err, Err(PairingError::BadPin)), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_fallback_code_goes_into_the_auth_field_zero_padded() {
+        let auth = auth_from_pin("123456").unwrap();
+        let frame = build_frame(auth, "Саша", Pubkey::new_from_array([7u8; 32])).unwrap();
+        assert_eq!(&frame[..6], b"123456");
+        assert_eq!(&frame[6..16], &[0u8; 10]);
+        assert_eq!(&frame[16..48], &[7u8; 32]);
+    }
+
+    #[test]
+    fn surrounding_whitespace_around_the_fallback_code_is_ignored() {
+        // Only the BadPin check is offline-testable; a padded valid code must
+        // get past it (it then fails at Bluetooth, never with BadPin).
+        assert!(auth_from_pin(" 123456 ".trim()).is_ok());
+    }
 
     #[test]
     fn rejects_qr_text_that_does_not_decode() {
