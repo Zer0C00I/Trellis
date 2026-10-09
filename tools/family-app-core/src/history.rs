@@ -5,12 +5,12 @@
 //! `getProgramAccounts` scan, since history lives in the ledger, not in
 //! any account's current state.
 
+use crate::error::{map_client_error, ActionError};
 use anchor_lang::{AnchorDeserialize, InstructionData};
 use family_vault::instruction::{
     AddBeneficiary, AddBeneficiaryUrgent, AddTrustedApprover, ApproveWithdrawal, Deposit,
     InitializeApprovers, InitializeVault, RequestWithdrawal, Withdraw,
 };
-use solana_client::client_error::ClientErrorKind;
 use solana_client::rpc_client::{GetConfirmedSignaturesForAddress2Config, RpcClient};
 use solana_client::rpc_config::RpcTransactionConfig;
 use solana_pubkey::Pubkey;
@@ -158,7 +158,7 @@ pub fn fetch_history(
     program_id: &Pubkey,
     vault: &Pubkey,
     limit: usize,
-) -> Result<Vec<HistoryEntry>, String> {
+) -> Result<Vec<HistoryEntry>, ActionError> {
     if limit == 0 {
         return Ok(Vec::new());
     }
@@ -172,7 +172,7 @@ pub fn fetch_history(
                 commitment: None,
             },
         )
-        .map_err(|e| format!("get_signatures_for_address: {e}"))?;
+        .map_err(map_client_error)?;
 
     let program_id_str = program_id.to_string();
     let mut entries = Vec::new();
@@ -193,18 +193,13 @@ pub fn fetch_history(
             },
         ) {
             Ok(tx) => tx,
-            // A connection-level failure means the whole history is unreliable.
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    ClientErrorKind::Io(_) | ClientErrorKind::Reqwest(_)
-                ) =>
-            {
-                return Err(format!("get_transaction {}: {e}", sig_info.signature));
-            }
-            // One unavailable transaction (pruned, not found, odd encoding)
-            // must not hide the rest of the history.
-            Err(_) => continue,
+            Err(e) => match map_client_error(e) {
+                // A connection-level failure means the whole history is unreliable.
+                ActionError::NoConnection => return Err(ActionError::NoConnection),
+                // One unavailable transaction (pruned, not found, odd encoding)
+                // must not hide the rest of the history.
+                ActionError::Rejected(_) => continue,
+            },
         };
 
         let EncodedTransaction::Json(ui_tx) = tx.transaction.transaction else {

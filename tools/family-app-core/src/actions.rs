@@ -6,8 +6,8 @@
 //! CLI. Owner-rotation actions are out of scope for the MVP (see the
 //! family-app design spec) and are not here.
 
-use std::fmt;
-
+use crate::error::map_client_error;
+pub use crate::error::ActionError;
 use anchor_lang::AccountDeserialize;
 use family_vault::state::{PendingWithdrawal, Vault};
 use family_vault_client::builders::{
@@ -24,25 +24,6 @@ use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
 
-#[derive(Debug)]
-pub enum ActionError {
-    /// RPC endpoint unreachable.
-    NoConnection,
-    /// RPC responded but the program/transaction rejected the request.
-    Rejected(String),
-}
-
-impl fmt::Display for ActionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ActionError::NoConnection => write!(f, "no connection to RPC endpoint"),
-            ActionError::Rejected(msg) => write!(f, "rejected: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ActionError {}
-
 fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, ActionError> {
     family_vault_client::whole_units_to_base_units(amount_whole_units, decimals)
         .map_err(ActionError::Rejected)
@@ -51,14 +32,6 @@ fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u
 fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {
     let data = rpc.get_account_data(mint).map_err(map_client_error)?;
     decode_mint_decimals(&data).map_err(ActionError::Rejected)
-}
-
-fn map_client_error(err: solana_client::client_error::ClientError) -> ActionError {
-    match err.kind() {
-        solana_client::client_error::ClientErrorKind::Io(_)
-        | solana_client::client_error::ClientErrorKind::Reqwest(_) => ActionError::NoConnection,
-        other => ActionError::Rejected(other.to_string()),
-    }
 }
 
 /// Sends one or more instructions in a single transaction, signed by
@@ -313,26 +286,6 @@ pub fn request_withdrawal(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn maps_io_errors_to_no_connection() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
-        let client_err: solana_client::client_error::ClientError = io_err.into();
-        assert!(matches!(
-            map_client_error(client_err),
-            ActionError::NoConnection
-        ));
-    }
-
-    #[test]
-    fn maps_other_errors_to_rejected() {
-        let client_err: solana_client::client_error::ClientError =
-            solana_client::client_error::ClientErrorKind::Custom("nope".to_string()).into();
-        assert!(matches!(
-            map_client_error(client_err),
-            ActionError::Rejected(_)
-        ));
-    }
 
     #[test]
     fn converts_whole_units_to_base_units() {

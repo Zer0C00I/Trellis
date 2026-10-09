@@ -10,6 +10,9 @@
 
 pub mod actions;
 pub mod discovery;
+pub mod error;
 pub mod history;
 pub mod identity;
 pub mod pairing;
+
+pub use error::ActionError;

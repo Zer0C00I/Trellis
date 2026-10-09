@@ -21,6 +21,7 @@ fn approver_offset(slot: usize) -> usize {
 
 use std::collections::BTreeSet;
 
+use crate::error::{map_client_error, ActionError};
 use anchor_lang::AccountDeserialize;
 use family_vault::state::{BeneficiaryList, TrustedApprovers};
 use solana_account_decoder_client_types::UiAccountEncoding;
@@ -35,7 +36,7 @@ fn scan_for_pubkey_at_offset(
     data_size: u64,
     offset: usize,
     needle: &Pubkey,
-) -> Result<Vec<Vec<u8>>, String> {
+) -> Result<Vec<Vec<u8>>, ActionError> {
     let config = RpcProgramAccountsConfig {
         filters: Some(vec![
             RpcFilterType::DataSize(data_size),
@@ -54,7 +55,7 @@ fn scan_for_pubkey_at_offset(
 
     let accounts = rpc
         .get_program_ui_accounts_with_config(program_id, config)
-        .map_err(|e| format!("getProgramAccounts at offset {offset}: {e}"))?;
+        .map_err(map_client_error)?;
 
     accounts
         .into_iter()
@@ -62,7 +63,7 @@ fn scan_for_pubkey_at_offset(
             ui_account
                 .to_account()
                 .map(|account| account.data)
-                .ok_or_else(|| "could not decode account data".to_string())
+                .ok_or_else(|| ActionError::Rejected("could not decode account data".to_string()))
         })
         .collect()
 }
@@ -72,7 +73,7 @@ fn vaults_where_i_am_a_beneficiary(
     rpc: &RpcClient,
     program_id: &Pubkey,
     me: &Pubkey,
-) -> Result<BTreeSet<Pubkey>, String> {
+) -> Result<BTreeSet<Pubkey>, ActionError> {
     let mut vaults = BTreeSet::new();
     for slot in 0..MAX_BENEFICIARIES {
         let raw_accounts = scan_for_pubkey_at_offset(
@@ -84,7 +85,7 @@ fn vaults_where_i_am_a_beneficiary(
         )?;
         for data in raw_accounts {
             let list = BeneficiaryList::try_deserialize(&mut &data[..])
-                .map_err(|e| format!("decoding BeneficiaryList: {e}"))?;
+                .map_err(|e| ActionError::Rejected(format!("decoding BeneficiaryList: {e}")))?;
             vaults.insert(family_vault_client::to_client(list.vault));
         }
     }
@@ -96,7 +97,7 @@ fn vaults_where_i_am_an_approver(
     rpc: &RpcClient,
     program_id: &Pubkey,
     me: &Pubkey,
-) -> Result<BTreeSet<Pubkey>, String> {
+) -> Result<BTreeSet<Pubkey>, ActionError> {
     let mut vaults = BTreeSet::new();
     for slot in 0..MAX_APPROVERS {
         let raw_accounts = scan_for_pubkey_at_offset(
@@ -108,7 +109,7 @@ fn vaults_where_i_am_an_approver(
         )?;
         for data in raw_accounts {
             let approvers = TrustedApprovers::try_deserialize(&mut &data[..])
-                .map_err(|e| format!("decoding TrustedApprovers: {e}"))?;
+                .map_err(|e| ActionError::Rejected(format!("decoding TrustedApprovers: {e}")))?;
             vaults.insert(family_vault_client::to_client(approvers.vault));
         }
     }
@@ -123,7 +124,7 @@ pub fn discover_my_vaults(
     rpc: &RpcClient,
     program_id: &Pubkey,
     me: &Pubkey,
-) -> Result<Vec<Pubkey>, String> {
+) -> Result<Vec<Pubkey>, ActionError> {
     let mut vaults = vaults_where_i_am_a_beneficiary(rpc, program_id, me)?;
     vaults.extend(vaults_where_i_am_an_approver(rpc, program_id, me)?);
     Ok(vaults.into_iter().collect())
