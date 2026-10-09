@@ -43,6 +43,16 @@ impl fmt::Display for ActionError {
 
 impl std::error::Error for ActionError {}
 
+/// Converts a whole-token amount into the token's base units. Checked: a
+/// silent wrap-around here would move a different amount of money than the
+/// caller asked for.
+fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, ActionError> {
+    10u64
+        .checked_pow(decimals)
+        .and_then(|scale| amount_whole_units.checked_mul(scale))
+        .ok_or_else(|| ActionError::Rejected("amount is too large".to_string()))
+}
+
 fn map_client_error(err: solana_client::client_error::ClientError) -> ActionError {
     match err.kind() {
         solana_client::client_error::ClientErrorKind::Io(_)
@@ -132,7 +142,7 @@ pub fn deposit(
 ) -> Result<solana_signature::Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
-    let amount = amount_whole_units * 10u64.pow(decimals);
+    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_deposit_instruction(
         program_id,
@@ -157,7 +167,7 @@ pub fn send(
 ) -> Result<solana_signature::Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
-    let amount = amount_whole_units * 10u64.pow(decimals);
+    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_withdraw_instruction(
         program_id,
@@ -279,7 +289,7 @@ pub fn request_withdrawal(
 ) -> Result<solana_signature::Signature, ActionError> {
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
     let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
-    let amount = amount_whole_units * 10u64.pow(decimals);
+    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_request_withdrawal_instruction(
         program_id,
@@ -309,5 +319,25 @@ mod tests {
         let client_err: solana_client::client_error::ClientError =
             solana_client::client_error::ClientErrorKind::Custom("nope".to_string()).into();
         assert!(matches!(map_client_error(client_err), ActionError::Rejected(_)));
+    }
+
+    #[test]
+    fn converts_whole_units_to_base_units() {
+        assert_eq!(whole_units_to_base_units(5, 6).unwrap(), 5_000_000);
+        assert_eq!(whole_units_to_base_units(0, 6).unwrap(), 0);
+        assert_eq!(whole_units_to_base_units(7, 0).unwrap(), 7);
+    }
+
+    #[test]
+    fn refuses_amounts_that_would_overflow_instead_of_wrapping() {
+        assert!(matches!(
+            whole_units_to_base_units(u64::MAX, 6),
+            Err(ActionError::Rejected(_))
+        ));
+        // 10^20 does not fit in a u64 at all.
+        assert!(matches!(
+            whole_units_to_base_units(1, 20),
+            Err(ActionError::Rejected(_))
+        ));
     }
 }
