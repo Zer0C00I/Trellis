@@ -1,10 +1,14 @@
 //! Everyday bank-style actions, each a thin RPC-send/sign wrapper around
 //! one of `family_vault_client::builders`' pure instruction builders.
 //! Covers the same everyday commands as `admin-cli` (see that tool's
-//! `cmd_*` functions), minus owner rotation, but returns `Result` instead of printing and calling
-//! `std::process::exit` — this is a library a future UI calls into, not a
-//! CLI. Owner-rotation actions are out of scope for the MVP (see the
-//! family-app design spec) and are not here.
+//! `cmd_*` functions), minus owner rotation, but returns `Result` instead
+//! of printing and calling `std::process::exit` — this is a library a
+//! future UI calls into, not a CLI. Owner-rotation actions are out of
+//! scope for the MVP (see the family-app design spec) and are not here.
+//!
+//! Amounts are always in the token's base units (`u64`). A UI reads
+//! `decimals` from `vault_view::VaultView` and converts what the user typed
+//! with `family_vault_client::parse_decimal_amount`.
 
 use crate::error::map_client_error;
 pub use crate::error::ActionError;
@@ -17,7 +21,7 @@ use family_vault_client::builders::{
     build_initialize_vault_instruction, build_request_withdrawal_instruction,
     build_withdraw_instruction,
 };
-use family_vault_client::{decode_mint_decimals, to_client, vault_pda};
+use family_vault_client::{to_client, vault_pda};
 use solana_client::rpc_client::RpcClient;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
@@ -27,14 +31,14 @@ use solana_signer::Signer;
 use solana_transaction_status_client_types::{TransactionConfirmationStatus, TransactionStatus};
 use std::time::{Duration, Instant};
 
-fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, ActionError> {
-    family_vault_client::whole_units_to_base_units(amount_whole_units, decimals)
-        .map_err(ActionError::Rejected)
-}
-
-fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {
-    let data = rpc.get_account_data(mint).map_err(map_client_error)?;
-    decode_mint_decimals(&data).map_err(ActionError::Rejected)
+/// A zero amount is never a meaningful transfer; refuse it before any RPC.
+fn require_nonzero(amount_base_units: u64) -> Result<(), ActionError> {
+    if amount_base_units == 0 {
+        return Err(ActionError::Rejected(
+            "amount must be greater than zero".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// How long `send_instructions` polls for a verdict before giving up with
@@ -240,16 +244,19 @@ pub fn open_pool_vault(
     Ok(vault)
 }
 
+/// Deposits `amount_base_units` (the token's smallest unit, so 2.5 USDC is
+/// 2_500_000) from `depositor` into the vault. The UI gets `decimals` from
+/// `VaultView` and converts typed text with `parse_decimal_amount`. Zero is
+/// `Rejected` before any RPC.
 pub fn deposit(
     rpc: &RpcClient,
     program_id: &Pubkey,
     depositor: &Keypair,
     vault: &Pubkey,
-    amount_whole_units: u64,
+    amount_base_units: u64,
 ) -> Result<Signature, ActionError> {
+    require_nonzero(amount_base_units)?;
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = mint_decimals(rpc, &mint)?;
-    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_deposit_instruction(
         program_id,
@@ -257,24 +264,26 @@ pub fn deposit(
         vault,
         &vault_token_account,
         &mint,
-        amount,
+        amount_base_units,
     );
     send_instructions(rpc, depositor, &[ix], &[])
 }
 
-/// The recipient must already be an approved payee — the program enforces
-/// this regardless of what this function sends.
+/// Sends `amount_base_units` (the token's smallest unit) from the vault to
+/// `recipient`. The recipient must already be an approved payee — the
+/// program enforces this regardless of what this function sends. The UI
+/// gets `decimals` from `VaultView` and converts typed text with
+/// `parse_decimal_amount`. Zero is `Rejected` before any RPC.
 pub fn send(
     rpc: &RpcClient,
     program_id: &Pubkey,
     owner: &Keypair,
     vault: &Pubkey,
     recipient: &Pubkey,
-    amount_whole_units: u64,
+    amount_base_units: u64,
 ) -> Result<Signature, ActionError> {
+    require_nonzero(amount_base_units)?;
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = mint_decimals(rpc, &mint)?;
-    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_withdraw_instruction(
         program_id,
@@ -283,7 +292,7 @@ pub fn send(
         &vault_token_account,
         &mint,
         recipient,
-        amount,
+        amount_base_units,
     );
     send_instructions(rpc, owner, &[ix], &[])
 }
@@ -379,8 +388,10 @@ pub fn approve_withdrawal(
     send_instructions(rpc, signer, &[ix], &[])
 }
 
-/// Requests an over-limit withdrawal from a pool vault, to be later
-/// confirmed with `approve_withdrawal`. Not part of the MVP's default
+/// Requests an over-limit withdrawal of `amount_base_units` (the token's
+/// smallest unit; the UI converts with `parse_decimal_amount` using the
+/// `decimals` from `VaultView`) from a pool vault, to be later confirmed
+/// with `approve_withdrawal`. Zero is `Rejected` before any RPC. Not part of the MVP's default
 /// "send" flow (that goes straight through `send`/`Withdraw` for
 /// within-limit amounts) but needed once a pool vault's daily limit is
 /// exceeded.
@@ -390,12 +401,11 @@ pub fn request_withdrawal(
     owner: &Keypair,
     vault: &Pubkey,
     recipient: &Pubkey,
-    amount_whole_units: u64,
+    amount_base_units: u64,
     nonce: u64,
 ) -> Result<Signature, ActionError> {
+    require_nonzero(amount_base_units)?;
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = mint_decimals(rpc, &mint)?;
-    let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_request_withdrawal_instruction(
         program_id,
@@ -403,7 +413,7 @@ pub fn request_withdrawal(
         vault,
         &mint,
         recipient,
-        amount,
+        amount_base_units,
         nonce,
     );
     send_instructions(rpc, owner, &[ix], &[])
@@ -483,23 +493,38 @@ mod tests {
         assert!(matches!(classify_status(Some(fresh)), Poll::Pending));
     }
 
-    #[test]
-    fn converts_whole_units_to_base_units() {
-        assert_eq!(whole_units_to_base_units(5, 6).unwrap(), 5_000_000);
-        assert_eq!(whole_units_to_base_units(0, 6).unwrap(), 0);
-        assert_eq!(whole_units_to_base_units(7, 0).unwrap(), 7);
+    /// Nothing listens here; any RPC attempt would give NoConnection, not
+    /// the zero-amount rejection, so these prove the check runs first.
+    fn dead_rpc() -> RpcClient {
+        RpcClient::new("http://127.0.0.1:1".to_string())
+    }
+
+    fn assert_zero_rejected<T: std::fmt::Debug>(result: Result<T, ActionError>) {
+        match result {
+            Err(ActionError::Rejected(msg)) => {
+                assert_eq!(msg, "amount must be greater than zero")
+            }
+            other => panic!("expected zero-amount rejection, got {other:?}"),
+        }
     }
 
     #[test]
-    fn refuses_amounts_that_would_overflow_instead_of_wrapping() {
-        assert!(matches!(
-            whole_units_to_base_units(u64::MAX, 6),
-            Err(ActionError::Rejected(_))
-        ));
-        // 10^20 does not fit in a u64 at all.
-        assert!(matches!(
-            whole_units_to_base_units(1, 20),
-            Err(ActionError::Rejected(_))
+    fn zero_amounts_are_rejected_before_any_rpc() {
+        let rpc = dead_rpc();
+        let program_id = Pubkey::new_unique();
+        let who = Keypair::new();
+        let vault = Pubkey::new_unique();
+        let other = Pubkey::new_unique();
+        assert_zero_rejected(deposit(&rpc, &program_id, &who, &vault, 0));
+        assert_zero_rejected(send(&rpc, &program_id, &who, &vault, &other, 0));
+        assert_zero_rejected(request_withdrawal(
+            &rpc,
+            &program_id,
+            &who,
+            &vault,
+            &other,
+            0,
+            0,
         ));
     }
 
