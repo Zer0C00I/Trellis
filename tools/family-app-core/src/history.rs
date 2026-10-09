@@ -10,6 +10,7 @@ use family_vault::instruction::{
     AddBeneficiary, AddBeneficiaryUrgent, AddTrustedApprover, ApproveWithdrawal, Deposit,
     InitializeApprovers, InitializeVault, RequestWithdrawal, Withdraw,
 };
+use solana_client::client_error::ClientErrorKind;
 use solana_client::rpc_client::{GetConfirmedSignaturesForAddress2Config, RpcClient};
 use solana_client::rpc_config::RpcTransactionConfig;
 use solana_pubkey::Pubkey;
@@ -158,6 +159,9 @@ pub fn fetch_history(
     program_id: &Pubkey,
     limit: usize,
 ) -> Result<Vec<HistoryEntry>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let signatures = rpc
         .get_signatures_for_address_with_config(
             vault,
@@ -170,26 +174,38 @@ pub fn fetch_history(
         )
         .map_err(|e| format!("get_signatures_for_address: {e}"))?;
 
+    let program_id_str = program_id.to_string();
     let mut entries = Vec::new();
     for sig_info in signatures {
         if sig_info.err.is_some() {
             continue;
         }
-        let signature: solana_signature::Signature = sig_info
-            .signature
-            .parse()
-            .map_err(|e| format!("bad signature '{}': {e}", sig_info.signature))?;
+        let Ok(signature) = sig_info.signature.parse::<solana_signature::Signature>() else {
+            continue; // the node returned a signature we cannot parse; skip this entry
+        };
 
-        let tx = rpc
-            .get_transaction_with_config(
-                &signature,
-                RpcTransactionConfig {
-                    encoding: Some(UiTransactionEncoding::Json),
-                    commitment: None,
-                    max_supported_transaction_version: Some(0),
-                },
-            )
-            .map_err(|e| format!("get_transaction {}: {e}", sig_info.signature))?;
+        let tx = match rpc.get_transaction_with_config(
+            &signature,
+            RpcTransactionConfig {
+                encoding: Some(UiTransactionEncoding::Json),
+                commitment: None,
+                max_supported_transaction_version: Some(0),
+            },
+        ) {
+            Ok(tx) => tx,
+            // A connection-level failure means the whole history is unreliable.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ClientErrorKind::Io(_) | ClientErrorKind::Reqwest(_)
+                ) =>
+            {
+                return Err(format!("get_transaction {}: {e}", sig_info.signature));
+            }
+            // One unavailable transaction (pruned, not found, odd encoding)
+            // must not hide the rest of the history.
+            Err(_) => continue,
+        };
 
         let EncodedTransaction::Json(ui_tx) = tx.transaction.transaction else {
             continue;
@@ -198,7 +214,6 @@ pub fn fetch_history(
             continue; // requested Json (not JsonParsed) encoding, so this is always Raw
         };
 
-        let program_id_str = program_id.to_string();
         let Some(program_index) = message
             .account_keys
             .iter()
@@ -386,5 +401,54 @@ mod tests {
         let entries = fetch_history(&rpc, &vault, &program_id, 20).unwrap();
         println!("found {} entries: {entries:?}", entries.len());
         assert!(!entries.is_empty());
+    }
+
+    #[test]
+    fn a_bare_discriminator_with_no_payload_is_unknown_when_a_payload_is_required() {
+        let full = Deposit { amount: 1 }.data();
+        assert_eq!(
+            decode_instruction_kind(&full[..8]),
+            HistoryEntryKind::Unknown
+        );
+    }
+
+    #[test]
+    fn seven_bytes_is_unknown() {
+        let full = Deposit { amount: 1 }.data();
+        assert_eq!(
+            decode_instruction_kind(&full[..7]),
+            HistoryEntryKind::Unknown
+        );
+    }
+
+    #[test]
+    fn trailing_bytes_after_a_valid_payload_are_unknown() {
+        let mut data = Deposit { amount: 1 }.data();
+        data.push(0);
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::Unknown);
+    }
+
+    #[test]
+    fn a_huge_string_length_prefix_does_not_panic_or_allocate_it() {
+        let mut data = AddBeneficiary {
+            name: String::new(),
+            address: Default::default(),
+        }
+        .data();
+        // Overwrite the 4-byte length prefix right after the discriminator.
+        data[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::Unknown);
+    }
+
+    #[test]
+    fn an_invalid_utf8_name_is_unknown() {
+        let mut data = AddBeneficiary {
+            name: "ab".to_string(),
+            address: Default::default(),
+        }
+        .data();
+        data[12] = 0xFF;
+        data[13] = 0xFE;
+        assert_eq!(decode_instruction_kind(&data), HistoryEntryKind::Unknown);
     }
 }
