@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Trellis Family",
+  "version": "0.1.0",
+  "identifier": "dev.trellis.family",
+  "build": { "frontendDist": "../ui" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      { "title": "Trellis Family", "width": 480, "height": 820, "minWidth": 360, "minHeight": 600 }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": { "active": false }
+}

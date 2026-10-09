@@ -13,3 +13,8 @@ id.json
 kiosk.toml
 provisioning.toml
 /test-ledger/
+
+# Tauri build output generated next to the app
+/family-app/src-tauri/gen/
+/family-app/src-tauri/target/
+/family-app/ui/node_modules/

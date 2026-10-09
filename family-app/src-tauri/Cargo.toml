@@ -1,0 +1,30 @@
+[package]
+name = "family-app"
+version = "0.1.0"
+edition = "2021"
+description = "Trellis family companion app (Tauri shell around family-app-core)"
+
+[lib]
+name = "family_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+family-app-core = { path = "../../tools/family-app-core" }
+family-vault = { path = "../../programs/family-vault", features = ["cpi"] }
+family-vault-client = { path = "../../tools/family-vault-client" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+solana-client = "=4.2.2"
+solana-commitment-config = "=3.1.1"
+solana-keypair = "3.0.1"
+solana-pubkey = "=4.2.1"
+solana-signature = "=3.4.1"
+solana-signer = "3.0.0"
+tauri = { version = "=2.12.2", features = [] }
+
+[lints.rust]
+unsafe_code = "deny"
+dead_code = "deny"
