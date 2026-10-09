@@ -237,9 +237,8 @@ mod tests {
     #[test]
     #[ignore = "needs a live RPC endpoint and a known devnet vault membership"]
     fn discovers_a_real_vault() {
-        let rpc = solana_client::rpc_client::RpcClient::new(
-            "https://api.devnet.solana.com".to_string(),
-        );
+        let rpc =
+            solana_client::rpc_client::RpcClient::new("https://api.devnet.solana.com".to_string());
         let program_id: solana_pubkey::Pubkey = "9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ"
             .parse()
             .unwrap();

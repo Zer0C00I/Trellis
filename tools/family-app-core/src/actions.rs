@@ -17,7 +17,7 @@ use family_vault_client::builders::{
     build_initialize_vault_instruction, build_request_withdrawal_instruction,
     build_withdraw_instruction,
 };
-use family_vault_client::{fetch_mint_decimals, to_client, vault_pda};
+use family_vault_client::{decode_mint_decimals, to_client, vault_pda};
 use solana_client::rpc_client::RpcClient;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
@@ -53,6 +53,11 @@ fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u
         .ok_or_else(|| ActionError::Rejected("amount is too large".to_string()))
 }
 
+fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {
+    let data = rpc.get_account_data(mint).map_err(map_client_error)?;
+    decode_mint_decimals(&data).map_err(ActionError::Rejected)
+}
+
 fn map_client_error(err: solana_client::client_error::ClientError) -> ActionError {
     match err.kind() {
         solana_client::client_error::ClientErrorKind::Io(_)
@@ -65,6 +70,11 @@ fn map_client_error(err: solana_client::client_error::ClientError) -> ActionErro
 /// `payer` plus any `extra_signers` (e.g. a second trusted approver for
 /// `add_beneficiary_urgent`, or an existing approver co-signing a new
 /// one).
+///
+/// Caution for callers: the transaction is sent first and then polled for
+/// confirmation, so `NoConnection` (or a `Rejected` expiry) can mean the
+/// outcome is *unknown*, not that nothing happened. Check the account state
+/// before offering a retry, or a payment may go out twice.
 pub fn send_instructions(
     rpc: &RpcClient,
     payer: &Keypair,
@@ -80,7 +90,8 @@ pub fn send_instructions(
         &signers,
         blockhash,
     );
-    rpc.send_and_confirm_transaction(&tx).map_err(map_client_error)
+    rpc.send_and_confirm_transaction(&tx)
+        .map_err(map_client_error)
 }
 
 fn fetch_vault(rpc: &RpcClient, vault: &Pubkey) -> Result<Vault, ActionError> {
@@ -125,10 +136,12 @@ pub fn open_pool_vault(
         true,
         daily_limit,
     );
-    send_instructions(rpc, owner, &[init_vault], &[])?;
-
-    let init_approvers = build_initialize_approvers_instruction(program_id, &owner.pubkey(), &vault);
-    send_instructions(rpc, owner, &[init_approvers], &[])?;
+    let init_approvers =
+        build_initialize_approvers_instruction(program_id, &owner.pubkey(), &vault);
+    // One transaction, so a pool vault either exists with its approvers list
+    // or not at all. Two transactions could leave a vault without approvers
+    // that a retry can never repair (`initialize_vault` fails once the PDA exists).
+    send_instructions(rpc, owner, &[init_vault, init_approvers], &[])?;
 
     Ok(vault)
 }
@@ -141,7 +154,7 @@ pub fn deposit(
     amount_whole_units: u64,
 ) -> Result<solana_signature::Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
+    let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_deposit_instruction(
@@ -166,7 +179,7 @@ pub fn send(
     amount_whole_units: u64,
 ) -> Result<solana_signature::Signature, ActionError> {
     let (vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
+    let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_withdraw_instruction(
@@ -277,30 +290,29 @@ pub fn approve_withdrawal(
 /// "send" flow (that goes straight through `send`/`Withdraw` for
 /// within-limit amounts) but needed once a pool vault's daily limit is
 /// exceeded.
-#[allow(dead_code)] // wired into a UI action in a later plan
 pub fn request_withdrawal(
     rpc: &RpcClient,
     program_id: &Pubkey,
-    signer: &Keypair,
+    owner: &Keypair,
     vault: &Pubkey,
     recipient: &Pubkey,
     amount_whole_units: u64,
     nonce: u64,
 ) -> Result<solana_signature::Signature, ActionError> {
     let (_vault_token_account, mint) = fetch_vault_token_account_and_mint(rpc, vault)?;
-    let decimals = fetch_mint_decimals(rpc, &mint).map_err(ActionError::Rejected)?;
+    let decimals = mint_decimals(rpc, &mint)?;
     let amount = whole_units_to_base_units(amount_whole_units, decimals)?;
 
     let ix = build_request_withdrawal_instruction(
         program_id,
-        &signer.pubkey(),
+        &owner.pubkey(),
         vault,
         &mint,
         recipient,
         amount,
         nonce,
     );
-    send_instructions(rpc, signer, &[ix], &[])
+    send_instructions(rpc, owner, &[ix], &[])
 }
 
 #[cfg(test)]
@@ -311,14 +323,20 @@ mod tests {
     fn maps_io_errors_to_no_connection() {
         let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
         let client_err: solana_client::client_error::ClientError = io_err.into();
-        assert!(matches!(map_client_error(client_err), ActionError::NoConnection));
+        assert!(matches!(
+            map_client_error(client_err),
+            ActionError::NoConnection
+        ));
     }
 
     #[test]
     fn maps_other_errors_to_rejected() {
         let client_err: solana_client::client_error::ClientError =
             solana_client::client_error::ClientErrorKind::Custom("nope".to_string()).into();
-        assert!(matches!(map_client_error(client_err), ActionError::Rejected(_)));
+        assert!(matches!(
+            map_client_error(client_err),
+            ActionError::Rejected(_)
+        ));
     }
 
     #[test]

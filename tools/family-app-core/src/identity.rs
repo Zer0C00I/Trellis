@@ -62,7 +62,10 @@ mod tests {
         assert!(!path.exists());
         let identity = generate_or_load_identity(&path).unwrap();
         assert!(path.exists(), "a keypair file must have been written");
-        assert_ne!(identity.pubkey(), solana_pubkey::Pubkey::new_from_array([0u8; 32]));
+        assert_ne!(
+            identity.pubkey(),
+            solana_pubkey::Pubkey::new_from_array([0u8; 32])
+        );
         std::fs::remove_file(&path).unwrap();
     }
 
