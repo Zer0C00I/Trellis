@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anchor-lang = "1.2.0"
 bs58 = "=0.5.1"
+btleplug = "=0.13.4"
 family-vault = { version = "0.1.0", path = "../../programs/family-vault", features = ["cpi"] }
 family-vault-client = { version = "0.1.0", path = "../family-vault-client" }
 solana-account-decoder-client-types = { version = "=4.2.2", features = ["agave-unstable-api"] }
@@ -19,6 +20,8 @@ solana-transaction-status-client-types = "=4.2.2"
 solana-transaction = { version = "4.1.6", features = ["wincode"] }
 spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
 spl-token = { version = "9.0.0", features = ["no-entrypoint"] }
+tokio = { version = "=1.53.2", features = ["rt", "time"] }
+uuid = "=1.27.0"
 
 [lints.rust]
 unsafe_code = "deny"

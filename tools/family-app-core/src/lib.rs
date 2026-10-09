@@ -12,3 +12,4 @@ pub mod actions;
 pub mod discovery;
 pub mod history;
 pub mod identity;
+pub mod pairing;
