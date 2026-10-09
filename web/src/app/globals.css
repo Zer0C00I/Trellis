@@ -52,7 +52,7 @@
   --card-foreground: #e8ecf4;
   --popover: #111827;
   --popover-foreground: #e8ecf4;
-  --primary: #9945FF;
+  --primary: #9945ff;
   --primary-foreground: #ffffff;
   --secondary: #1a2236;
   --secondary-foreground: #e8ecf4;
@@ -63,20 +63,20 @@
   --destructive: #ef4444;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.12);
-  --ring: #9945FF;
-  --chart-1: #9945FF;
-  --chart-2: #14F195;
+  --ring: #9945ff;
+  --chart-1: #9945ff;
+  --chart-2: #14f195;
   --chart-3: #3b82f6;
   --chart-4: #f59e0b;
   --chart-5: #ef4444;
   --sidebar: #0d1321;
   --sidebar-foreground: #e8ecf4;
-  --sidebar-primary: #9945FF;
+  --sidebar-primary: #9945ff;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1a2236;
   --sidebar-accent-foreground: #e8ecf4;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #9945FF;
+  --sidebar-ring: #9945ff;
 }
 
 .dark {
@@ -86,7 +86,7 @@
   --card-foreground: #e8ecf4;
   --popover: #111827;
   --popover-foreground: #e8ecf4;
-  --primary: #9945FF;
+  --primary: #9945ff;
   --primary-foreground: #ffffff;
   --secondary: #1a2236;
   --secondary-foreground: #e8ecf4;
@@ -97,20 +97,20 @@
   --destructive: #ef4444;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.12);
-  --ring: #9945FF;
-  --chart-1: #9945FF;
-  --chart-2: #14F195;
+  --ring: #9945ff;
+  --chart-1: #9945ff;
+  --chart-2: #14f195;
   --chart-3: #3b82f6;
   --chart-4: #f59e0b;
   --chart-5: #ef4444;
   --sidebar: #0d1321;
   --sidebar-foreground: #e8ecf4;
-  --sidebar-primary: #9945FF;
+  --sidebar-primary: #9945ff;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1a2236;
   --sidebar-accent-foreground: #e8ecf4;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #9945FF;
+  --sidebar-ring: #9945ff;
 }
 
 @layer base {
@@ -124,7 +124,11 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family:
+      'Inter',
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 
   button:not(:disabled),
@@ -165,13 +169,23 @@
 /* ─── Subtle Animations ──────────────────────────────────────────────── */
 
 @keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 15px rgba(153, 69, 255, 0.15); }
-  50% { box-shadow: 0 0 30px rgba(153, 69, 255, 0.3); }
+  0%,
+  100% {
+    box-shadow: 0 0 15px rgba(153, 69, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(153, 69, 255, 0.3);
+  }
 }
 
 .animate-gradient {

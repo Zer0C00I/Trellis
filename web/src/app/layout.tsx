@@ -6,8 +6,9 @@ import { Toaster } from '@/components/ui/sonner'
 import React from 'react'
 
 export const metadata: Metadata = {
-  title: 'Trellis — Relative\'s Portal',
-  description: 'Secure administration portal for Trellis on Solana. Manage beneficiaries, approve withdrawals, and protect your family\'s crypto.',
+  title: 'Trellis — Family Vault on Solana',
+  description:
+    'A family vault on Solana: a kiosk for the older person, guardians for oversight, and an on-chain program that enforces the rules. Devnet prototype.',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -34,4 +35,3 @@ declare global {
 BigInt.prototype.toJSON = function () {
   return this.toString()
 }
-
