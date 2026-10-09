@@ -152,6 +152,12 @@ try {
     assert.match(await text(), /только его владелец/);
   });
 
+  test('first launch shows the demo tag in mock mode', async () => {
+    await open('empty');
+    await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');
+    assert.match(await text(), /демо/);
+  });
+
   test('first launch: bad text is refused, good text waits for the chain', async () => {
     await open('empty');
     await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');

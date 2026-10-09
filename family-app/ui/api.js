@@ -4,7 +4,10 @@
 import { normalizeError } from './errors.js';
 
 const tauri = globalThis.__TAURI__?.core;
-const wantsMock = new URLSearchParams(globalThis.location?.search ?? '').has('mock');
+// Inside the real app "?mock" is ignored: a stray URL must never swap the
+// real backend for a fake one that shows invented balances.
+const inTauri = Boolean(globalThis.__TAURI__ || globalThis.__TAURI_INTERNALS__);
+const wantsMock = !inTauri && new URLSearchParams(globalThis.location?.search ?? '').has('mock');
 export const isMock = !tauri || wantsMock;
 
 let backend;

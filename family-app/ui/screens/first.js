@@ -2,7 +2,7 @@
 //  1. be added by a kiosk during ITS first-run setup (type what the kiosk
 //     shows), then wait until the chain says so;
 //  2. open a family account of your own.
-import { call } from '../api.js';
+import { call, isMock } from '../api.js';
 import { button, card, errorBanner, field, banner, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
 import { classifyPairingInput } from '../input.js';
@@ -12,6 +12,7 @@ export function render(ctx) {
   const root = h('div', { class: 'stack' });
   function draw() {
     root.replaceChildren(
+      isMock ? h('span', { class: 'tag' }, 'демо') : null,
       h('h1', {}, 'Добро пожаловать'),
       h('p', { class: 'lead' }, 'Это приложение для близких: оно помогает следить за счётом родственника и одобрять переводы.'),
       store.waiting ? waitingCard() : pairCard(),
