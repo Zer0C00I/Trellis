@@ -109,8 +109,3 @@ function getClusterUrlParam(cluster: SolanaCluster): string {
 
   return suffix.length ? `?cluster=${suffix}` : ''
 }
-
-
-
-
-

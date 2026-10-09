@@ -1,66 +1,66 @@
-import { useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
-import { BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { useAnchorProvider } from '../../config/useAnchorProvider';
-import { USDC_MINT, USDC_DECIMALS, explorerTxUrl } from '../../config/solana';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { useState } from 'react'
+import { PublicKey } from '@solana/web3.js'
+import { BN } from '@coral-xyz/anchor'
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog'
+import { Button } from '../ui/button'
+import { Input } from '../ui/input'
+import { Label } from '../ui/label'
+import { useAnchorProvider } from '../../config/useAnchorProvider'
+import { USDC_MINT, USDC_DECIMALS, explorerTxUrl } from '../../config/solana'
+import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
 
 interface DepositUsdcModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  vaultPda: PublicKey;
-  vaultTokenAccount: PublicKey;
-  onSuccess?: () => void;
+  isOpen: boolean
+  onClose: () => void
+  vaultPda: PublicKey
+  vaultTokenAccount: PublicKey
+  onSuccess?: () => void
 }
 
 /** Parses a decimal USDC string into base units without floating point rounding. */
 function toBaseUnits(value: string): BN | null {
-  const trimmed = value.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  const [whole, frac = ''] = trimmed.split('.');
-  if (frac.length > USDC_DECIMALS) return null;
-  const units = new BN(whole + frac.padEnd(USDC_DECIMALS, '0'));
-  return units.isZero() ? null : units;
+  const trimmed = value.trim()
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null
+  const [whole, frac = ''] = trimmed.split('.')
+  if (frac.length > USDC_DECIMALS) return null
+  const units = new BN(whole + frac.padEnd(USDC_DECIMALS, '0'))
+  return units.isZero() ? null : units
 }
 
 export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount, onSuccess }: DepositUsdcModalProps) {
-  const { program, provider } = useAnchorProvider();
-  const [amount, setAmount] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { program, provider } = useAnchorProvider()
+  const [amount, setAmount] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!program || !provider) return;
+    e.preventDefault()
+    if (!program || !provider) return
 
-    const units = toBaseUnits(amount);
+    const units = toBaseUnits(amount)
     if (!units) {
-      toast.error(`Enter a valid USDC amount (max ${USDC_DECIMALS} decimals).`);
-      return;
+      toast.error(`Enter a valid USDC amount (max ${USDC_DECIMALS} decimals).`)
+      return
     }
 
-    const depositor = provider.wallet.publicKey;
-    const depositorTokenAccount = getAssociatedTokenAddressSync(USDC_MINT, depositor);
+    const depositor = provider.wallet.publicKey
+    const depositorTokenAccount = getAssociatedTokenAddressSync(USDC_MINT, depositor)
 
-    setIsSubmitting(true);
-    const toastId = toast.loading('Depositing USDC...');
+    setIsSubmitting(true)
+    const toastId = toast.loading('Depositing USDC...')
     try {
-      const info = await provider.connection.getAccountInfo(depositorTokenAccount);
+      const info = await provider.connection.getAccountInfo(depositorTokenAccount)
       if (!info) {
         toast.error('You have no Devnet USDC token account. Get test USDC at faucet.circle.com (Solana Devnet).', {
           id: toastId,
-        });
-        return;
+        })
+        return
       }
-      const bal = await provider.connection.getTokenAccountBalance(depositorTokenAccount);
+      const bal = await provider.connection.getTokenAccountBalance(depositorTokenAccount)
       if (new BN(bal.value.amount).lt(units)) {
-        toast.error(`Insufficient USDC. Wallet balance: ${bal.value.uiAmountString} USDC`, { id: toastId });
-        return;
+        toast.error(`Insufficient USDC. Wallet balance: ${bal.value.uiAmountString} USDC`, { id: toastId })
+        return
       }
 
       const sig = await program.methods
@@ -72,22 +72,22 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
           vault: vaultPda,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
-        .rpc();
+        .rpc()
 
       toast.success('Deposit confirmed!', {
         id: toastId,
         action: { label: 'View', onClick: () => window.open(explorerTxUrl(sig), '_blank') },
-      });
-      setAmount('');
-      onSuccess?.();
-      onClose();
+      })
+      setAmount('')
+      onSuccess?.()
+      onClose()
     } catch (error: unknown) {
-      console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Deposit failed', { id: toastId });
+      console.error(error)
+      toast.error(error instanceof Error ? error.message : 'Deposit failed', { id: toastId })
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -145,5 +145,5 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
         </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

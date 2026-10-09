@@ -1,11 +1,12 @@
-import * as React from "react"
+import * as React from 'react'
 
-export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "default" | "secondary" | "destructive" | "outline"
-}
+export type BadgeProps = React.HTMLAttributes<HTMLDivElement>
 
-export function Badge({ className = "", variant = "default", ...props }: BadgeProps) {
+export function Badge({ className = '', ...props }: BadgeProps) {
   return (
-    <div className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${className}`} {...props} />
+    <div
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${className}`}
+      {...props}
+    />
   )
 }

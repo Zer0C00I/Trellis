@@ -3,7 +3,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Menu, X, Shield } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { ClusterUiSelect } from './cluster/cluster-ui'
 import { WalletButton } from '@/components/solana/wallet-button'
 
@@ -22,7 +22,13 @@ export function AppHeader({ links = [] }: { links: { label: string; path: string
       <div className="mx-auto flex justify-between items-center max-w-6xl">
         <div className="flex items-center gap-4">
           <Link className="flex items-center gap-2 hover:opacity-80 transition-opacity" href="/">
-            <Image src="/logo.png" alt="Trellis" width={240} height={80} className="h-20 w-auto -my-6 invert mix-blend-screen" />
+            <Image
+              src="/logo.png"
+              alt="Trellis"
+              width={240}
+              height={80}
+              className="h-20 w-auto -my-6 invert mix-blend-screen"
+            />
           </Link>
           <div className="hidden md:flex items-center ml-4">
             <ul className="flex gap-4 flex-nowrap items-center">
@@ -76,4 +82,3 @@ export function AppHeader({ links = [] }: { links: { label: string; path: string
     </header>
   )
 }
-

@@ -16,9 +16,7 @@ export function AppLayout({
     <div className="flex flex-col min-h-screen bg-black bg-[url('/bg-trellis.jpg')] bg-cover bg-center bg-fixed font-sans selection:bg-blue-500/30 selection:text-blue-200">
       <AppHeader links={links} />
       <main className="flex-grow container mx-auto p-4 md:p-8">
-        <ClusterChecker>
-          {children}
-        </ClusterChecker>
+        <ClusterChecker>{children}</ClusterChecker>
       </main>
       <AppFooter />
     </div>
