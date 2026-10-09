@@ -935,7 +935,27 @@ pub fn run() {
 Run: `cargo fmt -p family-app && cargo test -p family-app 2>&1 | grep "test result" | head -1 && cargo clippy -p family-app --all-targets -- -D warnings 2>&1 | tail -3 && cargo check --workspace 2>&1 | tail -1`
 Expected: `test result: ok. 2 passed`, no clippy output, and the workspace check finishes. The first build compiles the whole Tauri tree and takes a few minutes.
 
-Then prove no existing package was bumped: `git diff -- Cargo.lock | grep -E "^-" | grep -v "^---" | head`. Expected: no output (the lock file only gained packages). If a line appears, a pre-existing package changed version: stop and investigate before committing.
+Then prove no existing package was bumped by comparing PACKAGE SETS, not lines (a plain `git diff` shows rewritten dependency entries whenever Tauri adds a second version of a crate the workspace already had, for example `"jni"` becoming `"jni 0.22.4"`; that is expected and harmless):
+
+```bash
+python3 - <<'EOF'
+import subprocess, re
+def pkgs(text):
+    out, name = set(), None
+    for line in text.splitlines():
+        m = re.match(r'name = "(.+)"', line)
+        if m: name = m.group(1)
+        m = re.match(r'version = "(.+)"', line)
+        if m and name: out.add((name, m.group(1))); name = None
+    return out
+old = pkgs(subprocess.run(['git', 'show', 'HEAD:Cargo.lock'], capture_output=True, text=True).stdout)
+new = pkgs(open('Cargo.lock').read())
+print('removed or changed:', sorted(old - new))
+print('added:', len(new - old))
+EOF
+```
+
+Expected: `removed or changed: []` and roughly 160 added. If any pre-existing (name, version) pair is listed, a package changed version: stop and investigate before committing.
 
 - [ ] **Step 6: Commit (including `Cargo.lock`)**
 
