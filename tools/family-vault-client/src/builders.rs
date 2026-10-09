@@ -33,7 +33,8 @@ pub fn build_initialize_vault_instruction(
 ) -> Instruction {
     let (vault, _) = vault_pda(program_id, owner, is_pool);
     let (beneficiary_list, _) = beneficiary_list_pda(program_id, &vault);
-    let vault_token_account = spl_associated_token_account::get_associated_token_address(&vault, mint);
+    let vault_token_account =
+        spl_associated_token_account::get_associated_token_address(&vault, mint);
 
     let accounts = family_vault::accounts::InitializeVault {
         payer: to_anchor(*payer),
@@ -51,7 +52,11 @@ pub fn build_initialize_vault_instruction(
     Instruction {
         program_id: *program_id,
         accounts: to_client_metas(&accounts),
-        data: family_vault::instruction::InitializeVault { is_pool, daily_limit }.data(),
+        data: family_vault::instruction::InitializeVault {
+            is_pool,
+            daily_limit,
+        }
+        .data(),
     }
 }
 
@@ -309,13 +314,20 @@ mod tests {
         // payer and owner must both sign; the vault/beneficiary_list/ATA
         // accounts are derived, not passed in, so this also proves the
         // builder computed them rather than requiring the caller to.
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(2) && m.is_signer));
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(3) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(2) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(3) && m.is_signer));
     }
 
     #[test]
     fn initialize_vault_derives_different_vaults_for_pool_and_personal() {
-        let pool = build_initialize_vault_instruction(&program_id(), &key(2), &key(3), &key(4), true, 0);
+        let pool =
+            build_initialize_vault_instruction(&program_id(), &key(2), &key(3), &key(4), true, 0);
         let personal =
             build_initialize_vault_instruction(&program_id(), &key(2), &key(3), &key(4), false, 0);
         let (pool_vault, _) = vault_pda(&program_id(), &key(3), true);
@@ -329,16 +341,23 @@ mod tests {
     fn initialize_approvers_requires_only_payer_to_sign() {
         let vault = key(3);
         let ix = build_initialize_approvers_instruction(&program_id(), &key(2), &vault);
-        assert_eq!(ix.data, family_vault::instruction::InitializeApprovers {}.data());
+        assert_eq!(
+            ix.data,
+            family_vault::instruction::InitializeApprovers {}.data()
+        );
         let (approvers, _) = approvers_pda(&program_id(), &vault);
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(2) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(2) && m.is_signer));
         assert!(ix.accounts.iter().any(|m| m.pubkey == approvers));
     }
 
     #[test]
     fn add_trusted_approver_omits_existing_approver_when_none() {
         let vault = key(3);
-        let ix = build_add_trusted_approver_instruction(&program_id(), &key(2), &vault, &key(9), None);
+        let ix =
+            build_add_trusted_approver_instruction(&program_id(), &key(2), &vault, &key(9), None);
         assert_eq!(
             ix.data,
             family_vault::instruction::AddTrustedApprover {
@@ -364,7 +383,10 @@ mod tests {
             &key(9),
             Some(key(5)),
         );
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(5) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(5) && m.is_signer));
         assert_eq!(ix.accounts.iter().filter(|m| m.is_signer).count(), 2);
     }
 
@@ -404,8 +426,14 @@ mod tests {
             }
             .data()
         );
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(6) && m.is_signer));
-        assert!(ix.accounts.iter().any(|m| m.pubkey == key(7) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(6) && m.is_signer));
+        assert!(ix
+            .accounts
+            .iter()
+            .any(|m| m.pubkey == key(7) && m.is_signer));
     }
 
     #[test]
@@ -413,9 +441,18 @@ mod tests {
         let vault = key(3);
         let vault_token_account = key(10);
         let mint = key(4);
-        let ix =
-            build_deposit_instruction(&program_id(), &key(2), &vault, &vault_token_account, &mint, 500);
-        assert_eq!(ix.data, family_vault::instruction::Deposit { amount: 500 }.data());
+        let ix = build_deposit_instruction(
+            &program_id(),
+            &key(2),
+            &vault,
+            &vault_token_account,
+            &mint,
+            500,
+        );
+        assert_eq!(
+            ix.data,
+            family_vault::instruction::Deposit { amount: 500 }.data()
+        );
         let depositor_ata =
             spl_associated_token_account::get_associated_token_address(&key(2), &mint);
         assert!(ix.accounts.iter().any(|m| m.pubkey == depositor_ata));
@@ -437,7 +474,10 @@ mod tests {
             &recipient,
             250,
         );
-        assert_eq!(ix.data, family_vault::instruction::Withdraw { amount: 250 }.data());
+        assert_eq!(
+            ix.data,
+            family_vault::instruction::Withdraw { amount: 250 }.data()
+        );
         let recipient_ata =
             spl_associated_token_account::get_associated_token_address(&recipient, &mint);
         assert!(ix.accounts.iter().any(|m| m.pubkey == recipient_ata));
@@ -450,11 +490,31 @@ mod tests {
         let vault = key(3);
         let mint = key(4);
         let recipient = key(9);
-        let a = build_request_withdrawal_instruction(&program_id(), &key(2), &vault, &mint, &recipient, 100, 0);
-        let b = build_request_withdrawal_instruction(&program_id(), &key(2), &vault, &mint, &recipient, 100, 1);
+        let a = build_request_withdrawal_instruction(
+            &program_id(),
+            &key(2),
+            &vault,
+            &mint,
+            &recipient,
+            100,
+            0,
+        );
+        let b = build_request_withdrawal_instruction(
+            &program_id(),
+            &key(2),
+            &vault,
+            &mint,
+            &recipient,
+            100,
+            1,
+        );
         assert_eq!(
             a.data,
-            family_vault::instruction::RequestWithdrawal { amount: 100, nonce: 0 }.data()
+            family_vault::instruction::RequestWithdrawal {
+                amount: 100,
+                nonce: 0
+            }
+            .data()
         );
         let (pending_a, _) = request_pda(&program_id(), &vault, 0);
         let (pending_b, _) = request_pda(&program_id(), &vault, 1);
@@ -478,7 +538,10 @@ mod tests {
             &recipient,
             7,
         );
-        assert_eq!(ix.data, family_vault::instruction::ApproveWithdrawal {}.data());
+        assert_eq!(
+            ix.data,
+            family_vault::instruction::ApproveWithdrawal {}.data()
+        );
         let (pending, _) = request_pda(&program_id(), &vault, 7);
         let (approvers, _) = approvers_pda(&program_id(), &vault);
         assert!(ix.accounts.iter().any(|m| m.pubkey == pending));

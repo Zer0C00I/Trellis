@@ -184,10 +184,13 @@ family-app instead discovers, on every launch (or refresh), every vault
 its pubkey participates in:
 
 ```
-getProgramAccounts(family_vault_program_id, filters: [
-  memcmp(offset of BeneficiaryList.entries[].address, == my_pubkey),
-  memcmp(offset of TrustedApprovers.entries[], == my_pubkey),
-])
+for slot in 0..MAX_BENEFICIARIES:   // 10 calls
+  getProgramAccounts(program_id, [dataSize(BeneficiaryList::SPACE),
+                                  memcmp(offset(entries[slot].address), my_pubkey)])
+for slot in 0..MAX_APPROVERS:       // 5 calls
+  getProgramAccounts(program_id, [dataSize(TrustedApprovers::SPACE),
+                                  memcmp(offset(entries[slot]), my_pubkey)])
+merge and dedupe the `vault` field of every match
 ```
 
 This is architecturally already multi-vault-capable — one pubkey can

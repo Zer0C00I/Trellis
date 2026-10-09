@@ -1,7 +1,7 @@
 //! Everyday bank-style actions, each a thin RPC-send/sign wrapper around
 //! one of `family_vault_client::builders`' pure instruction builders.
-//! Mirrors `admin-cli`'s command set exactly (see that tool's `cmd_*`
-//! functions) but returns `Result` instead of printing and calling
+//! Covers the same everyday commands as `admin-cli` (see that tool's
+//! `cmd_*` functions), minus owner rotation, but returns `Result` instead of printing and calling
 //! `std::process::exit` — this is a library a future UI calls into, not a
 //! CLI. Owner-rotation actions are out of scope for the MVP (see the
 //! family-app design spec) and are not here.
