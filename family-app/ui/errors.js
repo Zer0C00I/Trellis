@@ -11,7 +11,7 @@ function safeString(v) {
   }
 }
 
-export function normalizeError(e) {
+function normalize(e) {
   if (
     e && typeof e === 'object' &&
     typeof e.kind === 'string' && typeof e.message === 'string' && e.message !== ''
@@ -26,4 +26,12 @@ export function normalizeError(e) {
     details = 'unknown error';
   }
   return { kind: 'internal', message: DEFAULT_MESSAGE, details };
+}
+
+export function normalizeError(e) {
+  try {
+    return normalize(e);
+  } catch {
+    return { kind: 'internal', message: DEFAULT_MESSAGE, details: 'unknown error' };
+  }
 }

@@ -5,7 +5,8 @@ const ALLOWED = new Set([
   'maxlength', 'value', 'selected', 'checked', 'disabled', 'name', 'for', 'href',
   'role', 'title', 'lang', 'hidden',
 ]);
-const SAFE_HREF = /^(#|\/|https?:\/\/)/;
+const SAFE_HREF = /^(#|\/([^/\\\t\r\n]|$)|https?:\/\/)/;
+const CONTROL = /[\t\r\n]/;
 
 export function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -19,7 +20,7 @@ export function h(tag, props = {}, ...children) {
     if (!ALLOWED.has(key) && !key.startsWith('aria-') && !key.startsWith('data-')) {
       throw new TypeError(`attribute not allowed: ${key}`);
     }
-    if (key === 'href' && !SAFE_HREF.test(String(value))) {
+    if (key === 'href' && (CONTROL.test(String(value)) || !SAFE_HREF.test(String(value)))) {
       throw new TypeError(`attribute href has an unsafe value`);
     }
     if (key === 'class') el.className = value;

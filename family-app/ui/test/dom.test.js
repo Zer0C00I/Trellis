@@ -80,3 +80,12 @@ test('clear empties the element', () => {
   assert.equal(clear(el), el);
   assert.equal(el.children.length, 0);
 });
+
+test('href: protocol-relative and control-character tricks are rejected', () => {
+  for (const bad of ['//evil.example', '/\\evil.example', '/\t/evil', '/\n/evil', '/\r/evil', 'https://x\n', 'java\tscript:x', '#a\tb']) {
+    assert.throws(() => h('a', { href: bad }), TypeError, JSON.stringify(bad));
+  }
+  for (const ok of ['/', '/x', '/x/y', '#/home', 'https://example.com/a']) {
+    assert.equal(h('a', { href: ok }).attrs.href, ok);
+  }
+});

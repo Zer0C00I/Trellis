@@ -52,3 +52,20 @@ test('pairing input: whitespace in code, case-insensitive prefix, payload, lengt
 test('ROUTES is frozen', () => {
   assert.ok(Object.isFrozen(ROUTES));
 });
+
+test('normalizeError never throws, even on throwing getters and proxies', () => {
+  const trap = () => { throw new Error('trap'); };
+  const proxy = new Proxy({}, { get: trap, has: trap, getPrototypeOf: trap, ownKeys: trap, getOwnPropertyDescriptor: trap });
+  const cases = [
+    { kind: 'k', message: 'm', get details() { throw 1; } },
+    { get kind() { throw 1; }, message: 'm' },
+    { kind: 'k', get message() { throw 1; } },
+    proxy,
+  ];
+  for (const c of cases) {
+    const e = normalizeError(c);
+    assert.equal(e.kind, 'internal');
+    assert.equal(e.details, 'unknown error');
+    assert.ok(e.message.length > 0);
+  }
+});
