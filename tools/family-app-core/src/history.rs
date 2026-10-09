@@ -155,8 +155,8 @@ pub fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind {
 /// vault state and is skipped entirely.
 pub fn fetch_history(
     rpc: &RpcClient,
-    vault: &Pubkey,
     program_id: &Pubkey,
+    vault: &Pubkey,
     limit: usize,
 ) -> Result<Vec<HistoryEntry>, String> {
     if limit == 0 {
@@ -398,7 +398,7 @@ mod tests {
             .expect("set HISTORY_TEST_VAULT to a vault pubkey with real transaction history")
             .parse()
             .unwrap();
-        let entries = fetch_history(&rpc, &vault, &program_id, 20).unwrap();
+        let entries = fetch_history(&rpc, &program_id, &vault, 20).unwrap();
         println!("found {} entries: {entries:?}", entries.len());
         assert!(!entries.is_empty());
     }

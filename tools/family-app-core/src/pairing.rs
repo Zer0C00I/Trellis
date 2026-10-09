@@ -12,7 +12,7 @@ use std::time::Duration;
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Manager, Peripheral};
 use family_vault_client::pairing::{
-    decode_qr_payload, encode_frame, PairingRequest, PAIRING_CHARACTERISTIC_UUID_U128,
+    decode_qr_payload, encode_frame, FrameError, PairingRequest, PAIRING_CHARACTERISTIC_UUID_U128,
     SERVICE_UUID_U128,
 };
 use solana_pubkey::Pubkey;
@@ -66,6 +66,16 @@ impl fmt::Display for PairingError {
 
 impl std::error::Error for PairingError {}
 
+fn bad_name_reason(e: FrameError) -> &'static str {
+    match e {
+        FrameError::NameEmpty => "the name is empty",
+        FrameError::NameTooLong => "the name is too long",
+        FrameError::NameInvalid => "the name contains characters that are not allowed",
+        FrameError::NameNotUtf8 => "the name is not valid text",
+        _ => "the pairing request is invalid",
+    }
+}
+
 fn ble(e: impl fmt::Display) -> PairingError {
     PairingError::Ble(e.to_string())
 }
@@ -85,7 +95,16 @@ async fn step<T, E: fmt::Display>(
 /// Pairs this app's identity with a kiosk in first-run setup. Blocks the
 /// calling thread for up to roughly a minute; safe to call from any thread,
 /// including one that is inside an async runtime (the work runs on its own
-/// short-lived thread and runtime).
+/// short-lived thread and runtime). A UI must call it from a worker thread
+/// (for example Tauri's `spawn_blocking`), never from its event loop.
+///
+/// Security note: the kiosk is recognised by its advertised service UUID
+/// only, and the frame (one-time secret, public key, name) is written in the
+/// clear to the first device that answers. Anyone in radio range during
+/// pairing who advertises that UUID could receive it. That is acceptable
+/// because pairing happens physically next to the kiosk, the secret is
+/// single-use, and the kiosk verifies it and rotates it after failed
+/// attempts.
 ///
 /// `qr_text` is the text scanned from the kiosk's QR code. A bad code is
 /// reported before any Bluetooth activity.
@@ -96,7 +115,7 @@ pub fn pair_with_kiosk(qr_text: &str, name: &str, my_pubkey: Pubkey) -> Result<(
         pubkey: my_pubkey,
         name: name.to_string(),
     })
-    .map_err(|e| PairingError::BadName(format!("{e:?}")))?;
+    .map_err(|e| PairingError::BadName(bad_name_reason(e).to_string()))?;
 
     // A dedicated thread has no ambient tokio context, so `block_on` cannot
     // panic with "cannot start a runtime from within a runtime" even if the
@@ -195,7 +214,7 @@ async fn talk_to_kiosk(kiosk: &Peripheral, frame: &[u8]) -> Result<(), PairingEr
     let characteristic = kiosk
         .characteristics()
         .into_iter()
-        .find(|c| c.uuid == PAIRING_CHARACTERISTIC_UUID)
+        .find(|c| c.service_uuid == SERVICE_UUID && c.uuid == PAIRING_CHARACTERISTIC_UUID)
         .ok_or_else(|| ble("the device has no pairing characteristic"))?;
     // WithResponse: the kiosk answers a wrong/expired code with an ATT
     // error, which btleplug returns as an `Err` here.
