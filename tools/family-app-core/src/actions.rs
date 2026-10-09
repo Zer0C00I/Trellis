@@ -68,10 +68,9 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
     let Some(status) = status else {
         return Poll::Pending;
     };
-    if let Some(err) = status.err {
-        // The transaction executed and failed: it definitely did not take effect.
-        return Poll::Failed(err.to_string());
-    }
+    // An outcome (success or failure) is only final once it is `confirmed`:
+    // at `processed` the block may sit on a fork that gets dropped, and the
+    // same signature could then still land with a different result.
     let confirmed = match status.confirmation_status {
         Some(
             TransactionConfirmationStatus::Confirmed | TransactionConfirmationStatus::Finalized,
@@ -80,6 +79,14 @@ fn classify_status(status: Option<TransactionStatus>) -> Poll {
         // Older nodes omit confirmation_status; `None` confirmations means rooted.
         None => status.confirmations.is_none_or(|c| c > 1),
     };
+    if let Some(err) = status.err {
+        return if confirmed {
+            // The transaction executed and failed: it did not take effect.
+            Poll::Failed(err.to_string())
+        } else {
+            Poll::Pending
+        };
+    }
     if confirmed {
         Poll::Confirmed
     } else {
@@ -534,6 +541,33 @@ mod tests {
             },
             err,
             confirmation_status,
+        }
+    }
+
+    #[test]
+    fn an_error_at_processed_is_not_final_yet() {
+        // A failed result on a block that may be dropped says nothing yet: the
+        // same signature could still land successfully.
+        let st = status(
+            Some(solana_transaction::TransactionError::AccountInUse),
+            Some(TransactionConfirmationStatus::Processed),
+            Some(0),
+        );
+        assert_eq!(classify_status(Some(st)), Poll::Pending);
+    }
+
+    #[test]
+    fn an_error_at_confirmed_or_finalized_is_final() {
+        for level in [
+            TransactionConfirmationStatus::Confirmed,
+            TransactionConfirmationStatus::Finalized,
+        ] {
+            let st = status(
+                Some(solana_transaction::TransactionError::AccountInUse),
+                Some(level),
+                Some(5),
+            );
+            assert!(matches!(classify_status(Some(st)), Poll::Failed(_)));
         }
     }
 
