@@ -60,27 +60,27 @@ export default function FeaturesPage() {
           >
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-500 mb-6 block">
-                [ BLOCK: 11048A ] INHERITANCE
+                [ BLOCK: 11048A ] PROGRAMMABLE INHERITANCE
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Time-locked transfers and dead-man&apos;s switches.</h2>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Your heirs, written into the program.</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Trellis continuously monitors your on-chain heartbeat. If you stop interacting with your vault for a predefined period, your assets automatically begin a time-locked transition to your designated beneficiaries.
+                Name up to ten beneficiaries. The vault pays them and no one else. Every new name sits in a 48-hour cooldown before it can receive funds. When ownership must change hands, guardians open a 72-hour time-lock that can be cancelled before it executes.
               </p>
               <ul className="space-y-4 text-slate-700 font-medium">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Fully automated, trustless execution</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Customizable heartbeat periods (e.g. 1 year)</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Zero probate delays, zero legal friction</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Withdrawals only to registered beneficiaries</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 48-hour cooldown on every new beneficiary</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Guardian-led ownership handover, 72-hour time-lock</li>
               </ul>
             </div>
             <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
                <div className="absolute inset-0 opacity-[0.03] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-black to-transparent bg-[length:20px_20px]" style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)' }}></div>
                <div className="bg-white border border-emerald-500/20 shadow-xl rounded-2xl p-6 w-full max-w-sm relative z-10">
-                  <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Heartbeat Status</div>
-                  <div className="text-4xl font-mono text-emerald-500 mb-2">ACTIVE</div>
+                  <div className="text-xs font-mono text-slate-400 mb-4 uppercase">New Beneficiary</div>
+                  <div className="text-4xl font-mono text-emerald-500 mb-2">COOLDOWN</div>
                   <div className="w-full bg-slate-100 h-2 rounded-full mb-4">
                     <div className="bg-emerald-500 h-full rounded-full w-[85%]"></div>
                   </div>
-                  <div className="text-xs text-slate-500 font-medium">Time until unlock: 342 Days</div>
+                  <div className="text-xs text-slate-500 font-medium">Payable in 31h · 48h cooldown</div>
                </div>
             </div>
           </motion.div>
@@ -95,31 +95,31 @@ export default function FeaturesPage() {
           >
             <div className="order-2 md:order-1 bg-[#050505] p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
                <div className="bg-black border border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.15)] rounded-2xl p-6 w-full max-w-sm relative z-10">
-                  <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Governance Quorum</div>
+                  <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Over-Limit Withdrawal</div>
                   <div className="flex justify-between items-end mb-4">
-                    <div className="text-4xl font-mono text-blue-400">3<span className="text-xl text-slate-600">/5</span></div>
-                    <div className="text-xs text-blue-400 font-bold px-2 py-1 bg-blue-500/20 rounded">THRESHOLD MET</div>
+                    <div className="text-4xl font-mono text-blue-400">1<span className="text-xl text-slate-600"> sig</span></div>
+                    <div className="text-xs text-blue-400 font-bold px-2 py-1 bg-blue-500/20 rounded">APPROVED</div>
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Wife&apos;s Ledger</span></div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Law Firm Kiosk</span></div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Trustee Mobile</span></div>
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-700"></div><span className="text-xs font-mono text-slate-500">Cold Storage Vault (Pending)</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Guardian · Daughter</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Guardian · Family Lawyer</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Guardian · Accountant</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-700"></div><span className="text-xs font-mono text-slate-500">Owner (cannot approve)</span></div>
                   </div>
                </div>
             </div>
             <div className="order-1 md:order-2">
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-blue-500 mb-6 block">
-                [ BLOCK: 22849F ] MULTI-SIG
+                [ BLOCK: 22849F ] MULTI-SIG GUARDIAN APPROVALS
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">M-of-N Guardians for supreme fault tolerance.</h2>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">No single key moves serious money.</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Never rely on a single point of failure. Assign recovery shards to family members, fiduciaries, or cold storage devices. If a key is lost, a threshold of Guardians can restore access.
+                Appoint up to five guardians: family, a lawyer, an accountant. The owner can never be one. Withdrawals over the daily limit wait on-chain until a guardian signs. Fast-tracking a new beneficiary takes two distinct guardian signatures.
               </p>
               <ul className="space-y-4 text-slate-700 font-medium">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Fully customizable M-of-N rules (e.g. 3 of 5)</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Geographically distribute your trust</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Revoke or rotate Guardians at any time</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Up to five guardians per vault</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Guardian sign-off on every over-limit withdrawal</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Two signatures to skip the beneficiary cooldown</li>
               </ul>
             </div>
           </motion.div>
@@ -134,16 +134,16 @@ export default function FeaturesPage() {
           >
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-purple-500 mb-6 block">
-                [ BLOCK: 39482C ] SPENDING LOGIC
+                [ BLOCK: 39482C ] DAILY USDC SPENDING LIMITS
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Algorithmic allowances and daily limits.</h2>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">A hard ceiling on every day.</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Create trust structures that automatically dispense funds or strictly enforce daily withdrawal caps. Any transaction attempting to exceed the limit is programmatically blocked at the RPC level.
+                Set a daily USDC limit. The Solana program enforces it, not a server, and resets it every UTC day. A withdrawal that would cross the line does not fail silently. It becomes a pending request for a guardian to approve.
               </p>
               <ul className="space-y-4 text-slate-700 font-medium">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Stop rapid asset draining instantly</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Configure monthly allowances for beneficiaries</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Require multi-sig overrides for large transfers</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Caps how fast a vault can be drained</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Resets automatically every UTC day</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Over-limit amounts routed to guardian approval</li>
               </ul>
             </div>
             <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
@@ -159,48 +159,6 @@ export default function FeaturesPage() {
                     TX Blocked: Limit Exceeded
                   </div>
                </div>
-            </div>
-          </motion.div>
-
-          {/* Feature 4: DeFi Composability */}
-          <motion.div 
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.8 }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center"
-          >
-            <div className="order-2 md:order-1 bg-[#050505] p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
-               <div className="bg-black border border-amber-500/30 shadow-[0_0_30px_rgba(245,158,11,0.15)] rounded-2xl p-6 w-full max-w-sm relative z-10">
-                  <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Estate Yield Accrual</div>
-                  <div className="flex justify-between items-end mb-4">
-                    <div className="text-4xl font-mono text-amber-400">4.82%<span className="text-xl text-slate-600"> APY</span></div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                      <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px] text-blue-400 font-bold">SOL</div><span className="text-sm font-mono text-white">Staked SOL</span></div>
-                      <div className="text-sm font-mono text-emerald-400">+ 7.2% APY</div>
-                    </div>
-                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                      <div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px] text-emerald-400 font-bold">USDC</div><span className="text-sm font-mono text-white">Lending Pool</span></div>
-                      <div className="text-sm font-mono text-emerald-400">+ 3.5% APY</div>
-                    </div>
-                  </div>
-               </div>
-            </div>
-            <div className="order-1 md:order-2">
-              <span className="text-xs font-mono font-bold uppercase tracking-widest text-amber-500 mb-6 block">
-                [ BLOCK: 83991C ] COMPOSABILITY
-              </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Yield-bearing estates plugged into DeFi.</h2>
-              <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Your vault isn&apos;t just cold storage. Trellis natively plugs into the Solana DeFi ecosystem. Let your generational wealth safely earn yield through staking and over-collateralized lending while it sits securely locked in your trust.
-              </p>
-              <ul className="space-y-4 text-slate-700 font-medium">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Native liquid staking integration</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Auto-compound wealth for beneficiaries</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Strict whitelists block interaction with risky protocols</li>
-              </ul>
             </div>
           </motion.div>
 

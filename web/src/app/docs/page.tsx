@@ -7,15 +7,15 @@ import { useState } from 'react';
 function CodeSnippet() {
   const [copied, setCopied] = useState(false);
 
-  const code = `// programs/family-vault/src/state/vault.rs
+  const code = `// programs/family-vault/src/state.rs
 #[account]
 pub struct Vault {
     pub owner: Pubkey,
     pub vault_token_account: Pubkey,
     pub daily_limit: u64,
     pub spent_today: u64,
-    pub last_spend_reset: i64,
-    pub guardian_threshold: u8,
+    pub last_reset_day: i64,
+    pub is_pool: bool,
 }`;
 
   const handleCopy = () => {
@@ -38,15 +38,15 @@ pub struct Vault {
       </button>
       <div className="overflow-x-auto">
         <pre className="text-slate-300">
-          <span className="text-slate-500">{'// programs/family-vault/src/state/vault.rs'}</span>{"\n"}
+          <span className="text-slate-500">{'// programs/family-vault/src/state.rs'}</span>{"\n"}
           <span className="text-purple-400">#[account]</span>{"\n"}
           <span className="text-emerald-400">pub struct</span> <span className="text-amber-300">Vault</span> {"{"}{"\n"}
           {"    "}<span className="text-emerald-400">pub</span> owner: <span className="text-amber-300">Pubkey</span>,{"\n"}
           {"    "}<span className="text-emerald-400">pub</span> vault_token_account: <span className="text-amber-300">Pubkey</span>,{"\n"}
           {"    "}<span className="text-emerald-400">pub</span> daily_limit: <span className="text-amber-300">u64</span>,{"\n"}
           {"    "}<span className="text-emerald-400">pub</span> spent_today: <span className="text-amber-300">u64</span>,{"\n"}
-          {"    "}<span className="text-emerald-400">pub</span> last_spend_reset: <span className="text-amber-300">i64</span>,{"\n"}
-          {"    "}<span className="text-emerald-400">pub</span> guardian_threshold: <span className="text-amber-300">u8</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> last_reset_day: <span className="text-amber-300">i64</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> is_pool: <span className="text-amber-300">bool</span>,{"\n"}
           {"}"}
         </pre>
       </div>
@@ -86,8 +86,8 @@ export default function DocsPage() {
             <h4 className="text-xs font-bold uppercase tracking-widest text-emerald-500 mb-4">Hardware</h4>
             <ul className="space-y-3 text-sm font-medium">
               <li><Link href="#kiosk" className="text-slate-400 hover:text-white transition-colors">Trellis Kiosk Terminal</Link></li>
-              <li><Link href="#biometrics" className="text-slate-400 hover:text-white transition-colors">Biometric Authentication</Link></li>
-              <li><Link href="#nfc" className="text-slate-400 hover:text-white transition-colors">NFC Black Card Sync</Link></li>
+              <li><Link href="#pairing" className="text-slate-400 hover:text-white transition-colors">Family Pairing</Link></li>
+              <li><Link href="#onchain-rules" className="text-slate-400 hover:text-white transition-colors">On-Chain Rules</Link></li>
             </ul>
           </div>
 
@@ -155,31 +155,31 @@ export default function DocsPage() {
               The Trellis Kiosk Terminal
             </h2>
             <p className="text-lg text-slate-300 leading-loose font-light">
-              Trellis was engineered because browser-based crypto wallets are inherently vulnerable to malware, session hijacking, and phishing. Our flagship product is the <strong>Trellis Kiosk Terminal</strong>, a dedicated, air-gapped hardware device built for law firms, family offices, and wealth managers.
+              Browser wallets ask too much of the people who need protection most. The <strong>Trellis Kiosk Terminal</strong> is a dedicated touchscreen device for the vault holder: no browser, no seed phrase, no extensions. It does two things. It shows the balance, and it sends USDC to approved family.
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
               <div className="bg-[#080808] border border-white/10 p-8 rounded-2xl">
-                <h3 className="text-white font-bold text-xl mb-3">T-8492 Form Factor</h3>
+                <h3 className="text-white font-bold text-xl mb-3">One Screen, One Job</h3>
                 <p className="text-slate-400 text-sm leading-relaxed">
-                  A sleek, anodized aluminum chassis housing a 12.9&quot; high-resolution touchscreen. The device runs TrellisOS—a highly stripped-down, read-only Linux kernel designed strictly to communicate with the Solana RPC layer.
+                  Two wallets on screen: <em>My Wallet</em> and <em>Family Wallet</em>. Pick a recipient, pick an amount, confirm. Large type, no jargon, nothing to configure after setup.
                 </p>
               </div>
-              <div className="bg-[#080808] border border-white/10 p-8 rounded-2xl" id="biometrics">
-                <h3 className="text-white font-bold text-xl mb-3">Biometric TPM Enclave</h3>
+              <div className="bg-[#080808] border border-white/10 p-8 rounded-2xl" id="pairing">
+                <h3 className="text-white font-bold text-xl mb-3">Family Pairing</h3>
                 <p className="text-slate-400 text-sm leading-relaxed">
-                  The terminal utilizes a secure hardware enclave to process fingerprint scans. Biometric data never leaves the device; it is used locally to decrypt the master signing key required to approve multi-sig payload transactions on the blockchain.
+                  On first boot the kiosk shows a QR code and a fallback code. A relative scans it with the Trellis app and links over Bluetooth. The kiosk accepts only the code currently on its own screen.
                 </p>
               </div>
             </div>
 
-            <div className="bg-blue-900/10 border border-blue-500/20 p-8 rounded-2xl mt-8" id="nfc">
+            <div className="bg-blue-900/10 border border-blue-500/20 p-8 rounded-2xl mt-8" id="onchain-rules">
               <h3 className="text-blue-400 font-bold text-lg mb-3 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                NFC Black Card Sync
+                Same Rules, On-Chain
               </h3>
               <p className="text-slate-300 leading-relaxed font-light">
-                Every Trellis Kiosk comes paired with three Trellis Black Cards. These NFC-enabled physical cards act as physical 2FA markers. To authorize a withdrawal exceeding the daily limit, the primary executor must tap the Black Card on the terminal reader while providing biometric authorization.
+                The kiosk gets no special powers. Every send goes through the Solana program: registered beneficiaries only, inside the daily USDC limit. Anything over the limit becomes a pending request until a guardian signs from their own device.
               </p>
             </div>
           </motion.section>
@@ -199,7 +199,7 @@ export default function DocsPage() {
               Smart Contract Protocol
             </h2>
             <p className="text-lg text-slate-300 leading-loose font-light">
-              While the hardware ensures physical security, the logic is enforced entirely by our audited Anchor/Rust smart contracts deployed on Solana. The Kiosk merely acts as the interface. The Trellis protocol guarantees that trust rules are executed purely via mathematical consensus.
+              Every rule lives in one Anchor/Rust program on Solana. The kiosk and the web dashboard are interfaces only. Neither can move funds the program would refuse.
             </p>
             
             <h3 className="text-xl font-bold text-white mt-12 mb-4">Vault PDA State</h3>
@@ -209,14 +209,14 @@ export default function DocsPage() {
               <div id="multisig">
                 <h4 className="text-lg font-bold text-white mb-2">Guardian Multi-Sig Architecture</h4>
                 <p className="text-slate-400 leading-relaxed font-light">
-                  When a transaction exceeds the predefined limit (or during a beneficiary update), the transaction enters a pending state on-chain. It requires <code>m-of-n</code> cryptographic approvals from whitelisted Guardian pubkeys. Guardians can approve remotely via their own wallets, or directly through an authorized Trellis Kiosk.
+                  Each vault holds up to five guardian pubkeys in a <code>TrustedApprovers</code> account. The owner cannot be added. A withdrawal above the daily limit is stored as a <code>PendingWithdrawal</code> and executes only when a listed guardian signs <code>approve_withdrawal</code> from their own wallet. <code>add_beneficiary_urgent</code> skips the 48-hour cooldown but requires two distinct guardian signatures.
                 </p>
               </div>
 
               <div id="limits">
-                <h4 className="text-lg font-bold text-white mb-2">Mathematical Daily Limits</h4>
+                <h4 className="text-lg font-bold text-white mb-2">Daily USDC Spending Limits</h4>
                 <p className="text-slate-400 leading-relaxed font-light">
-                  Spending limits are not enforced by an API—they are verified against the Solana <code>Clock::get()?.unix_timestamp</code> in the smart contract. The contract checks if the requested withdrawal amount plus the <code>spent_today</code> exceeds the <code>daily_limit</code>. If 24 hours have passed since the <code>last_spend_reset</code>, the limit automatically resets.
+                  Spending limits are not enforced by an API—they are verified against the Solana <code>Clock::get()?.unix_timestamp</code> in the smart contract. The contract checks if the requested withdrawal amount plus the <code>spent_today</code> exceeds the <code>daily_limit</code>. The day index is <code>unix_timestamp / 86_400</code>. When it moves past <code>last_reset_day</code>, <code>spent_today</code> returns to zero, so the limit resets at every UTC midnight.
                 </p>
               </div>
             </div>
@@ -340,7 +340,7 @@ export default function DocsPage() {
                   </div>
                   <div className="md:w-2/3 border-t md:border-t-0 md:border-l border-emerald-500/20 pt-6 md:pt-0 md:pl-8">
                     <p className="text-slate-300 font-light text-sm mb-6">
-                      Air-gapped physical terminal for estate planners and law firms. Fiduciary-grade continuity with zero browser exposure.
+                      A dedicated family kiosk for the vault holder. No browser, no seed phrase, every rule enforced on-chain.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <ul className="space-y-3 text-xs text-slate-300">
@@ -350,7 +350,7 @@ export default function DocsPage() {
                         </li>
                         <li className="flex items-start gap-3">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1"></span>
-                          20x NFC Trellis Black Cards
+                          Up to 5 guardians per vault
                         </li>
                         <li className="flex items-start gap-3">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1"></span>

@@ -95,9 +95,9 @@ export default function Home() {
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-500 rounded-2xl flex items-center justify-center mb-8">
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                 </div>
-                <h3 className="text-blue-600 font-bold text-xl mb-4">No Identity Trail</h3>
+                <h3 className="text-blue-600 font-bold text-xl mb-4">Programmable Inheritance</h3>
                 <p className="text-base text-slate-600 leading-relaxed font-medium">
-                  Execute inheritance and withdrawal limits strictly on-chain without relying on centralized intermediaries or exposing any personal data.
+                  Name up to ten beneficiaries. Funds move to them and nowhere else. New names wait 48 hours before they can be paid. Ownership hands over only through a 72-hour guardian time-lock.
                 </p>
               </div>
             </div>
@@ -108,9 +108,9 @@ export default function Home() {
                 <div className="w-12 h-12 bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center mb-8">
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                 </div>
-                <h3 className="text-blue-600 font-bold text-xl mb-4">M-of-N Guardians</h3>
+                <h3 className="text-blue-600 font-bold text-xl mb-4">Multi-Sig Guardian Approvals</h3>
                 <p className="text-base text-slate-600 leading-relaxed font-medium">
-                  Distribute recovery shards among a trusted network of family, attorneys, and cold wallets. Ensure continuous access even if a single key is lost.
+                  Appoint up to five guardians. The owner can never be one. Over-limit withdrawals need a guardian&apos;s signature. Fast-tracked beneficiaries need two.
                 </p>
               </div>
             </div>
@@ -121,9 +121,9 @@ export default function Home() {
                 <div className="w-12 h-12 bg-indigo-100 text-indigo-500 rounded-2xl flex items-center justify-center mb-8">
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
-                <h3 className="text-blue-600 font-bold text-xl mb-4">Time-Locked Inheritance</h3>
+                <h3 className="text-blue-600 font-bold text-xl mb-4">Daily USDC Spending Limits</h3>
                 <p className="text-base text-slate-600 leading-relaxed font-medium">
-                  Configure dead-man&apos;s switches and time-delayed asset unlocks to automate wealth transfer precisely when defined heartbeat conditions fail.
+                  Set a daily USDC ceiling. The program enforces it and resets it every UTC day. Anything above the line stops and waits for a guardian.
                 </p>
               </div>
             </div>
@@ -178,7 +178,7 @@ export default function Home() {
               The Trellis Terminal Kiosk.
             </h2>
             <p className="text-lg text-slate-400 font-light leading-relaxed mb-8">
-              We don&apos;t just rely on web browsers. The Trellis experience is anchored by our proprietary biometric Kiosk interface—a physical terminal designed for law firms, estate planners, and family offices to deploy and manage on-chain trusts with military-grade security.
+              No browser. No seed phrase. A dedicated touchscreen terminal with one job: show the balance and send to approved family. It pairs with a relative&apos;s phone via an on-screen QR code. Every transfer obeys the same on-chain limits and guardian rules.
             </p>
             <Link href="/docs#kiosk" className="inline-flex items-center gap-2 text-sm font-mono text-emerald-400 hover:text-emerald-300 transition-colors">
               Explore the Hardware Specs &rarr;
@@ -195,14 +195,14 @@ export default function Home() {
             <div className="space-y-6">
               <div className="bg-white/5 border border-white/10 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-white">Biometric Authentication</div>
-                  <div className="text-xs text-slate-400 mt-1">Awaiting fingerprint scan...</div>
+                  <div className="text-sm font-semibold text-white">Family Pairing</div>
+                  <div className="text-xs text-slate-400 mt-1">Scan the code on screen to link...</div>
                 </div>
                 <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"></div>
               </div>
               <div className="bg-white/5 border border-white/10 p-4 rounded-xl opacity-50">
-                <div className="text-sm font-semibold text-white">NFC Keycard Sync</div>
-                <div className="text-xs text-slate-400 mt-1">Insert Trellis Black Card</div>
+                <div className="text-sm font-semibold text-white">Daily Limit</div>
+                <div className="text-xs text-slate-400 mt-1">Within today&apos;s USDC limit</div>
               </div>
             </div>
           </div>

@@ -30,10 +30,10 @@ export default function HardwarePage() {
         <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-6 leading-tight">
             Zero browser exposure.<br />
-            Absolute physical security.
+            Absolute on-chain rules.
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
-            The Trellis Terminal is a custom-built, air-gapped kiosk designed strictly for law firms and estate planners managing high-value digital assets.
+            The Trellis Terminal is a dedicated touchscreen kiosk for the vault holder. It shows the balance and sends USDC to approved family. Nothing else.
           </p>
         </div>
       </section>
@@ -50,27 +50,27 @@ export default function HardwarePage() {
                 <div className="h-8 border-b border-white/10 flex justify-between items-center px-4 bg-white/5 text-[10px] font-mono text-slate-500">
                   <div>TRELLIS OS v2.1.0</div>
                   <div className="flex gap-4">
-                    <span className="text-emerald-500">AIR-GAPPED</span>
-                    <span>TPM SECURE</span>
+                    <span className="text-emerald-500">SOLANA DEVNET</span>
+                    <span>PAIRED</span>
                     <span>14:32</span>
                   </div>
                 </div>
                 {/* Main UI */}
                 <div className="flex-grow flex items-center justify-center relative p-8">
-                  {/* Subtle fingerprint graphic */}
+                  {/* Pairing graphic */}
                   <div className="w-32 h-32 border border-emerald-500/30 rounded-full flex items-center justify-center animate-[pulse_4s_ease-in-out_infinite]">
                     <div className="w-24 h-24 border border-emerald-500/50 rounded-full flex items-center justify-center">
                       <div className="w-16 h-16 bg-emerald-500/20 rounded-full blur-md"></div>
                     </div>
                   </div>
                   <div className="absolute bottom-16 text-center">
-                    <h3 className="text-white font-medium text-lg tracking-wide mb-2">Awaiting Biometric Authorization</h3>
-                    <p className="text-slate-500 font-mono text-xs uppercase tracking-widest">To sign transaction: Update Estate Beneficiary</p>
+                    <h3 className="text-white font-medium text-lg tracking-wide mb-2">Awaiting Guardian Approval</h3>
+                    <p className="text-slate-500 font-mono text-xs uppercase tracking-widest">Over daily limit · 250 USDC to Daughter</p>
                   </div>
                 </div>
               </div>
             </div>
-            {/* NFC Reader area */}
+            {/* Status light */}
             <div className="absolute -bottom-4 right-12 w-32 h-8 bg-black border border-white/10 rounded-t-xl flex justify-center pt-2">
               <div className="w-16 h-1 bg-emerald-500/50 rounded-full animate-pulse"></div>
             </div>
@@ -84,13 +84,13 @@ export default function HardwarePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-24">
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-500 mb-6 block">
-                [ BLOCK: 910283B4C ] SECURE ENCLAVE
+                [ BLOCK: 910283B4C ] KIOSK
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Why custom hardware?</h2>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Why a kiosk?</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Web browsers are inherently insecure. Extensions can be compromised, phishing links can drain wallets, and operating systems have massive attack surfaces. 
+                Browser wallets hand the most vulnerable user the most complex tool: extensions, seed phrases, and phishing links one tap away. 
                 <br /><br />
-                The Trellis Terminal runs a hardened, read-only Linux OS that only does one thing: sign transactions for the Trellis smart contracts.
+                The Trellis Terminal strips that away. Two screens, large type, one action: send to family. The Solana program enforces every rule underneath it.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -98,22 +98,22 @@ export default function HardwarePage() {
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center mb-6">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                 </div>
-                <h4 className="font-bold text-lg mb-2">Hardware TPM</h4>
-                <p className="text-sm text-slate-600">Keys are generated and stored inside a dedicated cryptographic co-processor. They cannot be extracted.</p>
+                <h4 className="font-bold text-lg mb-2">Programmable Inheritance</h4>
+                <p className="text-sm text-slate-600">The kiosk can only pay registered beneficiaries. New names wait 48 hours before they can receive funds.</p>
               </div>
               <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center mb-6">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
-                <h4 className="font-bold text-lg mb-2">Biometric + NFC</h4>
-                <p className="text-sm text-slate-600">Transactions require both a physical NFC Black Card and an authorized fingerprint scan to sign.</p>
+                <h4 className="font-bold text-lg mb-2">Daily USDC Spending Limits</h4>
+                <p className="text-sm text-slate-600">Sends stay under a daily USDC ceiling that the program enforces and resets every UTC day.</p>
               </div>
               <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center mb-6">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                 </div>
-                <h4 className="font-bold text-lg mb-2">Air-Gapped</h4>
-                <p className="text-sm text-slate-600">The terminal signs transactions offline and transmits them via encrypted QR codes or NFC to a broadcast node.</p>
+                <h4 className="font-bold text-lg mb-2">Multi-Sig Guardian Approvals</h4>
+                <p className="text-sm text-slate-600">Anything over the limit waits on-chain until a guardian signs from their own device.</p>
               </div>
               <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl">
                 <div className="w-10 h-10 bg-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center mb-6">

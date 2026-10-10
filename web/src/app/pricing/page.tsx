@@ -32,7 +32,7 @@ export default function PricingPage() {
             Transparent pricing for<br />generational security.
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
-            From free personal vaults to military-grade institutional hardware. Start today and upgrade as your digital estate grows.
+            From a free personal vault to a dedicated family kiosk. Start today and upgrade as your digital estate grows.
           </p>
         </div>
       </section>
@@ -133,7 +133,7 @@ export default function PricingPage() {
                 <div className="text-3xl font-mono tracking-tight mb-4 text-emerald-400">$9,600<span className="text-sm font-mono text-emerald-400/60">/yr</span></div>
                 
                 <p className="text-sm font-light text-blue-200 leading-relaxed mb-6 mt-6">
-                  Air-gapped physical terminal for estate planners and law firms. Fiduciary-grade continuity with zero browser exposure.
+                  A dedicated family kiosk for the vault holder. No browser, no seed phrase, every rule enforced on-chain.
                 </p>
               </div>
               <div className="mt-4 pt-6 border-t border-emerald-500/20">
@@ -144,8 +144,8 @@ export default function PricingPage() {
               <h4 className="text-lg font-medium text-white mb-6">What&apos;s included in the Institutional Tier:</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <ul className="space-y-4 text-sm text-blue-200">
-                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 1x Trellis Hardware Terminal (12.9&quot; touchscreen, biometric TPM, read-only Linux OS)</li>
-                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 5x NFC Black Cards for multi-sig approvals</li>
+                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 1x Trellis Kiosk Terminal (touchscreen, QR family pairing)</li>
+                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> Up to 5 guardians for multi-sig approvals</li>
                   <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> Software license for 1 estate/trust structure</li>
                   <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> Quarterly security audits & firmware updates</li>
                 </ul>
