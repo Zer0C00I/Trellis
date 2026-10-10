@@ -256,9 +256,7 @@ pub async fn open_family_account(
         let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
         let me = st.me();
-        let owned: Vec<_> = discover_owned_vaults(&st.rpc, &st.program_id, &me)?
-            .into_iter()
-            .collect();
+        let owned: Vec<_> = discover_owned_vaults(&st.rpc, &st.program_id, &me)?;
         let [pool, _personal] = owned_vault_addresses(&st.program_id, &me);
         if pool_already_open(&pool, &owned) {
             return Err(ErrorDto::new(
