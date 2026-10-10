@@ -20,7 +20,7 @@
 - **Untrusted text:** names and addresses come from the chain; the UI builds DOM with text nodes only (existing `dom.js`).
 - **Rust:** `unsafe_code = "deny"`, `dead_code = "deny"`; `cargo fmt -p family-app --check` and `cargo clippy -p family-app --all-targets -- -D warnings` clean.
 - **Commits:** work directly on `master`. Do not add attribution lines to commit messages. Never `git add` anything under `target/`, `node_modules/` or `family-app/src-tauri/gen/`. No task changes `Cargo.lock`.
-- **The app is not runnable between Task 2 and Task 3** (Rust already sends keys, the UI still expects sentences). Do not stop there; if work is split across sessions, finish Task 3 first.
+- **Tasks 2 and 3 land as one commit.** After Task 2 the app does not run (Rust sends keys, the UI still expects sentences), so Task 2 is checked with `cargo test` only and left staged; Task 3 makes the single commit. Never commit or push between them, so every commit on `master` runs and bisects.
 
 ## How the code is delivered
 
@@ -124,11 +124,9 @@ Expected: fmt and clippy clean; 53 tests pass (46 before; the plural helper's te
 
 Delete the line for `"error.busy"` from `family-app/ui/locales/en.js`, run `cargo test -p family-app`: the test must fail with `en catalog lacks error.busy`. Restore the file.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Do not commit**
 
-```bash
-git commit -m "refactor(family-app): Rust sends catalog keys and parameters instead of Russian sentences"
-```
+Leave the changes staged. The app does not run until Task 3; the commit is made at the end of Task 3.
 
 ---
 
@@ -172,7 +170,7 @@ In `screens/me.js` change `'me.copied'` to `'me.copiedx'`, run `npm test`: both 
 - [ ] **Step 5: Commit**
 
 ```bash
-git commit -m "feat(family-app): screens, mock backend and smoke test use the catalogs; smoke runs in both languages"
+git commit -m "feat(family-app): Rust sends catalog keys; screens, mock backend and smoke test use the catalogs; smoke runs in both languages"
 ```
 
 ---
