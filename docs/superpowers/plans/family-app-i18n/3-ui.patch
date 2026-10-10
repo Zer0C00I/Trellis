@@ -1,0 +1,1402 @@
+diff --git a/family-app/ui/app.js b/family-app/ui/app.js
+index 167c147..503f38d 100644
+--- a/family-app/ui/app.js
++++ b/family-app/ui/app.js
+@@ -1,5 +1,6 @@
+ // The shell: loads state, shows a screen, keeps it fresh.
+ import { call, isMock } from './api.js';
++import { initLocale, setLocale, t, tMsg } from './i18n.js';
+ import { waitingDelayMs } from './poll.js';
+ import { banner, button, errorBanner } from './components.js';
+ import { clear, h } from './dom.js';
+@@ -14,17 +15,25 @@ import * as send from './screens/send.js';
+ 
+ const SCREENS = { home, send, people, approvals, me };
+ const TABS = [
+-  ['home', 'Счёт'],
+-  ['send', 'Отправить'],
+-  ['people', 'Люди'],
+-  ['approvals', 'Одобрения'],
+-  ['me', 'Я'],
++  ['home', 'tabs.home'],
++  ['send', 'tabs.send'],
++  ['people', 'tabs.people'],
++  ['approvals', 'tabs.approvals'],
++  ['me', 'tabs.me'],
+ ];
+ const REFRESH_MS = 60_000;
+ const NOTICE_MS = 10_000;
+ const KINDS = ['ok', 'info', 'warn'];
+ const SELECTED_KEY = 'trellis.selectedVault';
+ 
++// The language: the saved choice, else the system's. A demo page may force one
++// with "?lang=ru" (never inside the real app, like "?mock").
++initLocale();
++if (isMock) {
++  const forced = new URLSearchParams(globalThis.location?.search ?? '').get('lang');
++  if (forced) setLocale(forced, { persist: false });
++}
++
+ const root = document.getElementById('app');
+ let leaveHooks = [];
+ let noticeTimer;
+@@ -37,9 +46,10 @@ const ctx = {
+   },
+   onLeave: (fn) => leaveHooks.push(fn),
+   setWaiting: (waiting) => update({ waiting, pairHint: !waiting && store.waiting }),
+-  // A success message that outlives the re-render that fresh data causes.
+-  notify: (text, kind = 'ok') => {
+-    store.notice = text;
++  // A success message ({ key, params }, as Rust sends it) that outlives the
++  // re-render that fresh data causes; it is worded again if the language changes.
++  notify: (message, kind = 'ok') => {
++    store.notice = message;
+     store.noticeKind = KINDS.includes(kind) ? kind : 'info';
+     clearTimeout(noticeTimer);
+     noticeTimer = setTimeout(() => {
+@@ -55,7 +65,7 @@ const ctx = {
+     if (existing) existing.replaceWith(fresh);
+     else if (main) main.prepend(fresh);
+     else render();
+-    announce(text);
++    announce(tMsg(message));
+   },
+ };
+ if (isMock) globalThis.__ctx = ctx; // test hook, never in the real app
+@@ -151,24 +161,24 @@ function header() {
+       ? h(
+           'select',
+           {
+-            'aria-label': 'Выбрать счёт',
++            'aria-label': t('header.pick_vault'),
+             onchange: (ev) => loadAll({ select: ev.target.value }),
+           },
+-          store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, `${v.mine ? 'Мой счёт' : 'Счёт родственника'} ${v.address_short}`)),
++          store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, t(v.mine ? 'vault.mine' : 'vault.other', { address: v.address_short }))),
+         )
+       : null;
+-  return h('header', { class: 'top' }, h('strong', {}, 'Trellis'), isMock ? h('span', { class: 'tag' }, 'демо') : null, picker);
++  return h('header', { class: 'top' }, h('strong', {}, 'Trellis'), isMock ? h('span', { class: 'tag' }, t('header.demo')) : null, picker);
+ }
+ 
+ function pendingBanner() {
+   if (!store.pending) return null;
+   const out = h('div', { 'aria-live': 'polite' });
+-  const check = button('Проверить', async () => {
++  const check = button(t('pending.check'), async () => {
+     check.disabled = true;
+     try {
+       const r = await call('check_pending');
+       // survives the re-render below; a check that did not go through is not a success
+-      ctx.notify(r.message, { confirmed: 'ok', waiting: 'warn' }[r.status] ?? 'info');
++      ctx.notify(r, { confirmed: 'ok', waiting: 'warn' }[r.status] ?? 'info');
+       await loadPending();
+       if (r.status !== 'waiting') await loadAll();
+     } catch (e) {
+@@ -177,12 +187,12 @@ function pendingBanner() {
+       check.disabled = false;
+     }
+   });
+-  return banner('warn', `Не закончена операция: «${store.pending.what}». Пока мы не узнаем, чем она кончилась, другие переводы недоступны, чтобы не заплатить дважды.`, check, out);
++  return banner('warn', t('pending.banner', { what: store.pending.what }), check, out);
+ }
+ 
+ function noticeBanner() {
+   if (!store.notice) return null;
+-  const el = banner(store.noticeKind, store.notice);
++  const el = banner(store.noticeKind, tMsg(store.notice));
+   el.id = 'notice';
+   return el;
+ }
+@@ -191,9 +201,9 @@ function nav(current) {
+   const waiting = store.vault?.permissions.approve ? store.vault.pending.length : 0;
+   return h(
+     'nav',
+-    { class: 'tabs', 'aria-label': 'Разделы' },
+-    TABS.map(([name, label]) =>
+-      h('a', { href: `#/${name}`, class: name === current ? 'tab current' : 'tab', 'aria-current': name === current ? 'page' : null }, label, name === 'approvals' && waiting ? h('span', { class: 'count' }, waiting) : null),
++    { class: 'tabs', 'aria-label': t('nav.label') },
++    TABS.map(([name, labelKey]) =>
++      h('a', { href: `#/${name}`, class: name === current ? 'tab current' : 'tab', 'aria-current': name === current ? 'page' : null }, t(labelKey), name === 'approvals' && waiting ? h('span', { class: 'count' }, waiting) : null),
+     ),
+   );
+ }
+@@ -202,11 +212,11 @@ function render() {
+   for (const fn of leaveHooks) fn();
+   leaveHooks = [];
+   clear(root);
+-  if (!store.loaded) return root.append(h('p', { class: 'center' }, 'Загрузка…'));
++  if (!store.loaded) return root.append(h('p', { class: 'center' }, t('common.loading')));
+ 
+   if (!store.vault && store.loadError && !store.everLoaded) {
+     // Never offer "open a new account" because of a network error.
+-    root.append(h('main', { class: 'content' }, h('h1', {}, 'Не удалось загрузить'), errorBanner(store.loadError), button('Повторить', retry)));
++    root.append(h('main', { class: 'content' }, h('h1', {}, t('common.load_failed')), errorBanner(store.loadError), button(t('common.retry'), retry)));
+     return;
+   }
+   if (!store.vault) {
+diff --git a/family-app/ui/components.js b/family-app/ui/components.js
+index ed70f39..a14adc7 100644
+--- a/family-app/ui/components.js
++++ b/family-app/ui/components.js
+@@ -1,4 +1,5 @@
+ import { h } from './dom.js';
++import { t, tMsg, tParts } from './i18n.js';
+ import { store } from './state.js';
+ 
+ export function banner(kind, text, ...extra) {
+@@ -10,8 +11,16 @@ export function errorBanner(e) {
+   if (!e) return null;
+   return banner(
+     e.kind === 'unconfirmed' ? 'warn' : 'error',
+-    e.message,
+-    e.details ? h('details', {}, h('summary', {}, 'Подробности'), h('code', {}, e.details)) : null,
++    tMsg(e),
++    e.details ? h('details', {}, h('summary', {}, t('common.details')), h('code', {}, e.details)) : null,
++  );
++}
++
++// A translated sentence whose parameters named in `keepTogether` never break
++// across lines (amounts: "70 USDC").
++export function rich(key, params, keepTogether = []) {
++  return tParts(key, params).map((part) =>
++    keepTogether.includes(part.param) ? h('span', { class: 'nowrap' }, part.text) : part.text,
+   );
+ }
+ 
+@@ -26,7 +35,7 @@ export function moneyButton(label, onclick, opts = {}) {
+ }
+ 
+ export function lockHint() {
+-  return store.pending ? h('p', { class: 'hint' }, 'Сначала проверьте прошлую операцию: кнопка наверху.') : null;
++  return store.pending ? h('p', { class: 'hint' }, t('pending.lock_hint')) : null;
+ }
+ 
+ export function field(label, input, hint) {
+diff --git a/family-app/ui/errors.js b/family-app/ui/errors.js
+index 0888c64..c0c1b3e 100644
+--- a/family-app/ui/errors.js
++++ b/family-app/ui/errors.js
+@@ -1,7 +1,8 @@
+ // Every failed command rejects with an ErrorDto from Rust:
+-// { kind, message, details? }. Anything else is wrapped so screens can rely
+-// on that shape.
+-const DEFAULT_MESSAGE = 'Что-то пошло не так. Попробуйте ещё раз.';
++// { kind, key, params, details? }, where `key` and `params` name a catalog
++// sentence (see i18n.js). Anything else is wrapped so screens can rely on
++// that shape.
++const GENERIC = 'error.generic';
+ 
+ function safeString(v) {
+   try {
+@@ -11,13 +12,15 @@ function safeString(v) {
+   }
+ }
+ 
++function isPlainObject(v) {
++  return v !== null && typeof v === 'object' && !Array.isArray(v);
++}
++
+ function normalize(e) {
+-  if (
+-    e && typeof e === 'object' &&
+-    typeof e.kind === 'string' && typeof e.message === 'string' && e.message !== ''
+-  ) {
+-    if (e.details == null || typeof e.details === 'string') return e;
+-    return { kind: e.kind, message: e.message, details: safeString(e.details) };
++  if (isPlainObject(e) && typeof e.kind === 'string' && typeof e.key === 'string' && e.key !== '') {
++    const params = isPlainObject(e.params) ? e.params : {};
++    if (e.details == null || typeof e.details === 'string') return { ...e, params };
++    return { kind: e.kind, key: e.key, params, details: safeString(e.details) };
+   }
+   let details;
+   try {
+@@ -25,13 +28,13 @@ function normalize(e) {
+   } catch {
+     details = 'unknown error';
+   }
+-  return { kind: 'internal', message: DEFAULT_MESSAGE, details };
++  return { kind: 'internal', key: GENERIC, params: {}, details };
+ }
+ 
+ export function normalizeError(e) {
+   try {
+     return normalize(e);
+   } catch {
+-    return { kind: 'internal', message: DEFAULT_MESSAGE, details: 'unknown error' };
++    return { kind: 'internal', key: GENERIC, params: {}, details: 'unknown error' };
+   }
+ }
+diff --git a/family-app/ui/index.html b/family-app/ui/index.html
+index 3b94a18..08d2a0d 100644
+--- a/family-app/ui/index.html
++++ b/family-app/ui/index.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html lang="ru">
++<html lang="en">
+   <head>
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+diff --git a/family-app/ui/locales/en.js b/family-app/ui/locales/en.js
+index 06f6171..46f3c36 100644
+--- a/family-app/ui/locales/en.js
++++ b/family-app/ui/locales/en.js
+@@ -126,7 +126,6 @@ export default {
+   "me.about_title": "About the app",
+   "me.about": "Network: {network}. This is a learning prototype without an audit: use test money only.",
+   "me.network_devnet": "test (Devnet)",
+-  "me.language": "Language",
+ 
+   // Errors (returned by Rust)
+   "error.no_connection": "No connection. Check the internet and try again.",
+diff --git a/family-app/ui/locales/ru.js b/family-app/ui/locales/ru.js
+index 71592ef..d86454b 100644
+--- a/family-app/ui/locales/ru.js
++++ b/family-app/ui/locales/ru.js
+@@ -126,7 +126,6 @@ export default {
+   "me.about_title": "О приложении",
+   "me.about": "Сеть: {network}. Это учебный прототип без аудита: используйте только тестовые деньги.",
+   "me.network_devnet": "тестовая (Devnet)",
+-  "me.language": "Язык",
+ 
+   // Errors (returned by Rust)
+   "error.no_connection": "Нет связи. Проверьте интернет и попробуйте ещё раз.",
+diff --git a/family-app/ui/mock-api.js b/family-app/ui/mock-api.js
+index 609ccbb..844a736 100644
+--- a/family-app/ui/mock-api.js
++++ b/family-app/ui/mock-api.js
+@@ -1,14 +1,15 @@
+ // A scripted stand-in for the Rust commands: same names, same shapes as
+-// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
++// src-tauri/src/dto.rs (sentences are catalog keys with params, as from Rust). Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
+ const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
+ const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
+ 
+ const ME = '7Hn3mQe1dKq9vXw2YfPz8LbT5aRcUoJs4NgBxVyE6AtM';
+ const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
++const msg = (key, params = {}) => ({ key, params });
+ 
+ const payees = [
+-  { name: 'Внучка Анна', address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: 'Можно отправлять' },
+-  { name: 'Сосед Пётр', address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: 'Можно будет через 31 час' },
++  { name: 'Внучка Анна', address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: msg('payee.ready') },
++  { name: 'Сосед Пётр', address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: msg('payee.wait_hours', { n: 31 }) },
+ ].map((p) => ({ ...p, address_short: short(p.address) }));
+ 
+ const guardians = [
+@@ -18,7 +19,6 @@ const guardians = [
+ 
+ let pool = {
+   address: '4kTzLp9QwXy2VbN7mRcEa1JdUhGs6oFiMt3BnYvKe8Ax',
+-  title: 'Семейный счёт',
+   is_pool: true,
+   is_owner: true,
+   is_guardian: false,
+@@ -35,7 +35,6 @@ pool.address_short = short(pool.address);
+ 
+ const grandma = {
+   address: 'Cw5RnE8yMq2KdLtV7XbZa3JhUp9GfoSi1TmBvNeY4AkD',
+-  title: 'Личный счёт',
+   is_pool: false,
+   is_owner: false,
+   is_guardian: true,
+@@ -52,15 +51,15 @@ grandma.address_short = short(grandma.address);
+ 
+ const now = () => Math.floor(Date.now() / 1000);
+ const history = () => [
+-  { signature: 's1', text: 'Пополнение на 50 USDC', time: now() - 3600 },
+-  { signature: 's2', text: 'Отправлено 12.5 USDC', time: now() - 86400 * 2 },
+-  { signature: 's3', text: 'Добавлен получатель «Внучка Анна»', time: now() - 86400 * 9 },
+-  { signature: 's4', text: 'Счёт открыт', time: now() - 86400 * 40 },
++  { signature: 's1', ...msg('history.deposit', { amount: '50 USDC' }), time: now() - 3600 },
++  { signature: 's2', ...msg('history.withdraw', { amount: '12.5 USDC' }), time: now() - 86400 * 2 },
++  { signature: 's3', ...msg('history.payee_added', { name: 'Внучка Анна' }), time: now() - 86400 * 9 },
++  { signature: 's4', ...msg('history.opened'), time: now() - 86400 * 40 },
+ ];
+ 
+ let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], 'unconfirmed-waiting': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
+ let solGot = false;
+-let pendingTx = scenario.startsWith('unconfirmed') ? { what: 'Отправка 5 USDC', signature: 'sig123' } : null;
++let pendingTx = scenario.startsWith('unconfirmed') ? { what: msg('op.send', { amount: '5 USDC' }), signature: 'sig123' } : null;
+ let waitingPolls = 0;
+ let moved = 0; // every deposit/send changes the balance, as on a real chain
+ const setBalance = () => {
+@@ -73,12 +72,12 @@ globalThis.__mockBump = () => {
+   setBalance();
+ };
+ 
+-const err = (kind, message, details) => ({ kind, message, details: details ?? null });
++const err = (kind, key, details, params = {}) => ({ kind, key, params, details: details ?? null });
+ 
+ const handlers = {
+   app_info: () => ({ address: ME, address_short: short(ME), network: 'devnet' }),
+   wallet: () => {
+-    if (scenario === 'offline') throw err('network', 'Нет связи с сетью. Ничего не списано.');
++    if (scenario === 'offline') throw err('no_connection', 'error.no_connection');
+     return !solGot && ['lowsol', 'empty', 'waiting', 'stuck'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
+   },
+   list_vaults: () => {
+@@ -87,41 +86,41 @@ const handlers = {
+   },
+   load_vault: ({ vault }) => {
+     const v = vaults.find((x) => x.address === vault);
+-    if (!v) throw err('rejected', 'Не получилось. Ничего не списано.');
++    if (!v) throw err('rejected', 'error.rejected_generic');
+     return structuredClone(v); // like the real IPC: a snapshot, not a live object
+   },
+   load_history: () => history(),
+   pending_status: () => pendingTx,
+   check_pending: () => {
+-    if (!pendingTx) return { status: 'none', message: 'Ничего не ожидает проверки.' };
+-    if (scenario === 'unconfirmed-waiting') return { status: 'waiting', message: 'Пока неизвестно, дошла ли операция. Проверьте ещё раз через минуту.' };
++    if (!pendingTx) return { status: 'none', ...msg('resolution.none') };
++    if (scenario === 'unconfirmed-waiting') return { status: 'waiting', ...msg('resolution.waiting') };
+     pendingTx = null;
+-    if (scenario === 'unconfirmed-failed') return { status: 'failed', message: 'Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз.' };
+-    return { status: 'confirmed', message: 'Операция прошла.' };
++    if (scenario === 'unconfirmed-failed') return { status: 'failed', ...msg('resolution.failed') };
++    return { status: 'confirmed', ...msg('resolution.confirmed') };
+   },
+   deposit: () => {
+     moved += 10;
+     setBalance();
+-    return { signature: 'sigD', message: 'Деньги отправлены на счёт.' };
++    return { signature: 'sigD', ...msg('notice.deposit') };
+   },
+   send_money: ({ amount }) => {
+     if (scenario === 'send-unconfirmed') {
+-      pendingTx = { what: `Отправка ${amount} USDC`, signature: 'sigU' };
+-      throw err('unconfirmed', 'Не знаем, дошёл ли перевод. Пока не проверите, деньги не повторяйте.');
++      pendingTx = { what: msg('op.send', { amount: `${amount} USDC` }), signature: 'sigU' };
++      throw err('unconfirmed', 'error.unconfirmed');
+     }
+     if (Number(amount) > 70) {
+-      return { signature: 'sigR', message: 'Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.' };
++      return { signature: 'sigR', ...msg('notice.request_filed') };
+     }
+     moved -= Number(amount);
+     setBalance();
+-    return { signature: 'sigS', message: 'Деньги отправлены.' };
++    return { signature: 'sigS', ...msg('notice.sent') };
+   },
+-  add_payee: () => ({ signature: 'sigP', message: 'Получатель добавлен. Пользоваться им можно будет через 48 часов.' }),
+-  add_guardian: () => ({ signature: 'sigG', message: 'Доверенное лицо добавлено.' }),
++  add_payee: () => ({ signature: 'sigP', ...msg('notice.payee_added') }),
++  add_guardian: () => ({ signature: 'sigG', ...msg('notice.guardian_added') }),
+   approve_request: () => {
+     grandma.pending = [];
+     grandma.permissions.approve = false;
+-    return { signature: 'sigA', message: 'Перевод одобрен.' };
++    return { signature: 'sigA', ...msg('notice.approved') };
+   },
+   open_family_account: () => {
+     vaults = [pool];
+@@ -133,11 +132,11 @@ const handlers = {
+   },
+   // Tauri 2 passes JavaScript arguments in camelCase (Rust: qr_text -> qrText).
+   pair_with_qr: ({ qrText }) => {
+-    if (!String(qrText).startsWith('fvpair1:')) throw err('invalid', 'Это не похоже на код с экрана устройства. Наведите камеру на QR-код ещё раз.');
++    if (!String(qrText).startsWith('fvpair1:')) throw err('invalid', 'error.pairing.bad_qr');
+     return null;
+   },
+   pair_with_pin: ({ pin }) => {
+-    if (pin === '000000') throw err('rejected', 'Устройство не приняло код. Проверьте код: на экране мог появиться новый.', 'att 0x0e');
++    if (pin === '000000') throw err('rejected', 'error.pairing.write_rejected', 'att 0x0e');
+     return null;
+   },
+ };
+@@ -146,7 +145,7 @@ export default {
+   async invoke(command, args) {
+     await delay();
+     const handler = handlers[command];
+-    if (!handler) throw err('internal', `Неизвестная команда ${command}`);
++    if (!handler) throw err('internal', 'error.internal', `unknown command ${command}`);
+     const result = handler(args ?? {});
+     // Test hook: hold back ONE answer (computed now) to make it arrive late.
+     const extra = globalThis.__mockDelay?.[command];
+diff --git a/family-app/ui/screens/approvals.js b/family-app/ui/screens/approvals.js
+index 5db0d0f..5a2b636 100644
+--- a/family-app/ui/screens/approvals.js
++++ b/family-app/ui/screens/approvals.js
+@@ -2,25 +2,26 @@ import { call } from '../api.js';
+ import { banner, card, lockHint, moneyButton, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
+ import { formatTime } from '../format.js';
++import { t } from '../i18n.js';
+ 
+ export function render(ctx) {
+   const v = ctx.store.vault;
+-  if (v.pending.length === 0) return card('Одобрения', banner('info', 'Сейчас нет переводов, которые ждут одобрения.'));
++  if (v.pending.length === 0) return card(t('approvals.title'), banner('info', t('approvals.none')));
+ 
+   const items = v.pending.map((r) => {
+     const out = h('div', { 'aria-live': 'polite' });
+-    const approve = moneyButton('Одобрить', async () => {
++    const approve = moneyButton(t('approvals.approve'), async () => {
+       const result = await withFeedback(approve, out, () => call('approve_request', { vault: v.address, nonce: r.nonce }));
+       if (result.ok) {
+-        ctx.notify(result.value.message);
++        ctx.notify(result.value);
+         await ctx.refresh();
+       }
+     }, { disabled: !v.permissions.approve });
+     return card(
+-      `Перевод ${r.amount}`,
+-      h('p', {}, 'Получатель: ', h('code', {}, r.to_short)),
+-      h('p', { class: 'muted' }, `Запрошен: ${formatTime(r.requested_at)}`),
+-      v.permissions.approve ? [approve, lockHint()] : banner('info', 'Одобрить может только доверенное лицо.'),
++      t('approvals.transfer', { amount: r.amount }),
++      h('p', {}, `${t('approvals.recipient')} `, h('code', {}, r.to_short)),
++      h('p', { class: 'muted' }, t('approvals.requested', { time: formatTime(r.requested_at) })),
++      v.permissions.approve ? [approve, lockHint()] : banner('info', t('approvals.only_guardian')),
+       out,
+     );
+   });
+diff --git a/family-app/ui/screens/first.js b/family-app/ui/screens/first.js
+index 9eb2a01..3546b82 100644
+--- a/family-app/ui/screens/first.js
++++ b/family-app/ui/screens/first.js
+@@ -5,6 +5,7 @@
+ import { call, isMock } from '../api.js';
+ import { button, card, errorBanner, field, banner, lockHint, moneyButton, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
++import { t } from '../i18n.js';
+ import { classifyPairingInput } from '../input.js';
+ 
+ export function render(ctx) {
+@@ -12,9 +13,9 @@ export function render(ctx) {
+   const root = h('div', { class: 'stack' });
+   function draw() {
+     root.replaceChildren(
+-      isMock ? h('span', { class: 'tag' }, 'демо') : null,
+-      h('h1', {}, 'Добро пожаловать'),
+-      h('p', { class: 'lead' }, 'Это приложение для близких: оно помогает следить за счётом родственника и одобрять переводы.'),
++      isMock ? h('span', { class: 'tag' }, t('header.demo')) : null,
++      h('h1', {}, t('first.title')),
++      h('p', { class: 'lead' }, t('first.lead')),
+       store.waiting ? waitingCard() : pairCard(),
+       openCard(),
+       addressCard(),
+@@ -22,14 +23,14 @@ export function render(ctx) {
+   }
+ 
+   function pairCard() {
+-    const name = h('input', { type: 'text', maxlength: 24, autocomplete: 'name', placeholder: 'Например: Внук Саша' });
+-    const code = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', placeholder: 'fvpair1:… или 6 цифр' });
++    const name = h('input', { type: 'text', maxlength: 24, autocomplete: 'name', placeholder: t('pair.name_placeholder') });
++    const code = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', placeholder: t('pair.code_placeholder') });
+     const out = h('div', { 'aria-live': 'polite' });
+-    const go = button('Передать устройству', async () => {
++    const go = button(t('pair.submit'), async () => {
+       const input = classifyPairingInput(code.value);
+-      if (!name.value.trim()) return out.replaceChildren(errorBanner({ kind: 'invalid', message: 'Напишите своё имя: так вас увидит родственник на экране.' }));
++      if (!name.value.trim()) return out.replaceChildren(errorBanner({ kind: 'invalid', key: 'pair.need_name', params: {} }));
+       if (input.kind === 'empty' || input.kind === 'unknown') {
+-        return out.replaceChildren(errorBanner({ kind: 'invalid', message: 'Введите текст QR-кода с экрана устройства или 6 цифр под ним.' }));
++        return out.replaceChildren(errorBanner({ kind: 'invalid', key: 'pair.need_code', params: {} }));
+       }
+       const r = await withFeedback(go, out, () =>
+         input.kind === 'pin'
+@@ -43,11 +44,11 @@ export function render(ctx) {
+       ctx.setWaiting(true);
+     });
+     return card(
+-      'Меня добавляет родственник',
+-      h('p', {}, 'Попросите включить настройку на устройстве родственника. На его экране появится QR-код и 6 цифр. Станьте рядом, включите Bluetooth.'),
+-      store.pairHint ? h('p', { class: 'hint' }, 'Если устройство уже показало, что вас добавили, а здесь ничего нет, попробуйте ещё раз.') : null,
+-      field('Ваше имя', name, 'Родственник увидит его на экране устройства.'),
+-      field('Код с экрана', code, 'Текст QR-кода или 6 цифр под ним.'),
++      t('pair.title'),
++      h('p', {}, t('pair.text')),
++      store.pairHint ? h('p', { class: 'hint' }, t('pair.hint')) : null,
++      field(t('pair.name_label'), name, t('pair.name_hint')),
++      field(t('pair.code_label'), code, t('pair.code_hint')),
+       go,
+       out,
+     );
+@@ -55,26 +56,26 @@ export function render(ctx) {
+ 
+   function waitingCard() {
+     return card(
+-      'Ждём, пока вас добавят',
+-      banner('info', 'Устройство приняло ваш код. Оно записывает вас в список, это занимает около минуты. Экран обновится сам. Если за несколько минут ничего не изменилось, нажмите «Ввести код заново».'),
++      t('waiting.title'),
++      banner('info', t('waiting.text')),
+       h('div', { class: 'btn-group' },
+-        button('Проверить сейчас', () => ctx.refresh(), { secondary: true }),
+-        button('Ввести код заново', () => ctx.setWaiting(false), { secondary: true }),
++        button(t('waiting.check'), () => ctx.refresh(), { secondary: true }),
++        button(t('waiting.retry'), () => ctx.setWaiting(false), { secondary: true }),
+       ),
+     );
+   }
+ 
+   function openCard() {
+-    const limit = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 100' });
++    const limit = h('input', { type: 'text', inputmode: 'decimal', placeholder: t('open.limit_placeholder') });
+     const out = h('div', { 'aria-live': 'polite' });
+-    const go = moneyButton('Открыть семейный счёт', async () => {
++    const go = moneyButton(t('open.submit'), async () => {
+       const r = await withFeedback(go, out, () => call('open_family_account', { dailyLimit: limit.value }));
+       if (r.ok) await ctx.refresh();
+     });
+     return card(
+-      'Или открыть свой семейный счёт',
+-      h('p', {}, 'Общий счёт семьи в долларах (USDC). Чтобы тратить с него, нужны получатели и доверенные лица.'),
+-      field('Сколько можно отправить за день без одобрения (USDC)', limit),
++      t('open.title'),
++      h('p', {}, t('open.text')),
++      field(t('open.limit_label'), limit),
+       go,
+       lockHint(),
+       out,
+@@ -86,22 +87,22 @@ export function render(ctx) {
+   function addressCard() {
+     const out = h('div', { 'aria-live': 'polite' });
+     const faucet = button(
+-      'Получить тестовые SOL',
++      t('faucet.button'),
+       async () => {
+         const r = await withFeedback(faucet, out, () => call('get_test_sol'));
+         if (r.ok) {
+-          ctx.notify('Готово: SOL пришли на ваш адрес.');
++          ctx.notify({ key: 'faucet.done' });
+           await ctx.refresh();
+         }
+       },
+       { secondary: true },
+     );
+     return card(
+-      'Ваш адрес и комиссии',
+-      h('p', {}, 'Каждое действие стоит совсем немного SOL. Родственнику этот адрес нужен, чтобы вас добавить.'),
++      t('address.title'),
++      h('p', {}, t('address.text')),
+       h('code', { class: 'address' }, store.info?.address ?? ''),
+-      h('p', {}, `На адресе: ${store.wallet?.sol ?? '…'} SOL`),
+-      store.wallet?.low_sol ? banner('warn', 'SOL почти нет. Получите тестовые SOL, иначе счёт не открыть.') : null,
++      h('p', {}, t('address.on_address', { sol: store.wallet?.sol ?? '…' })),
++      store.wallet?.low_sol ? banner('warn', t('address.low_sol')) : null,
+       faucet,
+       out,
+     );
+diff --git a/family-app/ui/screens/home.js b/family-app/ui/screens/home.js
+index a9e45b2..21b5353 100644
+--- a/family-app/ui/screens/home.js
++++ b/family-app/ui/screens/home.js
+@@ -1,32 +1,35 @@
+ import { call } from '../api.js';
+-import { banner, button, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
++import { banner, button, card, field, lockHint, moneyButton, rich, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
+ import { formatTime } from '../format.js';
++import { t, tMsg } from '../i18n.js';
+ 
+ export function render(ctx) {
+   const { store } = ctx;
+   const v = store.vault;
+   const root = h('div', { class: 'stack' });
+ 
+-  const role = v.is_owner ? 'Вы владелец счёта' : v.is_guardian ? 'Вы доверенное лицо' : 'Вы можете пополнять счёт';
++  const role = t(v.is_owner ? 'home.role_owner' : v.is_guardian ? 'home.role_guardian' : 'home.role_other');
+   root.append(
+     h('section', { class: 'card hero' },
+-      h('p', { class: 'muted' }, v.title),
+-      h('p', { class: 'balance', 'aria-label': `Баланс: ${v.balance}` }, h('span', { class: 'nowrap' }, v.balance)),
+-      v.remaining_today ? h('p', {}, 'Сегодня можно отправить ещё ', h('span', { class: 'nowrap' }, v.remaining_today), v.daily_limit ? [' из ', h('span', { class: 'nowrap' }, v.daily_limit)] : null) : null,
++      h('p', { class: 'muted' }, t(v.is_pool ? 'home.title_pool' : 'home.title_personal')),
++      h('p', { class: 'balance', 'aria-label': t('home.balance_label', { balance: v.balance }) }, h('span', { class: 'nowrap' }, v.balance)),
++      v.remaining_today
++        ? h('p', {}, rich(v.daily_limit ? 'home.left_today_of' : 'home.left_today', { left: v.remaining_today, limit: v.daily_limit }, ['left', 'limit']))
++        : null,
+       h('p', { class: 'muted' }, role),
+     ),
+   );
+ 
+   if (v.permissions.approve) {
+-    root.append(banner('warn', `Ждут вашего одобрения: ${v.pending.length}`, button('Посмотреть', () => ctx.go('approvals'))));
++    root.append(banner('warn', t('home.approve_waiting', { n: v.pending.length }), button(t('home.view'), () => ctx.go('approvals'))));
+   } else if (v.pending.length > 0) {
+-    root.append(banner('info', `Запросов на перевод, которые ждут одобрения доверенного лица: ${v.pending.length}`));
++    root.append(banner('info', t('home.requests_waiting', { n: v.pending.length })));
+   }
+ 
+   const actions = h('div', { class: 'row' });
+-  if (v.permissions.send) actions.append(button('Отправить', () => ctx.go('send')));
+-  actions.append(button('Пополнить', () => toggleDeposit(), { secondary: v.permissions.send }));
++  if (v.permissions.send) actions.append(button(t('home.send'), () => ctx.go('send')));
++  actions.append(button(t('home.deposit'), () => toggleDeposit(), { secondary: v.permissions.send }));
+   root.append(actions);
+ 
+   const depositBox = h('div');
+@@ -34,24 +37,24 @@ export function render(ctx) {
+ 
+   function toggleDeposit() {
+     if (depositBox.childElementCount) return depositBox.replaceChildren();
+-    const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 25 или 2.50' });
++    const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: t('common.amount_placeholder') });
+     const out = h('div', { 'aria-live': 'polite' });
+-    const go = moneyButton('Пополнить', async () => {
++    const go = moneyButton(t('deposit.submit'), async () => {
+       const r = await withFeedback(go, out, () => call('deposit', { vault: v.address, amount: amount.value }));
+       if (r.ok) {
+         amount.value = '';
+-        ctx.notify(r.value.message);
++        ctx.notify(r.value);
+         await ctx.refresh();
+       }
+     });
+-    depositBox.append(card('Пополнить счёт', field('Сумма (USDC)', amount, 'Деньги берутся с вашего адреса. Тестовые USDC можно получить на faucet.circle.com.'), go, lockHint(), out));
++    depositBox.append(card(t('deposit.title'), field(t('common.amount_label'), amount, t('deposit.hint')), go, lockHint(), out));
+   }
+ 
+   const list = h('ul', { class: 'list' });
+-  if (store.history.length === 0) list.append(h('li', { class: 'muted' }, 'Пока ничего не происходило.'));
++  if (store.history.length === 0) list.append(h('li', { class: 'muted' }, t('home.history_empty')));
+   for (const item of store.history.slice(0, 10)) {
+-    list.append(h('li', {}, h('span', {}, item.text), h('span', { class: 'muted' }, formatTime(item.time))));
++    list.append(h('li', {}, h('span', {}, tMsg(item)), h('span', { class: 'muted' }, formatTime(item.time))));
+   }
+-  root.append(card('Последние операции', list));
++  root.append(card(t('home.history_title'), list));
+   return root;
+ }
+diff --git a/family-app/ui/screens/me.js b/family-app/ui/screens/me.js
+index 6512b94..0859db6 100644
+--- a/family-app/ui/screens/me.js
++++ b/family-app/ui/screens/me.js
+@@ -1,32 +1,33 @@
+ import { call } from '../api.js';
+ import { banner, button, card, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
++import { t } from '../i18n.js';
+ 
+ export function render(ctx) {
+   const { store } = ctx;
+   const out = h('div', { 'aria-live': 'polite' });
+   const copyOut = h('span', { class: 'muted' });
+ 
+-  const copy = button('Скопировать адрес', async () => {
++  const copy = button(t('me.copy'), async () => {
+     try {
+       await navigator.clipboard.writeText(store.info.address);
+-      copyOut.textContent = ' Скопировано';
++      copyOut.textContent = ` ${t('me.copied')}`;
+     } catch {
+-      copyOut.textContent = ' Не удалось скопировать: выделите адрес и скопируйте вручную.';
++      copyOut.textContent = ` ${t('me.copy_failed')}`;
+     }
+   }, { secondary: true });
+ 
+-  const faucet = button('Получить тестовые SOL', async () => {
++  const faucet = button(t('faucet.button'), async () => {
+     const r = await withFeedback(faucet, out, () => call('get_test_sol'));
+     if (r.ok) {
+-      ctx.notify('Готово: SOL пришли на ваш адрес.');
++      ctx.notify({ key: 'faucet.done' });
+       await ctx.refresh();
+     }
+   });
+ 
+   return h('div', { class: 'stack' },
+-    card('Ваш адрес', h('p', {}, 'Так вас находят в сети. Этот адрес можно отправлять родственникам, чтобы они добавили вас получателем.'), h('code', { class: 'address' }, store.info.address), h('div', { class: 'row' }, copy, copyOut)),
+-    card('Комиссии', h('p', {}, `На адресе: ${store.wallet?.sol ?? '…'} SOL`), store.wallet?.low_sol ? banner('warn', 'SOL почти нет. Без них нельзя ничего отправить или одобрить.') : null, faucet, out),
+-    card('О приложении', h('p', { class: 'muted' }, `Сеть: ${store.info.network === 'devnet' ? 'тестовая (Devnet)' : store.info.network}. Это учебный прототип без аудита: используйте только тестовые деньги.`)),
++    card(t('me.address_title'), h('p', {}, t('me.address_text')), h('code', { class: 'address' }, store.info.address), h('div', { class: 'row' }, copy, copyOut)),
++    card(t('me.fees_title'), h('p', {}, t('address.on_address', { sol: store.wallet?.sol ?? '…' })), store.wallet?.low_sol ? banner('warn', t('me.low_sol')) : null, faucet, out),
++    card(t('me.about_title'), h('p', { class: 'muted' }, t('me.about', { network: store.info.network === 'devnet' ? t('me.network_devnet') : store.info.network }))),
+   );
+ }
+diff --git a/family-app/ui/screens/people.js b/family-app/ui/screens/people.js
+index fee39f3..cd26be7 100644
+--- a/family-app/ui/screens/people.js
++++ b/family-app/ui/screens/people.js
+@@ -1,55 +1,56 @@
+ import { call } from '../api.js';
+ import { banner, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
++import { t, tMsg } from '../i18n.js';
+ 
+ export function render(ctx) {
+   const v = ctx.store.vault;
+   const root = h('div', { class: 'stack' });
+ 
+   const payees = h('ul', { class: 'list' });
+-  if (v.payees.length === 0) payees.append(h('li', { class: 'muted' }, 'Получателей пока нет.'));
++  if (v.payees.length === 0) payees.append(h('li', { class: 'muted' }, t('people.payees_empty')));
+   for (const p of v.payees) {
+-    payees.append(h('li', {}, h('span', {}, h('strong', {}, p.name), h('small', { class: 'muted' }, ` ${p.address_short}`)), h('span', { class: p.active ? 'ok' : 'muted' }, p.status)));
++    payees.append(h('li', {}, h('span', {}, h('strong', {}, p.name), h('small', { class: 'muted' }, ` ${p.address_short}`)), h('span', { class: p.active ? 'ok' : 'muted' }, tMsg(p.status))));
+   }
+-  root.append(card('Получатели', payees));
++  root.append(card(t('people.payees'), payees));
+ 
+   if (v.permissions.add_payee) {
+-    const name = h('input', { type: 'text', maxlength: 16, placeholder: 'Например: Внучка Анна' });
+-    const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Адрес получателя' });
++    const name = h('input', { type: 'text', maxlength: 16, placeholder: t('people.name_placeholder') });
++    const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: t('people.payee_address_placeholder') });
+     const out = h('div', { 'aria-live': 'polite' });
+-    const go = moneyButton('Добавить получателя', async () => {
++    const go = moneyButton(t('people.add_payee_submit'), async () => {
+       const r = await withFeedback(go, out, () => call('add_payee', { vault: v.address, name: name.value, address: address.value }));
+       if (r.ok) {
+         name.value = '';
+         address.value = '';
+-        ctx.notify(r.value.message);
++        ctx.notify(r.value);
+         await ctx.refresh();
+       }
+     });
+-    root.append(card('Добавить получателя', field('Имя', name), field('Адрес', address, 'Человек присылает вам свой адрес со вкладки «Я».'), go, lockHint(), out));
++    root.append(card(t('people.add_payee_title'), field(t('people.name_label'), name), field(t('people.address_label'), address, t('people.payee_address_hint')), go, lockHint(), out));
+   }
+ 
+   const guardians = h('ul', { class: 'list' });
+-  if (v.guardians.length === 0) guardians.append(h('li', { class: 'muted' }, 'Доверенных лиц пока нет.'));
++  if (v.guardians.length === 0) guardians.append(h('li', { class: 'muted' }, t('people.guardians_empty')));
+   for (const g of v.guardians) {
+-    guardians.append(h('li', {}, h('code', {}, g.address_short), g.is_me ? h('span', { class: 'ok' }, 'это вы') : null));
++    guardians.append(h('li', {}, h('code', {}, g.address_short), g.is_me ? h('span', { class: 'ok' }, t('people.you')) : null));
+   }
+-  root.append(card('Доверенные лица', h('p', { class: 'muted' }, 'Они одобряют переводы, которые больше дневного лимита.'), guardians));
++  root.append(card(t('people.guardians'), h('p', { class: 'muted' }, t('people.guardians_note')), guardians));
+ 
+   if (v.permissions.add_guardian) {
+-    const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Адрес доверенного лица' });
++    const address = h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: t('people.guardian_address_placeholder') });
+     const out = h('div', { 'aria-live': 'polite' });
+-    const go = moneyButton('Добавить доверенное лицо', async () => {
++    const go = moneyButton(t('people.add_guardian_submit'), async () => {
+       const r = await withFeedback(go, out, () => call('add_guardian', { vault: v.address, address: address.value }));
+       if (r.ok) {
+         address.value = '';
+-        ctx.notify(r.value.message);
++        ctx.notify(r.value);
+         await ctx.refresh();
+       }
+     });
+-    root.append(card('Добавить доверенное лицо', field('Адрес', address), go, lockHint(), out));
++    root.append(card(t('people.add_guardian_title'), field(t('people.address_label'), address), go, lockHint(), out));
+   } else if (v.is_owner) {
+-    root.append(banner('info', 'Добавить ещё одно доверенное лицо с этого устройства нельзя: нужна подпись уже добавленного.'));
++    root.append(banner('info', t('people.cannot_add_guardian')));
+   }
+   return root;
+ }
+diff --git a/family-app/ui/screens/send.js b/family-app/ui/screens/send.js
+index 4150f74..1c55bf7 100644
+--- a/family-app/ui/screens/send.js
++++ b/family-app/ui/screens/send.js
+@@ -1,19 +1,18 @@
+ import { call } from '../api.js';
+ import { banner, button, card, field, lockHint, moneyButton, withFeedback } from '../components.js';
+ import { h } from '../dom.js';
++import { currentLocale, t, tMsg } from '../i18n.js';
+ 
+ export function render(ctx) {
+   const v = ctx.store.vault;
+   if (!v.permissions.send) {
+-    const why = !v.is_owner
+-      ? 'Отправлять деньги с этого счёта может только его владелец.'
+-      : 'Пока некому отправлять: нового получателя можно использовать через 48 часов после добавления.';
+-    return card('Отправить', banner('info', why), button('Назад', () => ctx.go('home'), { secondary: true }));
++    const why = t(!v.is_owner ? 'send.why_not_owner' : 'send.why_wait');
++    return card(t('send.title'), banner('info', why), button(t('common.back'), () => ctx.go('home'), { secondary: true }));
+   }
+ 
+   const ready = v.payees.filter((p) => p.active);
+   const chosen = { address: ready[0]?.address };
+-  const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 25 или 2.50' });
++  const amount = h('input', { type: 'text', inputmode: 'decimal', placeholder: t('common.amount_placeholder') });
+   const out = h('div', { 'aria-live': 'polite' });
+ 
+   const options = ready.map((p, i) =>
+@@ -23,19 +22,21 @@ export function render(ctx) {
+     ),
+   );
+ 
+-  const go = moneyButton('Отправить', async () => {
++  const go = moneyButton(t('send.submit'), async () => {
+     const r = await withFeedback(go, out, () => call('send_money', { vault: v.address, recipient: chosen.address, amount: amount.value }));
+     if (r.ok) {
+       amount.value = '';
+-      ctx.notify(r.value.message);
++      ctx.notify(r.value);
+       await ctx.refresh();
+     }
+   });
+ 
+   const notReady = v.payees.filter((p) => !p.active);
+   return h('div', { class: 'stack' },
+-    card('Кому отправить', h('fieldset', { class: 'choices' }, h('legend', { class: 'sr-only' }, 'Получатель'), options)),
+-    card('Сколько', field('Сумма (USDC)', amount, v.remaining_today ? `Сегодня без одобрения можно ещё ${v.remaining_today}.` : null), go, lockHint(), out),
+-    notReady.length ? banner('info', `Ещё нельзя использовать: ${notReady.map((p) => `${p.name} (${p.status.toLowerCase()})`).join(', ')}.`) : null,
++    card(t('send.to'), h('fieldset', { class: 'choices' }, h('legend', { class: 'sr-only' }, t('send.recipient_legend')), options)),
++    card(t('send.how_much'), field(t('common.amount_label'), amount, v.remaining_today ? t('send.left_today_hint', { left: v.remaining_today }) : null), go, lockHint(), out),
++    notReady.length
++      ? banner('info', t('send.not_ready', { list: notReady.map((p) => `${p.name} (${tMsg(p.status).toLocaleLowerCase(currentLocale())})`).join(', ') }))
++      : null,
+   );
+ }
+diff --git a/family-app/ui/state.js b/family-app/ui/state.js
+index da40deb..d7c9fb5 100644
+--- a/family-app/ui/state.js
++++ b/family-app/ui/state.js
+@@ -5,9 +5,9 @@ export const store = {
+   vaults: [], // [{ address, address_short, mine }]
+   selected: null, // address of the vault on screen
+   vault: null, // VaultDto
+-  history: [], // [{ signature, text, time }]
+-  pending: null, // { what, signature } while an operation's outcome is unknown
+-  notice: null, // text of a message still on screen
++  history: [], // [{ signature, key, params, time }]
++  pending: null, // { what: { key, params }, signature } while an operation's outcome is unknown
++  notice: null, // { key, params } of a message still on screen
+   noticeKind: 'ok', // 'ok' | 'info' | 'warn'
+   pairHint: false, // the person came back from a waiting that never ended
+   loaded: false,
+diff --git a/family-app/ui/test/catalog.test.js b/family-app/ui/test/catalog.test.js
+new file mode 100644
+index 0000000..c88e88e
+--- /dev/null
++++ b/family-app/ui/test/catalog.test.js
+@@ -0,0 +1,62 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync, readdirSync } from 'node:fs';
++import { dirname, join, extname } from 'node:path';
++import { fileURLToPath } from 'node:url';
++import { catalog } from '../i18n.js';
++
++const ui = join(dirname(fileURLToPath(import.meta.url)), '..');
++const rustSrc = join(ui, '..', 'src-tauri', 'src');
++
++// Catalog keys are written as plain string literals everywhere, so a scan finds
++// them. A key starts with one of the catalog's own sections.
++const SECTIONS = [
++  'tabs', 'nav', 'header', 'vault', 'common', 'pending', 'first', 'pair', 'waiting', 'open', 'address',
++  'faucet', 'home', 'deposit', 'time', 'send', 'people', 'approvals', 'me', 'error', 'field', 'notice',
++  'op', 'payee', 'history', 'resolution',
++];
++const KEY = new RegExp(`(["'\`])((?:${SECTIONS.join('|')})(?:\\.[a-z0-9_]+)+)\\1`, 'g');
++
++function files(dir, extension) {
++  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
++    const path = join(dir, e.name);
++    if (e.isDirectory()) return e.name === 'test' || e.name === 'tools' || e.name === 'locales' ? [] : files(path, extension);
++    return extname(e.name) === extension ? [path] : [];
++  });
++}
++
++function keysIn(paths, { skipMock = false, cutTests = false } = {}) {
++  const found = new Set();
++  for (const path of paths) {
++    if (skipMock && path.endsWith('mock-api.js')) continue;
++    let text = readFileSync(path, 'utf8');
++    if (cutTests) text = text.split('#[cfg(test)]')[0];
++    for (const m of text.matchAll(KEY)) found.add(m[2]);
++  }
++  return found;
++}
++
++const defined = new Set(Object.keys(catalog('en')));
++const jsFiles = files(ui, '.js');
++const rustFiles = files(rustSrc, '.rs');
++
++test('every key the screens use is in the catalog, in both languages', () => {
++  const used = keysIn(jsFiles);
++  assert.ok(used.size > 80, `the scan found only ${used.size} keys`);
++  for (const key of used) {
++    assert.ok(defined.has(key), `used but not in the catalog: ${key}`);
++    assert.ok(key in catalog('ru'), `used but not in the Russian catalog: ${key}`);
++  }
++});
++
++test('every key Rust sends is in the catalog', () => {
++  const used = keysIn(rustFiles, { cutTests: true });
++  assert.ok(used.size > 50, `the scan found only ${used.size} keys`);
++  for (const key of used) assert.ok(defined.has(key), `sent by Rust but not in the catalog: ${key}`);
++});
++
++test('no catalog key is left unused', () => {
++  const used = new Set([...keysIn(jsFiles, { skipMock: true }), ...keysIn(rustFiles, { cutTests: true })]);
++  const unused = [...defined].filter((key) => !used.has(key));
++  assert.deepEqual(unused, []);
++});
+diff --git a/family-app/ui/test/hardening.test.js b/family-app/ui/test/hardening.test.js
+index 308ab16..067f507 100644
+--- a/family-app/ui/test/hardening.test.js
++++ b/family-app/ui/test/hardening.test.js
+@@ -32,11 +32,11 @@ test('normalizeError never throws on hostile values', () => {
+   assert.equal(normalizeError(badStr).details, 'unknown error');
+ });
+ 
+-test('normalizeError: empty message is wrapped, details coerced to string', () => {
+-  const e = normalizeError({ kind: 'rejected', message: '', details: 'd' });
++test('normalizeError: empty key is wrapped, details coerced to string', () => {
++  const e = normalizeError({ kind: 'rejected', key: '', details: 'd' });
+   assert.equal(e.kind, 'internal');
+-  assert.ok(e.message.length > 0);
+-  const c = normalizeError({ kind: 'rejected', message: 'm', details: 42 });
++  assert.equal(e.key, 'error.generic');
++  const c = normalizeError({ kind: 'rejected', key: 'error.busy', details: 42 });
+   assert.equal(c.kind, 'rejected');
+   assert.equal(c.details, '42');
+ });
+@@ -57,15 +57,15 @@ test('normalizeError never throws, even on throwing getters and proxies', () =>
+   const trap = () => { throw new Error('trap'); };
+   const proxy = new Proxy({}, { get: trap, has: trap, getPrototypeOf: trap, ownKeys: trap, getOwnPropertyDescriptor: trap });
+   const cases = [
+-    { kind: 'k', message: 'm', get details() { throw 1; } },
+-    { get kind() { throw 1; }, message: 'm' },
+-    { kind: 'k', get message() { throw 1; } },
++    { kind: 'k', key: 'error.busy', get details() { throw 1; } },
++    { get kind() { throw 1; }, key: 'error.busy' },
++    { kind: 'k', get key() { throw 1; } },
+     proxy,
+   ];
+   for (const c of cases) {
+     const e = normalizeError(c);
+     assert.equal(e.kind, 'internal');
+     assert.equal(e.details, 'unknown error');
+-    assert.ok(e.message.length > 0);
++    assert.equal(e.key, 'error.generic');
+   }
+ });
+diff --git a/family-app/ui/test/pure.test.js b/family-app/ui/test/pure.test.js
+index 0492f4a..edde580 100644
+--- a/family-app/ui/test/pure.test.js
++++ b/family-app/ui/test/pure.test.js
+@@ -7,15 +7,26 @@ import { parseRoute, ROUTES } from '../router.js';
+ import { setLocale } from '../i18n.js';
+ 
+ test('an ErrorDto from Rust passes through unchanged', () => {
+-  const dto = { kind: 'rejected', message: 'Не получилось.', details: 'x' };
+-  assert.equal(normalizeError(dto), dto);
++  const dto = { kind: 'rejected', key: 'error.rejected_generic', params: {}, details: 'x' };
++  assert.deepEqual(normalizeError(dto), dto);
++});
++
++test('an ErrorDto without params gets empty ones', () => {
++  assert.deepEqual(normalizeError({ kind: 'blocked', key: 'error.busy' }).params, {});
++  assert.equal(normalizeError({ kind: 'blocked', key: 'error.busy', params: [1] }).params.length, undefined);
++});
++
++test('an old-shaped error (a ready sentence, no key) is not trusted as a catalog key', () => {
++  const e = normalizeError({ kind: 'rejected', message: 'Не получилось.' });
++  assert.equal(e.kind, 'internal');
++  assert.equal(e.key, 'error.generic');
+ });
+ 
+ test('anything else becomes an internal error with the original text as details', () => {
+   const e = normalizeError(new Error('boom'));
+   assert.equal(e.kind, 'internal');
+   assert.equal(e.details, 'boom');
+-  assert.ok(e.message.length > 0);
++  assert.equal(e.key, 'error.generic');
+   assert.equal(normalizeError('plain').details, 'plain');
+   assert.equal(normalizeError(undefined).kind, 'internal');
+ });
+diff --git a/family-app/ui/tools/smoke.mjs b/family-app/ui/tools/smoke.mjs
+index d3b76ec..fa8207e 100644
+--- a/family-app/ui/tools/smoke.mjs
++++ b/family-app/ui/tools/smoke.mjs
+@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
+ import { extname, join, normalize } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import assert from 'node:assert/strict';
++import { setLocale, t } from '../i18n.js';
+ 
+ const root = fileURLToPath(new URL('..', import.meta.url));
+ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+@@ -69,7 +70,7 @@ try {
+     if (m.id && pending.has(m.id)) pending.get(m.id)(m);
+     if (m.method === 'Page.loadEventFired') loadWaiters.splice(0).forEach((r) => r());
+     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.text + ' ' + (m.params.exceptionDetails.exception?.description ?? ''));
+-    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
++    if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || (m.params.type === 'warning' && String(m.params.args[0]?.value).startsWith('[i18n]')))) errors.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
+   };
+   const send = (method, params = {}) => new Promise((r) => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
+   await send('Runtime.enable');
+@@ -99,7 +100,7 @@ try {
+   let visit = 0;
+   const open = async (scenario, route = 'home') => {
+     await navigate('about:blank');
+-    await navigate(`${base}?mock=${scenario}&t=${++visit}#/${route}`);
++    await navigate(`${base}?mock=${scenario}&lang=${lang}&t=${++visit}#/${route}`);
+     await until("document.getElementById('app').innerText.length > 20", `${scenario} to render`);
+   };
+   const text = () => evaluate('document.body.innerText');
+@@ -110,150 +111,158 @@ try {
+   const fill = (selector, value) => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.focus(); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', {bubbles:true})); })()`);
+   const buttonDisabled = (label) => evaluate(`[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(label)})?.disabled`);
+ 
++  let lang = 'ru';
+   const tests = [];
+-  const test = (name, fn) => tests.push([name, fn]);
++  const test = (name, fn) => tests.push([`[${lang}] ${name}`, fn]);
++  // What the page shows, from the same catalogs the page uses.
++  const has = (text) => `document.body.innerText.includes(${JSON.stringify(text)})`;
++  const sendOp = { key: 'op.send', params: { amount: '5 USDC' } };
++  const unfinished = () => t('pending.banner', { what: sendOp });
+ 
++  function define() {
+   test('owner: balance, limit and role are shown', async () => {
+     await open('owner');
+-    const t = await text();
+-    assert.match(t, /250\.5 USDC/);
+-    assert.match(t, /ещё 70 USDC из 100 USDC/);
+-    assert.match(t, /Вы владелец счёта/);
++    const page = await text();
++    assert.match(page, /250\.5 USDC/);
++    assert.ok(page.includes(t('home.left_today_of', { left: '70 USDC', limit: '100 USDC' })), page);
++    assert.ok(page.includes(t('home.role_owner')));
+   });
+ 
+   test('owner: a small send goes through, a big one becomes a request', async () => {
+     await open('owner', 'send');
+     await until("document.querySelector('input[name=payee]')", 'payee list');
+     await fill("input[type=text]", '25');
+-    await click('Отправить');
+-    await until("document.body.innerText.includes('Деньги отправлены.')", 'send ok');
++    await click(t('send.submit'));
++    await until(has(t('notice.sent')), 'send ok');
+     // The refresh that follows changes the balance and rebuilds the screen: the
+     // success message must still be there afterwards.
+     await until("import('./state.js').then(({store}) => store.vault.balance === '225.5 USDC')", 'new balance loaded');
+-    assert.match(await text(), /Деньги отправлены\./);
++    assert.ok((await text()).includes(t('notice.sent')));
+     await fill("input[type=text]", '80');
+-    await click('Отправить');
+-    await until("document.body.innerText.includes('Запрос отправлен')", 'request filed');
++    await click(t('send.submit'));
++    await until(has(t('notice.request_filed')), 'request filed');
+   });
+ 
+   test('owner: a payee still in the 48h wait is not offered', async () => {
+     await open('owner', 'send');
+     await until("document.querySelector('input[name=payee]')", 'payee list');
+     assert.equal(await evaluate("document.querySelectorAll('input[name=payee]').length"), 1);
+-    assert.match(await text(), /Сосед Пётр/); // listed as "not yet usable"
++    const page = await text();
++    assert.match(page, /Сосед Пётр/); // listed as "not yet usable", with the wait in this language
++    assert.ok(page.toLocaleLowerCase(lang).includes(t('payee.wait_hours', { n: 31 }).toLocaleLowerCase(lang)), page);
+   });
+ 
+   test('guardian: sees the pending request and approves it', async () => {
+     await open('guardian', 'approvals');
+-    await until("document.body.innerText.includes('Перевод 150 USDC')", 'request card');
+-    await click('Одобрить');
+-    await until("document.body.innerText.includes('Перевод одобрен.')", 'approved');
++    await until(has(t('approvals.transfer', { amount: '150 USDC' })), 'request card');
++    await click(t('approvals.approve'));
++    await until(has(t('notice.approved')), 'approved');
+     await until("!document.querySelector('.count')", 'badge gone');
+   });
+ 
+   test('guardian: cannot send, and is told why', async () => {
+     await open('guardian', 'send');
+-    assert.match(await text(), /только его владелец/);
++    assert.ok((await text()).includes(t('send.why_not_owner')));
+   });
+ 
+   test('first launch shows the demo tag in mock mode', async () => {
+     await open('empty');
+-    await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');
+-    assert.match(await text(), /демо/);
++    await until(has(t('pair.title')), 'first screen');
++    assert.ok((await text()).includes(t('header.demo')));
+   });
+ 
+   test('first launch: bad text is refused, good text waits for the chain', async () => {
+     await open('empty');
+-    await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Напишите своё имя')", 'name required');
++    await until(has(t('pair.title')), 'first screen');
++    await click(t('pair.submit'));
++    await until(has(t('pair.need_name')), 'name required');
+     await fill('input[autocomplete=name]', 'Внук Саша');
+     await fill('input[placeholder^="fvpair1"]', 'hello');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Введите текст QR-кода')", 'bad code refused');
++    await click(t('pair.submit'));
++    await until(has(t('pair.need_code')), 'bad code refused');
+     await fill('input[placeholder^="fvpair1"]', 'fvpair1:00112233445566778899aabbccddeeff');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
++    await click(t('pair.submit'));
++    await until(has(t('waiting.title')), 'waiting');
+   });
+ 
+   test('first launch: waiting survives a re-render, then the vault takes over', async () => {
+     await open('waiting');
+     await fill('input[autocomplete=name]', 'Внук Саша');
+     await fill('input[placeholder^="fvpair1"]', '123456');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
++    await click(t('pair.submit'));
++    await until(has(t('waiting.title')), 'waiting');
+     // Any re-render (here: the faucet's notice and balance refresh) must not
+     // bring the pairing form back or stop the polling.
+-    await click('Получить тестовые SOL');
+-    await until("document.body.innerText.includes('SOL пришли на ваш адрес')", 'faucet ok');
++    await click(t('faucet.button'));
++    await until(has(t('faucet.done')), 'faucet ok');
+     await sleep(500);
+-    let t = await text();
+-    assert.match(t, /Ждём, пока вас добавят/);
+-    assert.doesNotMatch(t, /Меня добавляет родственник/);
+-    await until("document.body.innerText.includes('Личный счёт')", 'vault shown', 30000);
++    const page = await text();
++    assert.ok(page.includes(t('waiting.title')));
++    assert.ok(!page.includes(t('pair.title')));
++    await until(has(t('home.title_personal')), 'vault shown', 30000);
+   });
+ 
+   test('first launch: stuck waiting can be abandoned and the code entered again', async () => {
+     await open('stuck');
+     await fill('input[autocomplete=name]', 'Внук Саша');
+     await fill('input[placeholder^="fvpair1"]', '123456');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
+-    await click('Ввести код заново');
++    await click(t('pair.submit'));
++    await until(has(t('waiting.title')), 'waiting');
++    await click(t('waiting.retry'));
+     await until("document.querySelector('input[autocomplete=name]') && document.querySelector('input[placeholder^=\"fvpair1\"]')", 'pair form back');
+-    assert.doesNotMatch(await text(), /Ждём, пока вас добавят/);
++    assert.ok(!(await text()).includes(t('waiting.title')));
+     await fill('input[autocomplete=name]', 'Внук Саша');
+     await fill('input[placeholder^="fvpair1"]', '123456');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting again');
++    await click(t('pair.submit'));
++    await until(has(t('waiting.title')), 'waiting again');
+   });
+ 
+   test('first launch: a new key can reach the address and the test-SOL button before any vault exists', async () => {
+     await open('empty');
+-    await until("document.body.innerText.includes('Ваш адрес и комиссии')", 'address card');
+-    assert.match(await text(), /На адресе: 0 SOL/);
+-    await click('Получить тестовые SOL');
+-    await until("document.body.innerText.includes('SOL пришли на ваш адрес')", 'faucet ok');
+-    await until("document.body.innerText.includes('На адресе: 0.1 SOL')", 'balance updated');
+-    assert.match(await text(), /SOL пришли на ваш адрес/); // message survived the re-render
++    await until(has(t('address.title')), 'address card');
++    assert.ok((await text()).includes(t('address.on_address', { sol: '0' })));
++    await click(t('faucet.button'));
++    await until(has(t('faucet.done')), 'faucet ok');
++    await until(has(t('address.on_address', { sol: '0.1' })), 'balance updated');
++    assert.ok((await text()).includes(t('faucet.done'))); // message survived the re-render
+   });
+ 
+   test('a failed first load shows an error and a retry, not the first-launch screen', async () => {
+     await open('offline');
+-    await until("document.body.innerText.includes('Повторить')", 'retry button');
+-    const t = await text();
+-    assert.match(t, /Нет связи/);
+-    assert.doesNotMatch(t, /Меня добавляет родственник|Открыть семейный счёт/);
++    await until(has(t('common.retry')), 'retry button');
++    const page = await text();
++    assert.ok(page.includes(t('error.no_connection')));
++    assert.ok(!page.includes(t('pair.title')) && !page.includes(t('open.submit')));
+   });
+ 
+   test('a wrong fallback code shows the plain message and keeps the details folded', async () => {
+     await open('empty');
+     await fill('input[autocomplete=name]', 'Внук Саша');
+     await fill('input[placeholder^="fvpair1"]', '000000');
+-    await click('Передать устройству');
+-    await until("document.body.innerText.includes('Устройство не приняло код')", 'rejection message');
++    await click(t('pair.submit'));
++    await until(has(t('error.pairing.write_rejected')), 'rejection message');
+     assert.equal(await evaluate("document.querySelector('details')?.open"), false);
+   });
+ 
+   test('an unconfirmed operation shows the warning, and its result stays visible after the check', async () => {
+     await open('unconfirmed');
+-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+-    await click('Проверить');
+-    await until("!document.body.innerText.includes('Не закончена операция')", 'warning cleared');
++    await until(has(unfinished()), 'warning');
++    await click(t('pending.check'));
++    await until(`!${has(unfinished())}`, 'warning cleared');
+     await sleep(300);
+-    assert.match(await text(), /Операция прошла\./);
++    assert.ok((await text()).includes(t('resolution.confirmed')));
+   });
+ 
+   test('a failed check is shown as an info notice, a confirmed one as a success notice', async () => {
+     await open('unconfirmed-failed');
+-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+-    await click('Проверить');
++    await until(has(unfinished()), 'warning');
++    await click(t('pending.check'));
+     await until("document.getElementById('notice')", 'notice');
+     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
+-    assert.match(await text(), /деньги не списаны/);
++    assert.ok((await text()).includes(t('resolution.failed')));
+     await open('unconfirmed');
+-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+-    await click('Проверить');
++    await until(has(unfinished()), 'warning');
++    await click(t('pending.check'));
+     await until("document.getElementById('notice')", 'notice');
+     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
+   });
+@@ -261,18 +270,18 @@ try {
+   test('while an operation is unconfirmed the money buttons are disabled', async () => {
+     await open('unconfirmed', 'send');
+     await until("document.querySelector('input[name=payee]')", 'payee list');
+-    assert.equal(await buttonDisabled('Отправить'), true);
+-    assert.match(await text(), /Сначала проверьте прошлую операцию/);
+-    await click('Проверить');
+-    await until("!document.body.innerText.includes('Не закончена операция')", 'warning cleared');
++    assert.equal(await buttonDisabled(t('send.submit')), true);
++    assert.ok((await text()).includes(t('pending.lock_hint')));
++    await click(t('pending.check'));
++    await until(`!${has(unfinished())}`, 'warning cleared');
+     await until("document.querySelector('input[name=payee]')", 'send form back');
+-    assert.equal(await buttonDisabled('Отправить'), false);
++    assert.equal(await buttonDisabled(t('send.submit')), false);
+   });
+ 
+   test('a background refresh is deferred while the person types, then applied', async () => {
+     await open('owner');
+     assert.match(await text(), /250\.5 USDC/);
+-    await click('Пополнить');
++    await click(t('home.deposit'));
+     await until("document.querySelector('input[type=text]')", 'amount field');
+     await fill('input[type=text]', '12.5');
+     await evaluate('globalThis.__mockBump()');
+@@ -282,39 +291,39 @@ try {
+     assert.match(await text(), /250\.5 USDC/); // the update waits
+     await evaluate('document.activeElement.blur()');
+     await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
+-    await until("document.body.innerText.includes('251.5 USDC')", 'deferred balance applied');
++    await until(has('251.5 USDC'), 'deferred balance applied');
+   });
+ 
+   test('an unknown notice kind falls back to the info banner', async () => {
+     await open('owner');
+-    await evaluate("__ctx.notify('Что-то', 'bogus'); __ctx.notify('Ещё', null);");
++    await evaluate("__ctx.notify({ key: 'notice.sent' }, 'bogus'); __ctx.notify({ key: 'notice.deposit' }, null);");
+     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
+-    await evaluate("__ctx.notify('Хорошо')");
++    await evaluate("__ctx.notify({ key: 'notice.sent' })");
+     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
+   });
+ 
+   test('a check that is still undecided shows a warn notice and keeps the warning', async () => {
+     await open('unconfirmed-waiting');
+-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+-    await click('Проверить');
++    await until(has(unfinished()), 'warning');
++    await click(t('pending.check'));
+     await until("document.getElementById('notice')", 'notice');
+     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-warn');
+     await sleep(500);
+-    assert.match(await text(), /Не закончена операция/);
++    assert.ok((await text()).includes(unfinished()));
+   });
+ 
+   test('notify keeps half-typed fields, renders no second notice and is announced', async () => {
+     await open('owner', 'people');
+     await until("document.querySelector('input[type=text]')", 'name field');
+     await fill('input[type=text]', 'Баба Нюра');
+-    await evaluate("__ctx.notify('Готово')");
++    await evaluate("__ctx.notify({ key: 'notice.sent' })");
+     assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
+     assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
+-    assert.match(await text(), /Готово/);
+-    await evaluate("__ctx.notify('Готово 2')");
++    assert.ok((await text()).includes(t('notice.sent')));
++    await evaluate("__ctx.notify({ key: 'notice.deposit' })");
+     assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
+     assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
+-    await until("document.getElementById('live').textContent === 'Готово 2'", 'live region text');
++    await until(`document.getElementById('live').textContent === ${JSON.stringify(t('notice.deposit'))}`, 'live region text');
+   });
+ 
+   test('a slow older response never overwrites a newer one', async () => {
+@@ -326,7 +335,7 @@ try {
+     await until('!globalThis.__mockDelay.load_vault', 'the slow call to have read its (older) balance');
+     // Fast call: reads the newer 252.5 and lands long before the slow one.
+     await evaluate('__mockBump(); void __ctx.refresh();');
+-    await until("document.body.innerText.includes('252.5 USDC')", 'newer balance');
++    await until(has('252.5 USDC'), 'newer balance');
+     await sleep(2200); // the slow call (1500 ms hold + history) has landed by now
+     assert.match(await text(), /252\.5 USDC/);
+     assert.doesNotMatch(await text(), /251\.5 USDC/);
+@@ -334,14 +343,14 @@ try {
+ 
+   test('a newer call skipped because of typing does not lose an older result', async () => {
+     await open('owner');
+-    await click('Пополнить');
++    await click(t('home.deposit'));
+     await until("document.querySelector('input[type=text]')", 'amount field');
+     await fill('input[type=text]', '5');
+     await evaluate("globalThis.__mockDelay = { load_vault: 800 }; __mockBump(); void __ctx.refresh({ background: true }); void __ctx.refresh({ background: true });");
+     await sleep(1000); // the fast call finished while typing and was skipped
+     assert.match(await text(), /250\.5 USDC/);
+     await evaluate('document.activeElement.blur()');
+-    await until("document.body.innerText.includes('251.5 USDC')", 'older result still applied');
++    await until(has('251.5 USDC'), 'older result still applied');
+   });
+ 
+   test('an unconfirmed error leaves the button disabled the whole time', async () => {
+@@ -349,33 +358,40 @@ try {
+     await until("document.querySelector('input[name=payee]')", 'payee list');
+     await fill('input[type=text]', '5');
+     await evaluate(`(() => {
+-      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Отправить');
++      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === ${JSON.stringify(t('send.submit'))});
+       window.__log = [];
+       new MutationObserver((rs) => rs.forEach((r) => window.__log.push(r.oldValue === null ? 'disabled' : 'enabled')))
+         .observe(b, { attributes: true, attributeFilter: ['disabled'], attributeOldValue: true });
+     })()`);
+-    await click('Отправить');
+-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
++    await click(t('send.submit'));
++    await until(has(unfinished()), 'warning');
+     await sleep(300);
+-    assert.equal(await buttonDisabled('Отправить'), true);
++    assert.equal(await buttonDisabled(t('send.submit')), true);
+     assert.deepEqual(await evaluate('window.__log'), ['disabled']);
+   });
+ 
+   test('names from the chain are shown as text, never as HTML', async () => {
+     await open('owner', 'people');
+-    await until("document.body.innerText.includes('Внучка Анна')", 'people list');
++    await until(has('Внучка Анна'), 'people list');
+     await evaluate(`import('./dom.js').then(({h}) => { document.body.append(h('div', {id:'x'}, '<img src=x onerror=window.__pwned=1>')); })`);
+     await sleep(200);
+     assert.equal(await evaluate('window.__pwned === undefined && !document.querySelector("#x img")'), true);
+   });
++  }
+ 
+-  for (const [name, fn] of tests) {
+-    try {
+-      await fn();
+-      console.log(`ok   ${name}`);
+-    } catch (e) {
+-      failed++;
+-      console.log(`FAIL ${name}\n     ${String(e.message).split('\n').join('\n     ')}`);
++  for (const language of ['ru', 'en']) {
++    lang = language;
++    setLocale(language, { persist: false });
++    tests.length = 0;
++    define();
++    for (const [name, fn] of tests) {
++      try {
++        await fn();
++        console.log(`ok   ${name}`);
++      } catch (e) {
++        failed++;
++        console.log(`FAIL ${name}\n     ${String(e.message).split('\n').join('\n     ')}`);
++      }
+     }
+   }
+   if (errors.length) {

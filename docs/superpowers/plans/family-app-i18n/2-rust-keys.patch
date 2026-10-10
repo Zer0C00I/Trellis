@@ -1,0 +1,1350 @@
+diff --git a/family-app/src-tauri/src/commands/actions.rs b/family-app/src-tauri/src/commands/actions.rs
+index a81b374..e7da921 100644
+--- a/family-app/src-tauri/src/commands/actions.rs
++++ b/family-app/src-tauri/src/commands/actions.rs
+@@ -17,6 +17,7 @@ use super::{
+ };
+ use crate::config::{usdc_mint, AIRDROP_LAMPORTS};
+ use crate::dto::{ActionOkDto, ErrorDto, VaultRefDto};
++use crate::msg::Msg;
+ use crate::state::AppState;
+ use crate::text::{money, short_address};
+ use crate::view::{permissions, plan_send, SendPlan};
+@@ -33,7 +34,7 @@ pub async fn deposit(
+         ensure_no_pending(&st)?;
+         let view = load_view(&st, &vault)?;
+         let amount = parse_amount(&amount, view.decimals)?;
+-        let what = format!("Пополнение на {}", money(amount, view.decimals));
++        let what = Msg::new("op.deposit").with("amount", money(amount, view.decimals));
+         let result = run_money(&st, &what, |hook| {
+             core::deposit(
+                 &st.rpc,
+@@ -44,7 +45,7 @@ pub async fn deposit(
+                 hook,
+             )
+         });
+-        finish(result, "Деньги отправлены на счёт.")
++        finish(result, "notice.deposit")
+     })
+     .await
+ }
+@@ -65,28 +66,22 @@ pub async fn send_money(
+         let view = load_view(&st, &vault)?;
+         let now = super::now_unix();
+         if !permissions(&view, &st.me(), now).send {
+-            return Err(not_allowed(
+-                "Отправлять деньги с этого счёта может только его владелец, и нужен получатель, которого уже можно использовать.",
+-            ));
++            return Err(not_allowed("error.send_not_allowed"));
+         }
+-        let recipient = parse_pubkey(&recipient, "Получатель")?;
++        let recipient = parse_pubkey(&recipient, "field.recipient")?;
+         let payee_ok = view
+             .payees
+             .iter()
+             .any(|p| p.address == recipient && p.is_active(now));
+         if !payee_ok {
+-            return Err(ErrorDto::new(
+-                "invalid",
+-                "Выберите получателя из списка. Нового получателя можно использовать через 48 часов после добавления.",
+-            ));
++            return Err(ErrorDto::new("invalid", "error.payee_not_usable"));
+         }
+         let amount = parse_amount(&amount, view.decimals)?;
+-        let what = format!("Отправка {}", money(amount, view.decimals));
++        let what = Msg::new("op.send").with("amount", money(amount, view.decimals));
+         match plan_send(&view, amount) {
+-            SendPlan::InsufficientFunds => Err(ErrorDto::new(
+-                "invalid",
+-                "На счёте не хватает денег для этой суммы.",
+-            )),
++            SendPlan::InsufficientFunds => {
++                Err(ErrorDto::new("invalid", "error.insufficient_funds"))
++            }
+             SendPlan::Direct => {
+                 let result = run_money(&st, &what, |hook| {
+                     core::send(
+@@ -99,7 +94,7 @@ pub async fn send_money(
+                         hook,
+                     )
+                 });
+-                finish(result, "Деньги отправлены.")
++                finish(result, "notice.sent")
+             }
+             SendPlan::Request => {
+                 let result = run_money(&st, &what, |hook| {
+@@ -114,10 +109,7 @@ pub async fn send_money(
+                         hook,
+                     )
+                 });
+-                finish(
+-                    result,
+-                    "Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.",
+-                )
++                finish(result, "notice.request_filed")
+             }
+         }
+     })
+@@ -137,19 +129,14 @@ pub async fn add_payee(
+         ensure_no_pending(&st)?;
+         let view = load_view(&st, &vault)?;
+         if !permissions(&view, &st.me(), super::now_unix()).add_payee {
+-            return Err(not_allowed(
+-                "Добавлять получателей может только владелец счёта.",
+-            ));
++            return Err(not_allowed("error.add_payee_not_allowed"));
+         }
+         let name = name.trim().to_string();
+         if name.is_empty() || name.len() > 32 {
+-            return Err(ErrorDto::new(
+-                "invalid",
+-                "Имя должно быть непустым и не длиннее 32 байт (около 16 русских букв).",
+-            ));
++            return Err(ErrorDto::new("invalid", "error.name_length"));
+         }
+-        let address = parse_pubkey(&address, "Получатель")?;
+-        let what = format!("Добавление получателя «{name}»");
++        let address = parse_pubkey(&address, "field.recipient")?;
++        let what = Msg::new("op.add_payee").with("name", name.clone());
+         let result = run_money(&st, &what, |hook| {
+             core::add_beneficiary(
+                 &st.rpc,
+@@ -161,10 +148,7 @@ pub async fn add_payee(
+                 hook,
+             )
+         });
+-        finish(
+-            result,
+-            "Получатель добавлен. Пользоваться им можно будет через 48 часов.",
+-        )
++        finish(result, "notice.payee_added")
+     })
+     .await
+ }
+@@ -181,12 +165,10 @@ pub async fn add_guardian(
+         ensure_no_pending(&st)?;
+         let view = load_view(&st, &vault)?;
+         if !permissions(&view, &st.me(), super::now_unix()).add_guardian {
+-            return Err(not_allowed(
+-                "Добавить доверенное лицо с этого устройства нельзя: для этого нужна подпись владельца счёта.",
+-            ));
++            return Err(not_allowed("error.add_guardian_not_allowed"));
+         }
+-        let address = parse_pubkey(&address, "Доверенное лицо")?;
+-        let result = run_money(&st, "Добавление доверенного лица", |hook| {
++        let address = parse_pubkey(&address, "field.guardian")?;
++        let result = run_money(&st, &Msg::new("op.add_guardian"), |hook| {
+             core::add_trusted_approver(
+                 &st.rpc,
+                 &st.program_id,
+@@ -197,10 +179,7 @@ pub async fn add_guardian(
+                 hook,
+             )
+         });
+-        finish(
+-            result,
+-            "Доверенное лицо добавлено.",
+-        )
++        finish(result, "notice.guardian_added")
+     })
+     .await
+ }
+@@ -217,19 +196,14 @@ pub async fn approve_request(
+         ensure_no_pending(&st)?;
+         let view = load_view(&st, &vault)?;
+         if !permissions(&view, &st.me(), super::now_unix()).approve {
+-            return Err(not_allowed(
+-                "Одобрять переводы могут только доверенные лица.",
+-            ));
++            return Err(not_allowed("error.approve_not_allowed"));
+         }
+         let request = view
+             .pending
+             .iter()
+             .find(|r| r.nonce == nonce)
+-            .ok_or_else(|| ErrorDto::new("invalid", "Этого запроса уже нет в списке."))?;
+-        let what = format!(
+-            "Одобрение перевода на {}",
+-            money(request.amount, view.decimals)
+-        );
++            .ok_or_else(|| ErrorDto::new("invalid", "error.request_gone"))?;
++        let what = Msg::new("op.approve").with("amount", money(request.amount, view.decimals));
+         let result = run_money(&st, &what, |hook| {
+             core::approve_withdrawal(
+                 &st.rpc,
+@@ -240,7 +214,7 @@ pub async fn approve_request(
+                 hook,
+             )
+         });
+-        finish(result, "Перевод одобрен.")
++        finish(result, "notice.approved")
+     })
+     .await
+ }
+@@ -259,19 +233,14 @@ pub async fn open_family_account(
+         let owned: Vec<_> = discover_owned_vaults(&st.rpc, &st.program_id, &me)?;
+         let [pool, _personal] = owned_vault_addresses(&st.program_id, &me);
+         if pool_already_open(&pool, &owned) {
+-            return Err(ErrorDto::new(
+-                "invalid",
+-                "Семейный счёт уже открыт. Выберите его в списке счетов вверху экрана.",
+-            ));
++            return Err(ErrorDto::new("invalid", "error.pool_exists"));
+         }
+         let mint = usdc_mint();
+         let decimals = mint_decimals(&st.rpc, &mint)?;
+         let limit = parse_amount(&daily_limit, decimals)?;
+-        let vault = run_money(
+-            &st,
+-            "Открытие семейного счёта",
+-            |hook| core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit, hook),
+-        )?;
++        let vault = run_money(&st, &Msg::new("op.open_family"), |hook| {
++            core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit, hook)
++        })?;
+         Ok(VaultRefDto {
+             address: vault.to_string(),
+             address_short: short_address(&vault),
+@@ -289,9 +258,7 @@ pub async fn get_test_sol(state: State<'_, AppState>) -> Result<(), ErrorDto> {
+         request_devnet_airdrop(&st.rpc, &st.me(), AIRDROP_LAMPORTS).map_err(|error| {
+             let mut dto = ErrorDto::from(error);
+             if dto.kind == "rejected" {
+-                dto.message = "Бесплатные тестовые SOL сейчас недоступны (у раздачи есть лимит). \
+-                               Попробуйте позже или пополните адрес вручную."
+-                    .to_string();
++                dto.message = Msg::new("error.faucet_unavailable");
+             }
+             dto
+         })
+diff --git a/family-app/src-tauri/src/commands/mod.rs b/family-app/src-tauri/src/commands/mod.rs
+index 46f50aa..9c05ff7 100644
+--- a/family-app/src-tauri/src/commands/mod.rs
++++ b/family-app/src-tauri/src/commands/mod.rs
+@@ -14,6 +14,7 @@ use solana_pubkey::Pubkey;
+ use solana_signature::Signature;
+ 
+ use crate::dto::{ActionOkDto, ErrorDto};
++use crate::msg::Msg;
+ use crate::pending::{self, PendingTx};
+ use crate::state::{AppState, BusyGuard};
+ use crate::text::error_dto;
+@@ -32,10 +33,7 @@ where
+ {
+     tauri::async_runtime::spawn_blocking(work)
+         .await
+-        .map_err(|e| {
+-            ErrorDto::new("internal", "Что-то пошло не так внутри приложения.")
+-                .with_details(e.to_string())
+-        })?
++        .map_err(|e| ErrorDto::new("internal", "error.internal").with_details(e.to_string()))?
+ }
+ 
+ pub fn now_unix() -> i64 {
+@@ -45,28 +43,21 @@ pub fn now_unix() -> i64 {
+         .unwrap_or(0)
+ }
+ 
+-pub fn parse_pubkey(text: &str, what: &str) -> Result<Pubkey, ErrorDto> {
++/// `field` is the catalog key naming what was typed (`field.vault`).
++pub fn parse_pubkey(text: &str, field: &str) -> Result<Pubkey, ErrorDto> {
+     text.trim().parse().map_err(|_| {
+-        ErrorDto::new(
+-            "invalid",
+-            format!("{what}: это не похоже на адрес. Проверьте, что он скопирован целиком."),
+-        )
++        ErrorDto::new("invalid", "error.bad_address").with_msg_param("what", &Msg::new(field))
+     })
+ }
+ 
+ /// Exact decimal parse; `text` is what the person typed ("25", "2.50").
+ pub fn parse_amount(text: &str, decimals: u32) -> Result<u64, ErrorDto> {
+-    family_vault_client::parse_decimal_amount(text, decimals).map_err(|e| {
+-        ErrorDto::new(
+-            "invalid",
+-            "Введите сумму числом, например 25 или 2.50 (не больше знаков после точки, чем у денег на счёте).",
+-        )
+-        .with_details(e)
+-    })
++    family_vault_client::parse_decimal_amount(text, decimals)
++        .map_err(|e| ErrorDto::new("invalid", "error.bad_amount").with_details(e))
+ }
+ 
+ pub fn load_view(state: &AppState, vault: &str) -> Result<VaultView, ErrorDto> {
+-    let vault = parse_pubkey(vault, "Счёт")?;
++    let vault = parse_pubkey(vault, "field.vault")?;
+     Ok(fetch_vault_view(&state.rpc, &state.program_id, &vault)?)
+ }
+ 
+@@ -76,11 +67,9 @@ pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
+     let path = state.pending_path();
+     match pending::load(&path) {
+         Ok(record) => Ok(record),
+-        Err(pending::LoadError::Io(e)) => Err(ErrorDto::new(
+-            "internal",
+-            "Не удалось прочитать записи приложения.",
+-        )
+-        .with_details(e)),
++        Err(pending::LoadError::Io(e)) => {
++            Err(ErrorDto::new("internal", "error.cannot_read_records").with_details(e))
++        }
+         Err(pending::LoadError::Corrupt(why)) => Err(quarantine_error(state, &why)),
+     }
+ }
+@@ -89,12 +78,9 @@ pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
+ /// one error the person sees about it.
+ pub fn quarantine_error(state: &AppState, why: &str) -> ErrorDto {
+     match pending::quarantine(&state.pending_path()) {
+-        Ok(moved) => ErrorDto::new(
+-            "blocked",
+-            "Запись о прошлой операции оказалась повреждена, и мы не можем узнать, чем она кончилась. Проверьте историю счёта и свой кошелёк, прежде чем повторять перевод. Запись сохранена отдельно, приложение снова работает.",
+-        )
+-        .with_details(moved.display().to_string()),
+-        Err(e) => ErrorDto::new("internal", "Не удалось прочитать записи приложения.")
++        Ok(moved) => ErrorDto::new("blocked", "error.record_corrupt")
++            .with_details(moved.display().to_string()),
++        Err(e) => ErrorDto::new("internal", "error.cannot_read_records")
+             .with_details(format!("{why}; {e}")),
+     }
+ }
+@@ -113,21 +99,17 @@ pub fn pool_already_open(pool: &Pubkey, owned: &[Pubkey]) -> bool {
+ /// record) may run at a time: a second one starting in the same instant
+ /// would race with the first one's reads, and a double tap could pay twice.
+ pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
+-    BusyGuard::acquire(&state.busy)
+-        .ok_or_else(|| ErrorDto::new("blocked", "Подождите: предыдущая операция ещё выполняется."))
++    BusyGuard::acquire(&state.busy).ok_or_else(|| ErrorDto::new("blocked", "error.busy"))
+ }
+ 
+ /// While an operation's outcome is unknown nothing else may move money.
+ pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
+     match load_pending(state)? {
+         None => Ok(()),
+-        Some(p) => Err(ErrorDto::new(
+-            "blocked",
+-            format!(
+-                "Сначала нужно узнать, чем закончилась прошлая операция («{}»). Нажмите «Проверить».",
+-                p.what
+-            ),
+-        )),
++        Some(p) => {
++            Err(ErrorDto::new("blocked", "error.pending_blocks")
++                .with_msg_param("what", &p.what_msg()))
++        }
+     }
+ }
+ 
+@@ -140,25 +122,17 @@ pub fn should_clear<T>(result: &Result<T, ActionError>) -> bool {
+ 
+ /// Builds the record the hook writes before anything is sent.
+ pub fn pending_record(
+-    what: &str,
++    what: &Msg,
+     signature: &Signature,
+     last_valid_block_height: u64,
+ ) -> PendingTx {
+-    PendingTx {
+-        signature: signature.to_string(),
+-        last_valid_block_height,
+-        what: what.to_string(),
+-    }
++    PendingTx::new(signature.to_string(), last_valid_block_height, what)
+ }
+ 
+ /// What the person sees when the record could not be written (so nothing
+ /// was sent).
+ pub fn record_failed_dto(reason: String) -> ErrorDto {
+-    ErrorDto::new(
+-        "internal",
+-        "Не удалось записать операцию на этом устройстве, поэтому ничего не было отправлено. Попробуйте ещё раз.",
+-    )
+-    .with_details(reason)
++    ErrorDto::new("internal", "error.record_not_saved").with_details(reason)
+ }
+ 
+ /// Runs one money operation with the "record before sending" rule: core's
+@@ -167,7 +141,7 @@ pub fn record_failed_dto(reason: String) -> ErrorDto {
+ /// Afterwards the record is cleared unless the outcome is `Unconfirmed`.
+ pub fn run_money<T>(
+     state: &AppState,
+-    what: &str,
++    what: &Msg,
+     op: impl FnOnce(BeforeSend) -> Result<T, ActionError>,
+ ) -> Result<T, ErrorDto> {
+     let path = state.pending_path();
+@@ -186,7 +160,7 @@ pub fn run_money<T>(
+     }
+     if should_clear(&result) {
+         // If this fails the record stays and blocks money commands until
+-        // "Проверить" settles it: the safe side.
++        // "Check" settles it: the safe side.
+         let _ = pending::clear(&path);
+     }
+     result.map_err(ErrorDto::from)
+@@ -199,12 +173,12 @@ pub fn finish(
+ ) -> Result<ActionOkDto, ErrorDto> {
+     result.map(|signature| ActionOkDto {
+         signature: signature.to_string(),
+-        message: ok_message.to_string(),
++        message: Msg::new(ok_message),
+     })
+ }
+ 
+-pub fn not_allowed(text: &str) -> ErrorDto {
+-    ErrorDto::new("blocked", text)
++pub fn not_allowed(key: &str) -> ErrorDto {
++    ErrorDto::new("blocked", key)
+ }
+ 
+ #[cfg(test)]
+@@ -217,7 +191,7 @@ mod tests {
+ 
+     #[test]
+     fn a_record_with_a_bad_signature_is_recognised() {
+-        let mut r = pending_record("x", &sig(), 1);
++        let mut r = pending_record(&Msg::new("op.add_guardian"), &sig(), 1);
+         assert_eq!(parse_record_signature(&r), Some(sig()));
+         r.signature = "not a signature".to_string();
+         assert_eq!(parse_record_signature(&r), None);
+@@ -234,8 +208,9 @@ mod tests {
+ 
+     #[test]
+     fn the_record_carries_what_signature_and_height() {
+-        let r = pending_record("Отправка 5 USDC", &sig(), 77);
+-        assert_eq!(r.what, "Отправка 5 USDC");
++        let what = Msg::new("op.send").with("amount", "5 USDC");
++        let r = pending_record(&what, &sig(), 77);
++        assert_eq!(r.what_msg(), what);
+         assert_eq!(r.signature, sig().to_string());
+         assert_eq!(r.last_valid_block_height, 77);
+     }
+@@ -249,10 +224,14 @@ mod tests {
+                 .unwrap()
+                 .subsec_nanos()
+         ));
+-        let record = pending_record("x", &sig(), 5);
++        let record = pending_record(&Msg::new("op.add_guardian"), &sig(), 5);
+         pending::save(&path, &record).unwrap();
+         assert_eq!(pending::load(&path).unwrap(), Some(record.clone()));
+-        assert!(pending::save(&path, &pending_record("y", &sig(), 6)).is_err());
++        assert!(pending::save(
++            &path,
++            &pending_record(&Msg::new("op.open_family"), &sig(), 6)
++        )
++        .is_err());
+         pending::clear(&path).unwrap();
+     }
+ 
+@@ -271,8 +250,25 @@ mod tests {
+     fn a_failed_record_save_says_nothing_was_sent_and_to_retry() {
+         let dto = record_failed_dto("disk full".to_string());
+         assert_eq!(dto.kind, "internal");
+-        assert!(dto.message.contains("ничего не было отправлено"));
+-        assert!(dto.message.contains("Попробуйте ещё раз"));
++        assert_eq!(dto.message.key, "error.record_not_saved");
+         assert_eq!(dto.details.as_deref(), Some("disk full"));
+     }
++
++    #[test]
++    fn a_blocked_command_names_the_unfinished_operation() {
++        let what = Msg::new("op.send").with("amount", "5 USDC");
++        let dto = ErrorDto::new("blocked", "error.pending_blocks").with_msg_param("what", &what);
++        let json = serde_json::to_value(&dto).unwrap();
++        assert_eq!(json["kind"], "blocked");
++        assert_eq!(json["key"], "error.pending_blocks");
++        assert_eq!(json["params"]["what"]["key"], "op.send");
++    }
++
++    #[test]
++    fn a_bad_address_names_the_field_by_key() {
++        let err = parse_pubkey("nope", "field.recipient").unwrap_err();
++        assert_eq!(err.kind, "invalid");
++        assert_eq!(err.message.key, "error.bad_address");
++        assert_eq!(err.message.params["what"]["key"], "field.recipient");
++    }
+ }
+diff --git a/family-app/src-tauri/src/commands/read.rs b/family-app/src-tauri/src/commands/read.rs
+index 09d0b12..3170dd6 100644
+--- a/family-app/src-tauri/src/commands/read.rs
++++ b/family-app/src-tauri/src/commands/read.rs
+@@ -17,6 +17,7 @@ use crate::dto::{
+     AppInfoDto, ErrorDto, HistoryLineDto, PendingTxDto, ResolutionDto, VaultDto, VaultRefDto,
+     WalletDto,
+ };
++use crate::msg::Msg;
+ use crate::pending;
+ use crate::state::AppState;
+ use crate::text::{history_line, resolution_for, short_address};
+@@ -93,7 +94,7 @@ pub async fn load_history(
+ ) -> Result<Vec<HistoryLineDto>, ErrorDto> {
+     let st = state.inner().clone();
+     blocking(move || {
+-        let vault = parse_pubkey(&vault, "Счёт")?;
++        let vault = parse_pubkey(&vault, "field.vault")?;
+         // A poisoned lock only means an earlier call panicked mid-update;
+         // the cache is still a valid map, so keep using it.
+         let mut cache = st
+@@ -120,7 +121,7 @@ pub async fn load_history(
+ pub fn pending_status(state: State<'_, AppState>) -> Result<Option<PendingTxDto>, ErrorDto> {
+     let record = load_pending(&state)?;
+     Ok(record.map(|p| PendingTxDto {
+-        what: p.what,
++        what: p.what_msg(),
+         signature: p.signature,
+     }))
+ }
+@@ -138,7 +139,7 @@ pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto,
+         let Some(record) = record else {
+             return Ok(ResolutionDto {
+                 status: "none",
+-                message: "Ничего не ожидает проверки.".to_string(),
++                message: Msg::new("resolution.none"),
+             });
+         };
+         let Some(signature) = parse_record_signature(&record) else {
+@@ -150,7 +151,7 @@ pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto,
+         let outcome = confirm_signature(&st.rpc, &signature, record.last_valid_block_height)?;
+         if outcome != SignatureOutcome::StillPossible {
+             pending::clear(&st.pending_path()).map_err(|e| {
+-                ErrorDto::new("internal", "Не удалось обновить записи приложения.").with_details(e)
++                ErrorDto::new("internal", "error.cannot_update_records").with_details(e)
+             })?;
+         }
+         Ok(resolution_for(&outcome))
+diff --git a/family-app/src-tauri/src/dto.rs b/family-app/src-tauri/src/dto.rs
+index b770d34..3b0fa30 100644
+--- a/family-app/src-tauri/src/dto.rs
++++ b/family-app/src-tauri/src/dto.rs
+@@ -1,30 +1,42 @@
+-//! What crosses the IPC boundary. Plain, serializable, already phrased in
+-//! the app's language: the JavaScript side only displays these and never
+-//! does money math (u64 amounts do not fit a JS number, so they travel as
+-//! strings that Rust formatted).
++//! What crosses the IPC boundary. Plain, serializable. Sentences travel as
++//! catalog keys with parameters (`Msg`), worded by the JavaScript side in the
++//! person's language; that side never does money math (u64 amounts do not
++//! fit a JS number, so they travel as strings that Rust formatted).
+ 
+ use serde::Serialize;
+ 
++use crate::msg::Msg;
++
+ /// A failed command. `kind` is one of `no_connection`, `rejected`,
+ /// `unconfirmed`, `blocked`, `invalid`, `internal`.
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+ pub struct ErrorDto {
+     pub kind: &'static str,
+-    /// Plain-language text for the screen.
+-    pub message: String,
++    /// The plain-language sentence for the screen (`key`, `params`).
++    #[serde(flatten)]
++    pub message: Msg,
+     /// Technical text for a "details" fold-out; never the only explanation.
+     pub details: Option<String>,
+ }
+ 
+ impl ErrorDto {
+-    pub fn new(kind: &'static str, message: impl Into<String>) -> Self {
++    pub fn new(kind: &'static str, key: &str) -> Self {
++        Self::from_msg(kind, Msg::new(key))
++    }
++
++    pub fn from_msg(kind: &'static str, message: Msg) -> Self {
+         Self {
+             kind,
+-            message: message.into(),
++            message,
+             details: None,
+         }
+     }
+ 
++    pub fn with_msg_param(mut self, name: &str, message: &Msg) -> Self {
++        self.message = self.message.with_msg(name, message);
++        self
++    }
++
+     pub fn with_details(mut self, details: impl Into<String>) -> Self {
+         self.details = Some(details.into());
+         self
+@@ -60,8 +72,8 @@ pub struct PayeeDto {
+     pub address: String,
+     pub address_short: String,
+     pub active: bool,
+-    /// "Можно отправлять" or "Можно будет через 5 часов".
+-    pub status: String,
++    /// `payee.ready`, `payee.wait_under_hour` or `payee.wait_hours` (`n`).
++    pub status: Msg,
+ }
+ 
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+@@ -95,8 +107,6 @@ pub struct PermissionsDto {
+ pub struct VaultDto {
+     pub address: String,
+     pub address_short: String,
+-    /// "Семейный счёт" or "Личный счёт".
+-    pub title: String,
+     pub is_pool: bool,
+     pub is_owner: bool,
+     pub is_guardian: bool,
+@@ -114,7 +124,9 @@ pub struct VaultDto {
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+ pub struct HistoryLineDto {
+     pub signature: String,
+-    pub text: String,
++    /// What happened (`history.*`).
++    #[serde(flatten)]
++    pub text: Msg,
+     /// Unix seconds, `None` if the node does not know the block time.
+     pub time: Option<i64>,
+ }
+@@ -122,13 +134,15 @@ pub struct HistoryLineDto {
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+ pub struct ActionOkDto {
+     pub signature: String,
+-    /// What happened, in words ("Деньги отправлены", "Запрос отправлен ...").
+-    pub message: String,
++    /// What happened (`notice.*`).
++    #[serde(flatten)]
++    pub message: Msg,
+ }
+ 
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+ pub struct PendingTxDto {
+-    pub what: String,
++    /// What the person was doing (`op.*`).
++    pub what: Msg,
+     pub signature: String,
+ }
+ 
+@@ -136,5 +150,7 @@ pub struct PendingTxDto {
+ #[derive(Serialize, Debug, Clone, PartialEq)]
+ pub struct ResolutionDto {
+     pub status: &'static str,
+-    pub message: String,
++    /// `resolution.*`
++    #[serde(flatten)]
++    pub message: Msg,
+ }
+diff --git a/family-app/src-tauri/src/lib.rs b/family-app/src-tauri/src/lib.rs
+index a00ee0d..d9e17b8 100644
+--- a/family-app/src-tauri/src/lib.rs
++++ b/family-app/src-tauri/src/lib.rs
+@@ -6,6 +6,7 @@
+ mod commands;
+ mod config;
+ mod dto;
++mod msg;
+ mod pending;
+ mod state;
+ mod text;
+diff --git a/family-app/src-tauri/src/msg.rs b/family-app/src-tauri/src/msg.rs
+new file mode 100644
+index 0000000..0259fc1
+--- /dev/null
++++ b/family-app/src-tauri/src/msg.rs
+@@ -0,0 +1,123 @@
++//! A sentence the screen words itself: a catalog key and named parameters.
++//! Rust never builds human text; the UI (`ui/i18n.js`) looks the key up in the
++//! language the person chose. A parameter can itself be a `Msg` (an error that
++//! names the operation it blocks).
++
++use serde::{Deserialize, Serialize};
++use serde_json::{Map, Value};
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
++pub struct Msg {
++    pub key: String,
++    #[serde(default)]
++    pub params: Map<String, Value>,
++}
++
++impl Msg {
++    pub fn new(key: impl Into<String>) -> Self {
++        Self {
++            key: key.into(),
++            params: Map::new(),
++        }
++    }
++
++    /// Adds a text or number parameter (`{name}` in the catalog sentence).
++    pub fn with(mut self, name: &str, value: impl Into<Value>) -> Self {
++        self.params.insert(name.to_string(), value.into());
++        self
++    }
++
++    /// Adds a parameter that is itself a sentence.
++    pub fn with_msg(self, name: &str, message: &Msg) -> Self {
++        let value = serde_json::to_value(message).unwrap_or(Value::Null);
++        self.with(name, value)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn a_message_serialises_as_key_and_params() {
++        let msg = Msg::new("op.send").with("amount", "5 USDC");
++        assert_eq!(
++            serde_json::to_string(&msg).unwrap(),
++            r#"{"key":"op.send","params":{"amount":"5 USDC"}}"#
++        );
++    }
++
++    #[test]
++    fn a_nested_message_keeps_its_own_key_and_params() {
++        let inner = Msg::new("op.send").with("amount", "5 USDC");
++        let outer = Msg::new("error.pending_blocks").with_msg("what", &inner);
++        let json = serde_json::to_value(&outer).unwrap();
++        assert_eq!(json["params"]["what"]["key"], "op.send");
++        assert_eq!(json["params"]["what"]["params"]["amount"], "5 USDC");
++    }
++
++    /// Every catalog key written anywhere in this crate's sources.
++    fn keys_in_sources() -> Vec<String> {
++        const NAMESPACES: [&str; 7] = [
++            "error.",
++            "notice.",
++            "op.",
++            "payee.",
++            "history.",
++            "resolution.",
++            "field.",
++        ];
++        fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
++            for entry in std::fs::read_dir(dir).unwrap() {
++                let path = entry.unwrap().path();
++                if path.is_dir() {
++                    walk(&path, out);
++                } else if path.extension().is_some_and(|e| e == "rs") {
++                    let text = std::fs::read_to_string(&path).unwrap();
++                    for (i, piece) in text.split('"').enumerate() {
++                        // Odd pieces sit between a pair of quotes.
++                        if i % 2 == 1
++                            && NAMESPACES.iter().any(|n| piece.starts_with(n))
++                            && !piece.ends_with('.')
++                            && piece
++                                .chars()
++                                .all(|c| c.is_ascii_lowercase() || c == '.' || c == '_')
++                        {
++                            out.push(piece.to_string());
++                        }
++                    }
++                }
++            }
++        }
++        let mut keys = Vec::new();
++        walk(
++            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
++            &mut keys,
++        );
++        keys.sort();
++        keys.dedup();
++        keys
++    }
++
++    #[test]
++    fn every_key_the_app_sends_is_in_both_catalogs() {
++        let ui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/locales");
++        let keys = keys_in_sources();
++        assert!(keys.len() > 40, "the scan found only {} keys", keys.len());
++        for language in ["en", "ru"] {
++            let catalog = std::fs::read_to_string(ui.join(format!("{language}.js"))).unwrap();
++            for key in &keys {
++                assert!(
++                    catalog.contains(&format!("\"{key}\":")),
++                    "{language} catalog lacks {key}"
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn params_are_optional_when_reading_a_message() {
++        let msg: Msg = serde_json::from_str(r#"{"key":"error.busy"}"#).unwrap();
++        assert_eq!(msg, Msg::new("error.busy"));
++    }
++}
+diff --git a/family-app/src-tauri/src/pending.rs b/family-app/src-tauri/src/pending.rs
+index cc0d654..49b2ad9 100644
+--- a/family-app/src-tauri/src/pending.rs
++++ b/family-app/src-tauri/src/pending.rs
+@@ -10,15 +10,50 @@ use std::io::Write;
+ use std::path::Path;
+ 
+ use serde::{Deserialize, Serialize};
++use serde_json::{Map, Value};
+ 
+-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
++use crate::msg::Msg;
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+ pub struct PendingTx {
+     pub signature: String,
+     pub last_valid_block_height: u64,
+-    /// What the user was doing, in words ("Отправка 5 USDC").
++    /// What the user was doing, as a catalog key (`op.send`) ...
++    #[serde(default)]
++    pub what_key: Option<String>,
++    /// ... and its parameters (`{"amount": "5 USDC"}`).
++    #[serde(default)]
++    pub what_params: Map<String, Value>,
++    /// A sentence written by an earlier version of the app, which stored the
++    /// words themselves. Read as a fallback and written empty, so an older
++    /// app can still read a record this version made.
++    #[serde(default)]
+     pub what: String,
+ }
+ 
++impl PendingTx {
++    pub fn new(signature: String, last_valid_block_height: u64, what: &Msg) -> Self {
++        Self {
++            signature,
++            last_valid_block_height,
++            what_key: Some(what.key.clone()),
++            what_params: what.params.clone(),
++            what: String::new(),
++        }
++    }
++
++    /// What the screen shows: the key if there is one, else the old sentence.
++    pub fn what_msg(&self) -> Msg {
++        match &self.what_key {
++            Some(key) => Msg {
++                key: key.clone(),
++                params: self.what_params.clone(),
++            },
++            None => Msg::new("op.legacy").with("text", self.what.clone()),
++        }
++    }
++}
++
+ /// Why the record could not be read. A corrupt file is told apart from an
+ /// I/O problem because only the former may be moved aside (`quarantine`).
+ #[derive(Debug, Clone, PartialEq, Eq)]
+@@ -103,11 +138,33 @@ mod tests {
+     }
+ 
+     fn sample() -> PendingTx {
+-        PendingTx {
+-            signature: "5j7s".to_string(),
+-            last_valid_block_height: 123_456,
+-            what: "Отправка 5 USDC".to_string(),
+-        }
++        PendingTx::new(
++            "5j7s".to_string(),
++            123_456,
++            &Msg::new("op.send").with("amount", "5 USDC"),
++        )
++    }
++
++    #[test]
++    fn a_record_from_an_earlier_version_keeps_its_sentence() {
++        let old = r#"{"signature":"5j7s","last_valid_block_height":9,"what":"Отправка 5 USDC"}"#;
++        let record: PendingTx = serde_json::from_str(old).unwrap();
++        assert_eq!(
++            record.what_msg(),
++            Msg::new("op.legacy").with("text", "Отправка 5 USDC")
++        );
++    }
++
++    #[test]
++    fn a_new_record_names_what_it_was_and_stays_readable_by_the_old_format() {
++        let record = sample();
++        assert_eq!(
++            record.what_msg(),
++            Msg::new("op.send").with("amount", "5 USDC")
++        );
++        let json: Value = serde_json::to_value(&record).unwrap();
++        assert_eq!(json["what"], "");
++        assert_eq!(json["what_key"], "op.send");
+     }
+ 
+     #[test]
+diff --git a/family-app/src-tauri/src/text.rs b/family-app/src-tauri/src/text.rs
+index 7a72855..00a6a4d 100644
+--- a/family-app/src-tauri/src/text.rs
++++ b/family-app/src-tauri/src/text.rs
+@@ -1,5 +1,6 @@
+-//! Every sentence the app shows, and the pure functions that turn core
+-//! values into them. Plain bank language: no "vault", "PDA", "mint" or
++//! What the app says, as catalog keys with parameters (`Msg`), and the pure
++//! functions that turn core values into them. The sentences themselves live in
++//! `ui/locales/*.js`, in plain bank language: no "vault", "PDA", "mint" or
+ //! "approver" anywhere a person reads it.
+ 
+ use family_app_core::history::HistoryEntryKind;
+@@ -13,62 +14,52 @@ use solana_pubkey::Pubkey;
+ use family_app_core::actions::SignatureOutcome;
+ 
+ use crate::dto::{ErrorDto, ResolutionDto};
++use crate::msg::Msg;
+ 
+ pub fn short_address(address: &Pubkey) -> String {
+     let full = address.to_string();
+     format!("{}…{}", &full[..4], &full[full.len() - 4..])
+ }
+ 
+-/// "1 час", "2 часа", "5 часов", "11 часов", "21 час".
+-pub fn plural_ru(n: u64, one: &str, few: &str, many: &str) -> String {
+-    let word = match (n % 100, n % 10) {
+-        (11..=14, _) => many,
+-        (_, 1) => one,
+-        (_, 2..=4) => few,
+-        _ => many,
+-    };
+-    format!("{n} {word}")
+-}
+-
+ pub fn money(amount: u64, decimals: u32) -> String {
+     format!("{} USDC", format_base_units(amount, decimals))
+ }
+ 
+-pub fn payee_status(active_after: i64, now: i64) -> String {
++pub fn payee_status(active_after: i64, now: i64) -> Msg {
+     if now >= active_after {
+-        return "Можно отправлять".to_string();
++        return Msg::new("payee.ready");
+     }
+     let secs = active_after.saturating_sub(now) as u64;
+     if secs < 3600 {
+-        return "Можно будет меньше чем через час".to_string();
++        return Msg::new("payee.wait_under_hour");
+     }
+-    let hours = secs.div_ceil(3600);
+-    format!(
+-        "Можно будет через {}",
+-        plural_ru(hours, "час", "часа", "часов")
+-    )
++    Msg::new("payee.wait_hours").with("n", secs.div_ceil(3600))
+ }
+ 
+-pub fn history_line(kind: &HistoryEntryKind, decimals: u32) -> String {
++pub fn history_line(kind: &HistoryEntryKind, decimals: u32) -> Msg {
+     // Names in history come straight from the chain: clean them first.
+-    let quote = |name: &str| format!("«{}»", sanitize_text(name));
++    let name = |name: &str| sanitize_text(name);
+     match kind {
+         HistoryEntryKind::Deposit { amount } => {
+-            format!("Пополнение на {}", money(*amount, decimals))
++            Msg::new("history.deposit").with("amount", money(*amount, decimals))
++        }
++        HistoryEntryKind::Withdraw { amount } => {
++            Msg::new("history.withdraw").with("amount", money(*amount, decimals))
++        }
++        HistoryEntryKind::AddBeneficiary { name: who } => {
++            Msg::new("history.payee_added").with("name", name(who))
+         }
+-        HistoryEntryKind::Withdraw { amount } => format!("Отправлено {}", money(*amount, decimals)),
+-        HistoryEntryKind::AddBeneficiary { name } => format!("Добавлен получатель {}", quote(name)),
+-        HistoryEntryKind::AddBeneficiaryUrgent { name } => {
+-            format!("Срочно добавлен получатель {}", quote(name))
++        HistoryEntryKind::AddBeneficiaryUrgent { name: who } => {
++            Msg::new("history.payee_added_urgent").with("name", name(who))
+         }
+-        HistoryEntryKind::AddTrustedApprover => "Добавлено доверенное лицо".to_string(),
++        HistoryEntryKind::AddTrustedApprover => Msg::new("history.guardian_added"),
+         HistoryEntryKind::RequestWithdrawal { amount, .. } => {
+-            format!("Запрос на перевод {}", money(*amount, decimals))
++            Msg::new("history.request").with("amount", money(*amount, decimals))
+         }
+-        HistoryEntryKind::ApproveWithdrawal => "Перевод одобрен".to_string(),
+-        HistoryEntryKind::InitializeVault => "Счёт открыт".to_string(),
+-        HistoryEntryKind::InitializeApprovers => "Включены доверенные лица".to_string(),
+-        HistoryEntryKind::Unknown => "Операция".to_string(),
++        HistoryEntryKind::ApproveWithdrawal => Msg::new("history.approved"),
++        HistoryEntryKind::InitializeVault => Msg::new("history.opened"),
++        HistoryEntryKind::InitializeApprovers => Msg::new("history.guardians_enabled"),
++        HistoryEntryKind::Unknown => Msg::new("history.unknown"),
+     }
+ }
+ 
+@@ -84,38 +75,38 @@ fn custom_error_code(text: &str) -> Option<u32> {
+     u32::from_str_radix(&hex, 16).ok()
+ }
+ 
+-/// A sentence for a rejection we can explain, or `None`.
++/// The catalog key of a rejection we can explain, or `None`.
+ pub fn friendly_rejection(text: &str) -> Option<&'static str> {
+     let code = custom_error_code(text)?;
+     let is = |e: VaultError| code == u32::from(e);
+     Some(if is(VaultError::BeneficiaryCooldownActive) {
+-        "Этого получателя ещё нельзя использовать: после добавления нужно подождать 48 часов."
++        "error.vault.beneficiary_cooldown_active"
+     } else if is(VaultError::UnknownBeneficiary) {
+-        "Этого человека нет в списке получателей."
++        "error.vault.unknown_beneficiary"
+     } else if is(VaultError::DailyLimitExceeded) {
+-        "Это больше, чем можно отправить за день. Нужен запрос на перевод."
++        "error.vault.daily_limit_exceeded"
+     } else if is(VaultError::AmountDoesNotExceedDailyLimit) {
+-        "Эту сумму можно отправить сразу, без запроса."
++        "error.vault.amount_does_not_exceed_daily_limit"
+     } else if is(VaultError::NotVaultOwner) {
+-        "Это может сделать только владелец счёта."
++        "error.vault.not_vault_owner"
+     } else if is(VaultError::NotTrustedApprover) {
+-        "Одобрять переводы могут только доверенные лица."
++        "error.vault.not_trusted_approver"
+     } else if is(VaultError::BeneficiaryListFull) {
+-        "В списке получателей больше нет места."
++        "error.vault.beneficiary_list_full"
+     } else if is(VaultError::BeneficiaryAlreadyExists) {
+-        "Этот получатель уже есть в списке."
++        "error.vault.beneficiary_already_exists"
+     } else if is(VaultError::ApproverListFull) {
+-        "В списке доверенных лиц больше нет места."
++        "error.vault.approver_list_full"
+     } else if is(VaultError::ApproverAlreadyExists) {
+-        "Это доверенное лицо уже добавлено."
++        "error.vault.approver_already_exists"
+     } else if is(VaultError::CannotApproveOwnWithdrawals) {
+-        "Владелец счёта не может быть своим же доверенным лицом."
++        "error.vault.cannot_approve_own_withdrawals"
+     } else if is(VaultError::ExistingApproverRequired) {
+-        "Чтобы добавить ещё одно доверенное лицо, нужна подпись уже добавленного."
++        "error.vault.existing_approver_required"
+     } else if is(VaultError::RequestAlreadyExecuted) {
+-        "Этот запрос уже выполнен."
++        "error.vault.request_already_executed"
+     } else if is(VaultError::ZeroAmount) {
+-        "Сумма должна быть больше нуля."
++        "error.vault.zero_amount"
+     } else {
+         return None;
+     })
+@@ -123,20 +114,14 @@ pub fn friendly_rejection(text: &str) -> Option<&'static str> {
+ 
+ pub fn error_dto(error: &ActionError) -> ErrorDto {
+     match error {
+-        ActionError::NoConnection => ErrorDto::new(
+-            "no_connection",
+-            "Нет связи. Проверьте интернет и попробуйте ещё раз.",
+-        ),
++        ActionError::NoConnection => ErrorDto::new("no_connection", "error.no_connection"),
+         ActionError::Rejected(text) => {
+-            let message = friendly_rejection(text).unwrap_or("Не получилось. Ничего не списано.");
+-            ErrorDto::new("rejected", message).with_details(text.clone())
++            let key = friendly_rejection(text).unwrap_or("error.rejected_generic");
++            ErrorDto::new("rejected", key).with_details(text.clone())
++        }
++        ActionError::Unconfirmed { signature, .. } => {
++            ErrorDto::new("unconfirmed", "error.unconfirmed").with_details(signature.to_string())
+         }
+-        ActionError::Unconfirmed { signature, .. } => ErrorDto::new(
+-            "unconfirmed",
+-            "Операция отправлена, но мы пока не знаем, дошла ли она. \
+-             Не повторяйте её: нажмите «Проверить».",
+-        )
+-        .with_details(signature.to_string()),
+     }
+ }
+ 
+@@ -144,57 +129,28 @@ pub fn error_dto(error: &ActionError) -> ErrorDto {
+ /// `Confirmed`, `Failed` and `Expired` settle it (the record may be deleted);
+ /// `StillPossible` does not.
+ pub fn resolution_for(outcome: &SignatureOutcome) -> ResolutionDto {
+-    match outcome {
+-        SignatureOutcome::Confirmed => ResolutionDto {
+-            status: "confirmed",
+-            message: "Операция прошла.".to_string(),
+-        },
+-        SignatureOutcome::Failed(_) => ResolutionDto {
+-            status: "failed",
+-            message: "Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз."
+-                .to_string(),
+-        },
+-        SignatureOutcome::Expired => ResolutionDto {
+-            status: "expired",
+-            message: "Операция так и не дошла, деньги не списаны. Можно попробовать ещё раз."
+-                .to_string(),
+-        },
+-        SignatureOutcome::StillPossible => ResolutionDto {
+-            status: "waiting",
+-            message: "Пока неизвестно, дошла ли операция. Подождите минуту и проверьте ещё раз."
+-                .to_string(),
+-        },
++    let (status, key) = match outcome {
++        SignatureOutcome::Confirmed => ("confirmed", "resolution.confirmed"),
++        SignatureOutcome::Failed(_) => ("failed", "resolution.failed"),
++        SignatureOutcome::Expired => ("expired", "resolution.expired"),
++        SignatureOutcome::StillPossible => ("waiting", "resolution.waiting"),
++    };
++    ResolutionDto {
++        status,
++        message: Msg::new(key),
+     }
+ }
+ 
+ pub fn pairing_error_dto(error: &PairingError) -> ErrorDto {
+-    let (kind, message): (&'static str, &str) = match error {
+-        PairingError::BadQrText => (
+-            "invalid",
+-            "Это не похоже на код с экрана устройства. Наведите камеру на QR-код ещё раз.",
+-        ),
+-        PairingError::BadPin => ("invalid", "Код состоит ровно из 6 цифр."),
+-        PairingError::BadName(_) => (
+-            "invalid",
+-            "Имя нужно написать короче и без служебных символов.",
+-        ),
+-        PairingError::NoAdapter => (
+-            "rejected",
+-            "Не найден Bluetooth. Включите Bluetooth и попробуйте ещё раз.",
+-        ),
+-        PairingError::KioskNotFound => (
+-            "rejected",
+-            "Устройство не найдено. Подойдите к нему ближе и убедитесь, что на экране показан QR-код.",
+-        ),
+-        PairingError::ConnectFailed(_) => (
+-            "rejected",
+-            "Не удалось соединиться с устройством. Подойдите ближе и попробуйте ещё раз.",
+-        ),
+-        PairingError::WriteRejected(_) => (
+-            "rejected",
+-            "Устройство не приняло код. Проверьте код: на экране мог появиться новый.",
+-        ),
+-        PairingError::Ble(_) => ("rejected", "Ошибка Bluetooth. Попробуйте ещё раз."),
++    let (kind, key): (&'static str, &str) = match error {
++        PairingError::BadQrText => ("invalid", "error.pairing.bad_qr"),
++        PairingError::BadPin => ("invalid", "error.pairing.bad_pin"),
++        PairingError::BadName(_) => ("invalid", "error.pairing.bad_name"),
++        PairingError::NoAdapter => ("rejected", "error.pairing.no_adapter"),
++        PairingError::KioskNotFound => ("rejected", "error.pairing.kiosk_not_found"),
++        PairingError::ConnectFailed(_) => ("rejected", "error.pairing.connect_failed"),
++        PairingError::WriteRejected(_) => ("rejected", "error.pairing.write_rejected"),
++        PairingError::Ble(_) => ("rejected", "error.pairing.ble"),
+     };
+     let details = match error {
+         PairingError::BadName(d)
+@@ -203,7 +159,7 @@ pub fn pairing_error_dto(error: &PairingError) -> ErrorDto {
+         | PairingError::Ble(d) => Some(d.clone()),
+         _ => None,
+     };
+-    let dto = ErrorDto::new(kind, message);
++    let dto = ErrorDto::new(kind, key);
+     match details {
+         Some(d) => dto.with_details(d),
+         None => dto,
+@@ -218,22 +174,6 @@ mod tests {
+         Pubkey::new_from_array([byte; 32])
+     }
+ 
+-    #[test]
+-    fn plural_ru_follows_the_russian_rules() {
+-        let h = |n| plural_ru(n, "час", "часа", "часов");
+-        assert_eq!(h(1), "1 час");
+-        assert_eq!(h(2), "2 часа");
+-        assert_eq!(h(4), "4 часа");
+-        assert_eq!(h(5), "5 часов");
+-        assert_eq!(h(11), "11 часов");
+-        assert_eq!(h(12), "12 часов");
+-        assert_eq!(h(14), "14 часов");
+-        assert_eq!(h(21), "21 час");
+-        assert_eq!(h(22), "22 часа");
+-        assert_eq!(h(48), "48 часов");
+-        assert_eq!(h(111), "111 часов");
+-    }
+-
+     #[test]
+     fn short_address_keeps_the_first_and_last_four() {
+         let text = short_address(&key(7));
+@@ -252,44 +192,39 @@ mod tests {
+     #[test]
+     fn payee_status_counts_hours_until_the_payee_can_be_used() {
+         let now = 1_000_000;
+-        assert_eq!(payee_status(now - 1, now), "Можно отправлять");
+-        assert_eq!(payee_status(now, now), "Можно отправлять");
++        let hours = |n: u64| Msg::new("payee.wait_hours").with("n", n);
++        assert_eq!(payee_status(now - 1, now), Msg::new("payee.ready"));
++        assert_eq!(payee_status(now, now), Msg::new("payee.ready"));
+         assert_eq!(
+             payee_status(now + 60, now),
+-            "Можно будет меньше чем через час"
+-        );
+-        assert_eq!(payee_status(now + 3600, now), "Можно будет через 1 час");
+-        assert_eq!(payee_status(now + 3601, now), "Можно будет через 2 часа");
+-        assert_eq!(
+-            payee_status(now + 48 * 3600, now),
+-            "Можно будет через 48 часов"
++            Msg::new("payee.wait_under_hour")
+         );
++        assert_eq!(payee_status(now + 3600, now), hours(1));
++        assert_eq!(payee_status(now + 3601, now), hours(2));
++        assert_eq!(payee_status(now + 48 * 3600, now), hours(48));
+     }
+ 
+     #[test]
+     fn payee_status_survives_an_absurd_clock() {
+         assert_eq!(
+             payee_status(i64::MAX, i64::MIN),
+-            format!(
+-                "Можно будет через {}",
+-                plural_ru((i64::MAX as u64).div_ceil(3600), "час", "часа", "часов")
+-            )
++            Msg::new("payee.wait_hours").with("n", (i64::MAX as u64).div_ceil(3600))
+         );
+     }
+ 
+     #[test]
+-    fn history_lines_are_plain_language_and_use_the_decimals() {
++    fn history_lines_carry_keys_and_the_formatted_amounts() {
+         assert_eq!(
+             history_line(&HistoryEntryKind::Deposit { amount: 12_340_000 }, 6),
+-            "Пополнение на 12.34 USDC"
++            Msg::new("history.deposit").with("amount", "12.34 USDC")
+         );
+         assert_eq!(
+             history_line(&HistoryEntryKind::Withdraw { amount: 1_000_000 }, 6),
+-            "Отправлено 1 USDC"
++            Msg::new("history.withdraw").with("amount", "1 USDC")
+         );
+         assert_eq!(
+             history_line(&HistoryEntryKind::InitializeVault, 6),
+-            "Счёт открыт"
++            Msg::new("history.opened")
+         );
+     }
+ 
+@@ -301,9 +236,11 @@ mod tests {
+             },
+             6,
+         );
+-        assert!(!line.contains('\n'));
+-        assert!(!line.contains('\u{202E}'));
+-        assert!(line.starts_with("Добавлен получатель «Саша"));
++        assert_eq!(line.key, "history.payee_added");
++        let name = line.params["name"].as_str().unwrap();
++        assert!(!name.contains('\n'));
++        assert!(!name.contains('\u{202E}'));
++        assert!(name.starts_with("Саша"));
+     }
+ 
+     #[test]
+@@ -316,10 +253,13 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn known_program_errors_get_a_sentence_and_unknown_ones_do_not() {
++    fn known_program_errors_get_a_key_and_unknown_ones_do_not() {
+         let code = u32::from(VaultError::BeneficiaryCooldownActive);
+         let text = format!("custom program error: {code:#x}");
+-        assert!(friendly_rejection(&text).unwrap().contains("48 часов"));
++        assert_eq!(
++            friendly_rejection(&text),
++            Some("error.vault.beneficiary_cooldown_active")
++        );
+         assert_eq!(friendly_rejection("custom program error: 0x1"), None);
+         assert_eq!(friendly_rejection("blockhash not found"), None);
+     }
+@@ -329,13 +269,14 @@ mod tests {
+         assert_eq!(error_dto(&ActionError::NoConnection).kind, "no_connection");
+         let rejected = error_dto(&ActionError::Rejected("boom".into()));
+         assert_eq!(rejected.kind, "rejected");
++        assert_eq!(rejected.message.key, "error.rejected_generic");
+         assert_eq!(rejected.details.as_deref(), Some("boom"));
+         let unconfirmed = error_dto(&ActionError::Unconfirmed {
+             signature: solana_signature::Signature::from([1u8; 64]),
+             last_valid_block_height: 9,
+         });
+         assert_eq!(unconfirmed.kind, "unconfirmed");
+-        assert!(unconfirmed.message.contains("Не повторяйте"));
++        assert_eq!(unconfirmed.message.key, "error.unconfirmed");
+     }
+ 
+     #[test]
+@@ -345,19 +286,24 @@ mod tests {
+         assert_eq!(status(SignatureOutcome::Failed("x".into())), "failed");
+         assert_eq!(status(SignatureOutcome::Expired), "expired");
+         assert_eq!(status(SignatureOutcome::StillPossible), "waiting");
+-        assert!(resolution_for(&SignatureOutcome::Failed("x".into()))
+-            .message
+-            .contains("не списаны"));
++        assert_eq!(
++            resolution_for(&SignatureOutcome::Failed("x".into()))
++                .message
++                .key,
++            "resolution.failed"
++        );
+     }
+ 
+     #[test]
+-    fn pairing_errors_are_explained_without_jargon() {
++    fn pairing_errors_have_their_own_keys_and_keep_technical_details() {
++        assert_eq!(
++            pairing_error_dto(&PairingError::BadPin).message.key,
++            "error.pairing.bad_pin"
++        );
+         assert_eq!(
+-            pairing_error_dto(&PairingError::BadPin).message,
+-            "Код состоит ровно из 6 цифр."
++            pairing_error_dto(&PairingError::KioskNotFound).message.key,
++            "error.pairing.kiosk_not_found"
+         );
+-        let text = pairing_error_dto(&PairingError::KioskNotFound).message;
+-        assert!(text.contains("ближе"));
+         let rejected = pairing_error_dto(&PairingError::WriteRejected("att 0x0e".into()));
+         assert_eq!(rejected.details.as_deref(), Some("att 0x0e"));
+     }
+diff --git a/family-app/src-tauri/src/view.rs b/family-app/src-tauri/src/view.rs
+index ce53f8b..d4ccbcb 100644
+--- a/family-app/src-tauri/src/view.rs
++++ b/family-app/src-tauri/src/view.rs
+@@ -65,11 +65,6 @@ pub fn vault_dto(view: &VaultView, me: &Pubkey, now: i64) -> VaultDto {
+     VaultDto {
+         address: view.vault.to_string(),
+         address_short: short_address(&view.vault),
+-        title: if view.is_pool {
+-            "Семейный счёт".to_string()
+-        } else {
+-            "Личный счёт".to_string()
+-        },
+         is_pool: view.is_pool,
+         is_owner: is_owner(view, me),
+         is_guardian: is_guardian(view, me),
+@@ -115,6 +110,7 @@ pub fn vault_dto(view: &VaultView, me: &Pubkey, now: i64) -> VaultDto {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use crate::msg::Msg;
+     use family_app_core::vault_view::{Payee, PendingRequest};
+ 
+     const NOW: i64 = 1_000_000;
+@@ -261,29 +257,32 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn the_screen_model_uses_plain_words_and_formatted_money() {
++    fn the_screen_model_uses_keys_and_formatted_money() {
+         let mut v = view(1, true);
+         v.pending.push(request());
+         let dto = vault_dto(&v, &key(1), NOW);
+-        assert_eq!(dto.title, "Семейный счёт");
++        assert!(dto.is_pool);
+         assert_eq!(dto.balance, "250.5 USDC");
+         assert_eq!(dto.daily_limit.as_deref(), Some("100 USDC"));
+         assert_eq!(dto.remaining_today.as_deref(), Some("70 USDC"));
+         assert!(dto.is_owner && !dto.is_guardian);
+         assert_eq!(dto.payees.len(), 2);
+         assert!(dto.payees[0].active);
+-        assert_eq!(dto.payees[0].status, "Можно отправлять");
++        assert_eq!(dto.payees[0].status, Msg::new("payee.ready"));
+         assert!(!dto.payees[1].active);
+-        assert_eq!(dto.payees[1].status, "Можно будет через 1 час");
++        assert_eq!(
++            dto.payees[1].status,
++            Msg::new("payee.wait_hours").with("n", 1)
++        );
+         assert_eq!(dto.pending[0].amount, "5 USDC");
+         assert_eq!(dto.pending[0].nonce, 3);
+         assert!(dto.guardians[0].address_short.contains('…'));
+     }
+ 
+     #[test]
+-    fn a_personal_vault_has_no_limit_and_is_titled_personal() {
++    fn a_personal_vault_has_no_limit_and_is_not_a_pool() {
+         let dto = vault_dto(&view(1, false), &key(1), NOW);
+-        assert_eq!(dto.title, "Личный счёт");
++        assert!(!dto.is_pool);
+         assert_eq!(dto.daily_limit, None);
+         assert_eq!(dto.remaining_today, None);
+     }
