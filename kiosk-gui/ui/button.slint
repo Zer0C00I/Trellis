@@ -1,42 +1,72 @@
 import { Theme } from "theme.slint";
 
+export enum ButtonKind {
+    // Filled Ivy: the action on a screen.
+    primary,
+    // Outlined: navigation or a way back.
+    secondary,
+    // Outlined, for the Ivy side panel.
+    on-dark,
+    // A large Paper tile with a Wisteria stripe: a person or an amount to pick.
+    tile,
+}
+
 // The one button of the kiosk. The label wraps and the button grows with it,
 // so a long translation never spills out; the height never drops below the
 // touch target.
 export component KioskButton inherits Rectangle {
     in property <string> text;
-    in property <bool> primary: true;
+    // What a screen reader says, when it differs from the visible text.
+    in property <string> label: root.text;
+    in property <ButtonKind> kind: ButtonKind.primary;
     in property <length> font-size: Theme.font-size-body;
+    in property <TextHorizontalAlignment> align: center;
 
     callback clicked();
 
     min-height: Theme.target-size;
-    background: primary ? Theme.button-bg : Theme.secondary-button-bg;
-    border-color: Theme.secondary-button-border;
-    border-width: primary ? 0px : 2px;
-    border-radius: 8px;
+    border-radius: Theme.radius;
+    border-width: kind == ButtonKind.primary ? 0px : kind == ButtonKind.tile ? 1px : 2px;
+    border-color: kind == ButtonKind.tile ? Theme.tile-border
+        : kind == ButtonKind.on-dark ? Theme.panel-fg : Theme.secondary-button-border;
+    background: kind == ButtonKind.primary ? (ta.pressed ? Theme.button-pressed : Theme.button-bg)
+        : kind == ButtonKind.tile ? (ta.pressed ? Theme.tile-pressed : Theme.tile-bg)
+        : kind == ButtonKind.on-dark ? (ta.pressed ? #2c5039 : Theme.secondary-button-bg)
+        : (ta.pressed ? Theme.secondary-button-pressed : Theme.secondary-button-bg);
+    clip: kind == ButtonKind.tile;
     accessible-role: button;
-    accessible-label: text;
+    accessible-label: root.label;
 
-    TouchArea {
+    if kind == ButtonKind.tile : Rectangle {
+        x: 0;
+        width: 8px;
+        height: parent.height;
+        background: Theme.accent;
+    }
+
+    ta := TouchArea {
         clicked => { root.clicked(); }
     }
 
     VerticalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        padding-top: 8px;
-        padding-bottom: 8px;
+        padding-left: kind == ButtonKind.tile ? 28px : 12px;
+        padding-right: kind == ButtonKind.tile ? 16px : 12px;
+        padding-top: kind == ButtonKind.tile ? 4px : 8px;
+        padding-bottom: kind == ButtonKind.tile ? 4px : 8px;
         alignment: center;
 
         Text {
             text: root.text;
-            color: primary ? Theme.button-fg : Theme.secondary-button-fg;
+            color: kind == ButtonKind.primary ? Theme.button-fg
+                : kind == ButtonKind.on-dark ? Theme.panel-fg
+                : kind == ButtonKind.tile ? Theme.fg : Theme.secondary-button-fg;
             font-size: root.font-size;
+            font-weight: 600;
             // A name without a space must wrap rather than widen the button.
             min-width: 0px;
-            horizontal-alignment: center;
+            horizontal-alignment: root.align;
             wrap: word-wrap;
+            overflow: elide;
         }
     }
 }

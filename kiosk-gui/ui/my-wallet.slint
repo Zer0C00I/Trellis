@@ -1,10 +1,51 @@
 import { Theme } from "theme.slint";
-import { KioskButton } from "button.slint";
 import { Message, Messages } from "messages.slint";
+import { SidePanel, SecondaryButton, Tile } from "components.slint";
 
 export struct BeneficiaryItem {
     name: string,
     id: int,
+}
+
+// Up to 10 people as a two-column grid of large tiles, so the whole list
+// fits the 480px screen without scrolling.
+export component BeneficiaryGrid inherits Rectangle {
+    in property <[BeneficiaryItem]> items: [];
+    callback selected(int);
+
+    property <length> gap: 14px;
+    property <length> top: 58px;
+    property <length> tile-w: (self.width - gap) / 2;
+    property <length> tile-h: 64px;
+
+    Text {
+        x: 0;
+        y: 0;
+        text: @tr("Who to send to?");
+        color: Theme.fg;
+        font-size: 34px;
+        font-weight: 600;
+    }
+
+    if root.items.length == 0 : Text {
+        x: 0;
+        y: root.top;
+        width: root.width;
+        text: @tr("No one to send to yet. A new recipient appears here 48 hours after being added.");
+        color: Theme.muted;
+        font-size: Theme.font-size-label;
+        wrap: word-wrap;
+    }
+
+    for b[i] in root.items : Tile {
+        x: Math.mod(i, 2) * (root.tile-w + root.gap);
+        y: root.top + Math.floor(i / 2) * (root.tile-h + root.gap);
+        width: root.tile-w;
+        height: root.tile-h;
+        text: b.name;
+        font-size: 22px;
+        clicked => { root.selected(b.id); }
+    }
 }
 
 export component MyWalletScreen inherits Rectangle {
@@ -20,67 +61,33 @@ export component MyWalletScreen inherits Rectangle {
     background: Theme.bg;
 
     HorizontalLayout {
-        padding: Theme.spacing;
-        spacing: Theme.spacing;
+        padding: Theme.margin;
+        spacing: Theme.margin;
 
-        VerticalLayout {
-            horizontal-stretch: 1;
-            min-width: 0px;
-            spacing: Theme.spacing;
+        SidePanel {
+            title: @tr("My wallet");
+            value: root.balance-message == Message.none ? root.balance-text : Messages.text(root.balance-message, "");
 
-            Text {
-                text: @tr("My wallet");
-                color: Theme.fg;
-                font-size: Theme.font-size-heading;
+            // Navigates rather than moves money, so it is outlined, not filled.
+            SecondaryButton {
+                text: @tr("Family wallet");
+                on-dark: true;
+                min-height: 72px;
+                clicked => { root.family-wallet-requested(); }
             }
 
-            Text {
-                text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
-                color: Theme.fg;
-                font-size: Theme.font-size-heading;
-                wrap: word-wrap;
-            }
-
-            for b in beneficiaries: KioskButton {
-                text: b.name;
-                clicked => { beneficiary-selected(b.id); }
-            }
-
-            Rectangle {
-                vertical-stretch: 1;
+            // Help: fixed bottom of the panel on every wallet screen (spec: 3.2.6).
+            SecondaryButton {
+                text: "?   " + @tr("Help");
+                label: @tr("Help");
+                on-dark: true;
+                clicked => { root.help-requested(); }
             }
         }
 
-        // The right column holds the controls that are the same on every
-        // screen, so the beneficiary list never runs under them.
-        VerticalLayout {
-            width: 200px;
-            spacing: Theme.spacing;
-
-            // Distinct from the beneficiary list: it navigates, it moves no funds.
-            KioskButton {
-                text: @tr("Family wallet");
-                primary: false;
-                font-size: 24px;
-                clicked => { family-wallet-requested(); }
-            }
-
-            Rectangle {
-                vertical-stretch: 1;
-            }
-
-            HorizontalLayout {
-                alignment: end;
-
-                KioskButton {
-                    text: "?";
-                    primary: false;
-                    font-size: Theme.font-size-heading;
-                    min-width: Theme.target-size;
-                    accessible-label: @tr("Help");
-                    clicked => { help-requested(); }
-                }
-            }
+        BeneficiaryGrid {
+            items: root.beneficiaries;
+            selected(id) => { root.beneficiary-selected(id); }
         }
     }
 }

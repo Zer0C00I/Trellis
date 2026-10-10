@@ -1,0 +1,61 @@
+import { Theme } from "theme.slint";
+import { KioskButton, ButtonKind } from "button.slint";
+
+// These are kinds of KioskButton, so they keep its
+// grow-with-the-label rule and the layout tests count every one of them.
+
+// A filled Ivy button: the action on a screen.
+export component PrimaryButton inherits KioskButton {
+    kind: ButtonKind.primary;
+}
+
+// An outlined button: navigation or a way back. `on-dark` is for the Ivy panel.
+export component SecondaryButton inherits KioskButton {
+    in property <bool> on-dark: false;
+    kind: on-dark ? ButtonKind.on-dark : ButtonKind.secondary;
+    font-size: Theme.font-size-label;
+}
+
+// A large Paper tile with a Wisteria stripe: a person or an amount to pick.
+export component Tile inherits KioskButton {
+    kind: ButtonKind.tile;
+    align: left;
+}
+
+// The Ivy column on the left of the wallet screens: what you have, and
+// where the fixed navigation lives (same spot on every screen, WCAG 3.2.3).
+export component SidePanel inherits Rectangle {
+    in property <string> title;
+    in property <string> value;
+    in property <length> value-size: Theme.font-size-balance;
+
+    width: Theme.panel-width;
+    border-radius: 14px;
+    background: Theme.panel-bg;
+
+    VerticalLayout {
+        padding: 20px;
+        padding-top: 24px;
+        spacing: 8px;
+
+        if root.title != "" : Text {
+            text: root.title;
+            color: Theme.panel-muted;
+            font-size: Theme.font-size-label;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: root.value;
+            color: Theme.panel-fg;
+            // Long values are messages ("Нет связи..."), not amounts: set them smaller.
+            font-size: root.value.character-count > 14 ? Theme.font-size-body : root.value-size;
+            font-weight: 600;
+            wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        @children
+    }
+}

@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
-import { KioskButton } from "button.slint";
 import { Message, Messages } from "messages.slint";
+import { SecondaryButton } from "components.slint";
 
 export component SetupScreen inherits Rectangle {
     // In funding mode this is the funding QR; in pairing mode Rust swaps in
@@ -22,69 +22,74 @@ export component SetupScreen inherits Rectangle {
 
     background: Theme.bg;
 
-    VerticalLayout {
-        padding: Theme.spacing;
-        spacing: Theme.spacing;
+    HorizontalLayout {
+        padding: Theme.margin;
+        spacing: 32px;
         alignment: center;
 
-        Text {
-            text: @tr("Device setup");
-            color: Theme.fg;
-            font-size: Theme.font-size-heading;
-            horizontal-alignment: center;
+        // White behind the QR keeps scanning contrast at its maximum.
+        VerticalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 320px;
+                height: 320px;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: Theme.tile-border;
+                background: #ffffff;
+
+                Image {
+                    source: root.qr-image;
+                    width: 280px;
+                    height: 280px;
+                }
+            }
         }
 
-        if !pairing-active : VerticalLayout {
+        VerticalLayout {
             spacing: Theme.spacing;
+            alignment: center;
+            width: 380px;
 
-            Image {
-                source: qr-image;
-                width: 280px;
-                height: 280px;
-                horizontal-alignment: center;
+            Text {
+                text: @tr("Device setup");
+                color: Theme.fg;
+                font-size: 34px;
+                font-weight: 600;
+                wrap: word-wrap;
             }
 
             Text {
-                text: Messages.text(message, "");
+                text: root.pairing-active ? Messages.pairing-instruction(root.pairing-wait-secs) : Messages.text(root.message, "");
                 color: Theme.fg;
                 font-size: Theme.font-size-body;
-                horizontal-alignment: center;
                 wrap: word-wrap;
             }
-        }
 
-        if pairing-active : HorizontalLayout {
-            spacing: Theme.spacing;
-
-            Image {
-                source: qr-image;
-                width: 280px;
-                height: 280px;
-            }
-
-            VerticalLayout {
-                spacing: Theme.spacing;
-                alignment: center;
+            if root.pairing-active : Rectangle {
+                height: 96px;
+                border-radius: Theme.radius;
+                background: Theme.tile-bg;
+                border-width: 1px;
+                border-color: Theme.tile-border;
 
                 Text {
-                    text: Messages.pairing-instruction(pairing-wait-secs);
+                    text: root.pin-text;
                     color: Theme.fg;
-                    font-size: Theme.font-size-body;
-                    wrap: word-wrap;
-                }
-
-                Text {
-                    text: pin-text;
-                    color: Theme.fg;
+                    font-family: "JetBrains Mono";
                     font-size: Theme.font-size-code;
                     font-weight: 700;
+                    letter-spacing: 4px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
+            }
 
-                KioskButton {
-                    text: @tr("Skip");
-                    primary: false;
-                    clicked => { skip-pairing-requested(); }
-                }
+            if root.pairing-active : SecondaryButton {
+                text: @tr("Skip");
+                font-size: Theme.font-size-body;
+                clicked => { root.skip-pairing-requested(); }
             }
         }
     }

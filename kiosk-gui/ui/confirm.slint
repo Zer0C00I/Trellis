@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
-import { KioskButton } from "button.slint";
 import { Messages } from "messages.slint";
+import { PrimaryButton, SecondaryButton } from "components.slint";
 
 export component ConfirmScreen inherits Rectangle {
     in property <string> recipient-name: "";
@@ -12,28 +12,94 @@ export component ConfirmScreen inherits Rectangle {
     background: Theme.bg;
 
     VerticalLayout {
-        padding: Theme.spacing;
+        padding: Theme.margin;
         spacing: Theme.spacing;
 
         Text {
-            text: @tr("Send {} → {}?", amount-text, Messages.recipient(recipient-name));
+            text: @tr("Check the transfer");
             color: Theme.fg;
-            font-size: Theme.font-size-question;
-            wrap: word-wrap;
+            font-size: 34px;
+            font-weight: 600;
+        }
+
+        // Amount and recipient on their own lines, each as large as it can be.
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: Theme.tile-border;
+            background: Theme.tile-bg;
+
+            VerticalLayout {
+                alignment: center;
+
+                HorizontalLayout {
+                    padding-left: 32px;
+                    padding-right: 32px;
+                    spacing: 32px;
+
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+
+                        Text {
+                            text: @tr("Amount");
+                            color: Theme.muted;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Text {
+                            text: root.amount-text;
+                            color: Theme.fg;
+                            font-size: Theme.font-size-code;
+                            font-weight: 600;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 2px;
+                        background: Theme.tile-border;
+                    }
+
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+
+                        Text {
+                            text: @tr("To");
+                            color: Theme.muted;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Text {
+                            text: Messages.recipient(root.recipient-name);
+                            color: Theme.fg;
+                            font-size: Theme.font-size-heading;
+                            font-weight: 600;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
         }
 
         HorizontalLayout {
             spacing: Theme.spacing;
+            height: 84px;
 
-            KioskButton {
+            PrimaryButton {
+                horizontal-stretch: 2;
                 text: @tr("Send");
-                clicked => { send-confirmed(); }
+                clicked => { root.send-confirmed(); }
             }
 
-            KioskButton {
+            SecondaryButton {
+                horizontal-stretch: 1;
                 text: @tr("Cancel");
-                primary: false;
-                clicked => { send-cancelled(); }
+                font-size: Theme.font-size-body;
+                clicked => { root.send-cancelled(); }
             }
         }
     }

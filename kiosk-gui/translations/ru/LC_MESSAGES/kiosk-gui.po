@@ -30,9 +30,6 @@ msgstr "Сколько отправить {}?"
 msgid "Back"
 msgstr "Назад"
 
-msgid "Send {} → {}?"
-msgstr "Отправить {} → {}?"
-
 msgid "Send"
 msgstr "Отправить"
 
@@ -80,3 +77,27 @@ msgstr "{} сек."
 
 msgid "{} min"
 msgstr "{} мин."
+
+msgid "Who to send to?"
+msgstr "Кому отправить?"
+
+msgid "No one to send to yet. A new recipient appears here 48 hours after being added."
+msgstr "Пока некому отправлять. Новый получатель появится здесь через 48 часов после добавления."
+
+msgid "Choose an amount"
+msgstr "Выберите сумму"
+
+msgid "Check the transfer"
+msgstr "Проверьте перевод"
+
+msgid "Amount"
+msgstr "Сумма"
+
+msgid "To"
+msgstr "Кому"
+
+msgid "Success"
+msgstr "Успешно"
+
+msgid "Error"
+msgstr "Ошибка"

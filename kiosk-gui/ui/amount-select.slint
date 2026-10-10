@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
-import { KioskButton } from "button.slint";
 import { Messages } from "messages.slint";
+import { SidePanel, SecondaryButton, Tile } from "components.slint";
 
 export component AmountSelectScreen inherits Rectangle {
     in property <string> recipient-name: "";
@@ -11,34 +11,39 @@ export component AmountSelectScreen inherits Rectangle {
 
     background: Theme.bg;
 
-    VerticalLayout {
-        padding: Theme.spacing;
-        spacing: Theme.spacing;
+    HorizontalLayout {
+        padding: Theme.margin;
+        spacing: Theme.margin;
 
-        Text {
-            text: @tr("How much to send to {}?", Messages.recipient(recipient-name));
-            color: Theme.fg;
-            font-size: Theme.font-size-question;
-            wrap: word-wrap;
+        SidePanel {
+            value: @tr("How much to send to {}?", Messages.recipient(root.recipient-name));
+            value-size: 40px;
+
+            // Same spot as the wallet switch on the wallet screens.
+            SecondaryButton {
+                text: @tr("Back");
+                on-dark: true;
+                font-size: Theme.font-size-body;
+                clicked => { root.back-requested(); }
+            }
         }
 
-        for amount[i] in presets: KioskButton {
-            text: amount;
-            clicked => { amount-selected(i); }
-        }
-
-        Rectangle {
-            vertical-stretch: 1;
-        }
-
-        HorizontalLayout {
+        VerticalLayout {
+            spacing: 14px;
             alignment: start;
 
-            KioskButton {
-                text: @tr("Back");
-                primary: false;
-                min-width: 140px;
-                clicked => { back-requested(); }
+            Text {
+                text: @tr("Choose an amount");
+                color: Theme.fg;
+                font-size: 34px;
+                font-weight: 600;
+            }
+
+            for amount[i] in root.presets : Tile {
+                height: 100px;
+                text: amount;
+                font-size: Theme.font-size-heading;
+                clicked => { root.amount-selected(i); }
             }
         }
     }
