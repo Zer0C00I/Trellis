@@ -62,7 +62,7 @@ export default function FeaturesPage() {
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-500 mb-6 block">
                 [ BLOCK: 11048A ] INHERITANCE
               </span>
-              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Time-locked transfers and dead-man's switches.</h2>
+              <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Time-locked transfers and dead-man&apos;s switches.</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
                 Trellis continuously monitors your on-chain heartbeat. If you stop interacting with your vault for a predefined period, your assets automatically begin a time-locked transition to your designated beneficiaries.
               </p>
@@ -101,7 +101,7 @@ export default function FeaturesPage() {
                     <div className="text-xs text-blue-400 font-bold px-2 py-1 bg-blue-500/20 rounded">THRESHOLD MET</div>
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Wife's Ledger</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Wife&apos;s Ledger</span></div>
                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Law Firm Kiosk</span></div>
                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-xs font-mono text-white">Trustee Mobile</span></div>
                     <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-700"></div><span className="text-xs font-mono text-slate-500">Cold Storage Vault (Pending)</span></div>
@@ -194,7 +194,7 @@ export default function FeaturesPage() {
               </span>
               <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Yield-bearing estates plugged into DeFi.</h2>
               <p className="text-lg text-slate-600 leading-relaxed font-medium mb-6">
-                Your vault isn't just cold storage. Trellis natively plugs into the Solana DeFi ecosystem. Let your generational wealth safely earn yield through staking and over-collateralized lending while it sits securely locked in your trust.
+                Your vault isn&apos;t just cold storage. Trellis natively plugs into the Solana DeFi ecosystem. Let your generational wealth safely earn yield through staking and over-collateralized lending while it sits securely locked in your trust.
               </p>
               <ul className="space-y-4 text-slate-700 font-medium">
                 <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Native liquid staking integration</li>

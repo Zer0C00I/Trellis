@@ -123,7 +123,7 @@ export default function Home() {
                 </div>
                 <h3 className="text-blue-600 font-bold text-xl mb-4">Time-Locked Inheritance</h3>
                 <p className="text-base text-slate-600 leading-relaxed font-medium">
-                  Configure dead-man's switches and time-delayed asset unlocks to automate wealth transfer precisely when defined heartbeat conditions fail.
+                  Configure dead-man&apos;s switches and time-delayed asset unlocks to automate wealth transfer precisely when defined heartbeat conditions fail.
                 </p>
               </div>
             </div>
@@ -144,7 +144,7 @@ export default function Home() {
                 </div>
                 <h3 className="text-blue-600 font-bold text-2xl mb-4">Built to Keep Working</h3>
                 <p className="text-lg text-slate-600 leading-relaxed font-medium">
-                  Smart contracts don't sleep. Trellis is a series of immutable Solana programs. There are no backend servers to fail, no subscription paywalls to freeze your funds, and nothing to crash. Your Vault's logic executes exactly as programmed, 100% of the time.
+                  Smart contracts don&apos;t sleep. Trellis is a series of immutable Solana programs. There are no backend servers to fail, no subscription paywalls to freeze your funds, and nothing to crash. Your Vault&apos;s logic executes exactly as programmed, 100% of the time.
                 </p>
               </div>
             </div>
@@ -178,7 +178,7 @@ export default function Home() {
               The Trellis Terminal Kiosk.
             </h2>
             <p className="text-lg text-slate-400 font-light leading-relaxed mb-8">
-              We don't just rely on web browsers. The Trellis experience is anchored by our proprietary biometric Kiosk interface—a physical terminal designed for law firms, estate planners, and family offices to deploy and manage on-chain trusts with military-grade security.
+              We don&apos;t just rely on web browsers. The Trellis experience is anchored by our proprietary biometric Kiosk interface—a physical terminal designed for law firms, estate planners, and family offices to deploy and manage on-chain trusts with military-grade security.
             </p>
             <Link href="/docs#kiosk" className="inline-flex items-center gap-2 text-sm font-mono text-emerald-400 hover:text-emerald-300 transition-colors">
               Explore the Hardware Specs &rarr;

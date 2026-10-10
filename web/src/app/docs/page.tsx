@@ -38,7 +38,7 @@ pub struct Vault {
       </button>
       <div className="overflow-x-auto">
         <pre className="text-slate-300">
-          <span className="text-slate-500">// programs/family-vault/src/state/vault.rs</span>{"\n"}
+          <span className="text-slate-500">{'// programs/family-vault/src/state/vault.rs'}</span>{"\n"}
           <span className="text-purple-400">#[account]</span>{"\n"}
           <span className="text-emerald-400">pub struct</span> <span className="text-amber-300">Vault</span> {"{"}{"\n"}
           {"    "}<span className="text-emerald-400">pub</span> owner: <span className="text-amber-300">Pubkey</span>,{"\n"}
@@ -162,7 +162,7 @@ export default function DocsPage() {
               <div className="bg-[#080808] border border-white/10 p-8 rounded-2xl">
                 <h3 className="text-white font-bold text-xl mb-3">T-8492 Form Factor</h3>
                 <p className="text-slate-400 text-sm leading-relaxed">
-                  A sleek, anodized aluminum chassis housing a 12.9" high-resolution touchscreen. The device runs TrellisOS—a highly stripped-down, read-only Linux kernel designed strictly to communicate with the Solana RPC layer.
+                  A sleek, anodized aluminum chassis housing a 12.9&quot; high-resolution touchscreen. The device runs TrellisOS—a highly stripped-down, read-only Linux kernel designed strictly to communicate with the Solana RPC layer.
                 </p>
               </div>
               <div className="bg-[#080808] border border-white/10 p-8 rounded-2xl" id="biometrics">

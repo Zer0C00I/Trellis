@@ -7,9 +7,11 @@ import { toast } from 'sonner';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { USDC_MINT } from '../../config/solana';
 import { Loader2 } from 'lucide-react';
+import type { IdlAccounts, ProgramAccount } from '@coral-xyz/anchor';
+import type { FamilyVault } from '../../idl/family_vault';
 
 interface GuardianApprovalModalProps {
-  request: any | null; // ProgramAccount of PendingWithdrawal
+  request: ProgramAccount<IdlAccounts<FamilyVault>['pendingWithdrawal']> | null;
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;

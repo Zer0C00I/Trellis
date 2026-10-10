@@ -141,10 +141,10 @@ export default function PricingPage() {
               </div>
             </div>
             <div className="lg:w-2/3 border-t lg:border-t-0 lg:border-l border-emerald-500/20 pt-8 lg:pt-0 lg:pl-12">
-              <h4 className="text-lg font-medium text-white mb-6">What's included in the Institutional Tier:</h4>
+              <h4 className="text-lg font-medium text-white mb-6">What&apos;s included in the Institutional Tier:</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <ul className="space-y-4 text-sm text-blue-200">
-                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 1x Trellis Hardware Terminal (12.9" touchscreen, biometric TPM, read-only Linux OS)</li>
+                  <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 1x Trellis Hardware Terminal (12.9&quot; touchscreen, biometric TPM, read-only Linux OS)</li>
                   <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> 5x NFC Black Cards for multi-sig approvals</li>
                   <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> Software license for 1 estate/trust structure</li>
                   <li className="flex items-start gap-3"><span className="text-emerald-400 mt-0.5">✓</span> Quarterly security audits & firmware updates</li>
