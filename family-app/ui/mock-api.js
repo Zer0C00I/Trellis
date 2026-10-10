@@ -1,5 +1,5 @@
 // A scripted stand-in for the Rust commands: same names, same shapes as
-// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|stuck|lowsol|offline
+// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
 const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,7 +58,7 @@ const history = () => [
   { signature: 's4', text: 'Счёт открыт', time: now() - 86400 * 40 },
 ];
 
-let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
+let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], 'unconfirmed-waiting': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
 let solGot = false;
 let pendingTx = scenario.startsWith('unconfirmed') ? { what: 'Отправка 5 USDC', signature: 'sig123' } : null;
 let waitingPolls = 0;
@@ -94,6 +94,7 @@ const handlers = {
   pending_status: () => pendingTx,
   check_pending: () => {
     if (!pendingTx) return { status: 'none', message: 'Ничего не ожидает проверки.' };
+    if (scenario === 'unconfirmed-waiting') return { status: 'waiting', message: 'Пока неизвестно, дошла ли операция. Проверьте ещё раз через минуту.' };
     pendingTx = null;
     if (scenario === 'unconfirmed-failed') return { status: 'failed', message: 'Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз.' };
     return { status: 'confirmed', message: 'Операция прошла.' };
@@ -104,6 +105,10 @@ const handlers = {
     return { signature: 'sigD', message: 'Деньги отправлены на счёт.' };
   },
   send_money: ({ amount }) => {
+    if (scenario === 'send-unconfirmed') {
+      pendingTx = { what: `Отправка ${amount} USDC`, signature: 'sigU' };
+      throw err('unconfirmed', 'Не знаем, дошёл ли перевод. Пока не проверите, деньги не повторяйте.');
+    }
     if (Number(amount) > 70) {
       return { signature: 'sigR', message: 'Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.' };
     }
@@ -142,6 +147,13 @@ export default {
     await delay();
     const handler = handlers[command];
     if (!handler) throw err('internal', `Неизвестная команда ${command}`);
-    return handler(args ?? {});
+    const result = handler(args ?? {});
+    // Test hook: hold back ONE answer (computed now) to make it arrive late.
+    const extra = globalThis.__mockDelay?.[command];
+    if (extra) {
+      delete globalThis.__mockDelay[command];
+      await delay(extra);
+    }
+    return result;
   },
 };

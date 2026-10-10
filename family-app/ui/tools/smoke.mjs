@@ -37,7 +37,12 @@ try {
     '--headless=new', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=0',
     `--user-data-dir=${profile}`, '--window-size=420,900', 'about:blank',
   ], { stdio: 'ignore' });
-  chrome.on('error', () => {});
+  // Fail at once if the binary cannot be started or dies during startup.
+  const startupDied = new Promise((_, reject) => {
+    chrome.once('error', (e) => reject(new Error(`cannot start Chromium (${process.env.CHROMIUM || 'chromium'}): ${e.message}`)));
+    chrome.once('exit', (code, signal) => reject(new Error(`Chromium exited during startup (code ${code}, signal ${signal})`)));
+  });
+  startupDied.catch(() => {});
 
   // Chromium picks a free port and writes it to DevToolsActivePort (first line).
   async function connect() {
@@ -53,7 +58,7 @@ try {
     throw new Error('Chromium did not start within 30 s');
   }
 
-  ws = new WebSocket(await connect());
+  ws = new WebSocket(await Promise.race([connect(), startupDied]));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = () => j(new Error('DevTools socket failed')); });
   let id = 0;
   const pending = new Map();
@@ -281,6 +286,78 @@ try {
     await until("document.body.innerText.includes('251.5 USDC')", 'deferred balance applied');
   });
 
+  test('an unknown notice kind falls back to the info banner', async () => {
+    await open('owner');
+    await evaluate("__ctx.notify('Что-то', 'bogus'); __ctx.notify('Ещё', null);");
+    assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
+    await evaluate("__ctx.notify('Хорошо')");
+    assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
+  });
+
+  test('a check that is still undecided shows a warn notice and keeps the warning', async () => {
+    await open('unconfirmed-waiting');
+    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+    await click('Проверить');
+    await until("document.getElementById('notice')", 'notice');
+    assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-warn');
+    await sleep(500);
+    assert.match(await text(), /Не закончена операция/);
+  });
+
+  test('notify keeps half-typed fields, renders no second notice and is announced', async () => {
+    await open('owner', 'people');
+    await until("document.querySelector('input[type=text]')", 'name field');
+    await fill('input[type=text]', 'Баба Нюра');
+    await evaluate("__ctx.notify('Готово')");
+    assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
+    assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
+    assert.match(await text(), /Готово/);
+    await evaluate("__ctx.notify('Готово 2')");
+    assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
+    assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
+    await until("document.getElementById('live').textContent === 'Готово 2'", 'live region text');
+  });
+
+  test('a slow older response never overwrites a newer one', async () => {
+    await open('owner');
+    assert.match(await text(), /250\.5 USDC/);
+    await evaluate("globalThis.__mockDelay = { load_vault: 800 }; __mockBump(); void __ctx.refresh({ background: true });");
+    await sleep(450); // the slow call has read 251.5 by now
+    await evaluate("__mockBump(); void __ctx.refresh();");
+    await until("document.body.innerText.includes('252.5 USDC')", 'newer balance');
+    await sleep(1800); // the slow one lands
+    assert.match(await text(), /252\.5 USDC/);
+  });
+
+  test('a newer call skipped because of typing does not lose an older result', async () => {
+    await open('owner');
+    await click('Пополнить');
+    await until("document.querySelector('input[type=text]')", 'amount field');
+    await fill('input[type=text]', '5');
+    await evaluate("globalThis.__mockDelay = { load_vault: 800 }; __mockBump(); void __ctx.refresh({ background: true }); void __ctx.refresh({ background: true });");
+    await sleep(1000); // the fast call finished while typing and was skipped
+    assert.match(await text(), /250\.5 USDC/);
+    await evaluate('document.activeElement.blur()');
+    await until("document.body.innerText.includes('251.5 USDC')", 'older result still applied');
+  });
+
+  test('an unconfirmed error leaves the button disabled the whole time', async () => {
+    await open('send-unconfirmed', 'send');
+    await until("document.querySelector('input[name=payee]')", 'payee list');
+    await fill('input[type=text]', '5');
+    await evaluate(`(() => {
+      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Отправить');
+      window.__log = [];
+      new MutationObserver((rs) => rs.forEach((r) => window.__log.push(r.oldValue === null ? 'disabled' : 'enabled')))
+        .observe(b, { attributes: true, attributeFilter: ['disabled'], attributeOldValue: true });
+    })()`);
+    await click('Отправить');
+    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+    await sleep(300);
+    assert.equal(await buttonDisabled('Отправить'), true);
+    assert.deepEqual(await evaluate('window.__log'), ['disabled']);
+  });
+
   test('names from the chain are shown as text, never as HTML', async () => {
     await open('owner', 'people');
     await until("document.body.innerText.includes('Внучка Анна')", 'people list');
@@ -307,7 +384,7 @@ try {
   console.log(`FAIL harness: ${e.stack ?? e}`);
 } finally {
   try { ws?.close(); } catch { /* already closed */ }
-  if (chrome) {
+  if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
     const exited = new Promise((r) => chrome.once('exit', r));
     chrome.kill();
     await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);

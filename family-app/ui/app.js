@@ -1,5 +1,6 @@
 // The shell: loads state, shows a screen, keeps it fresh.
 import { call, isMock } from './api.js';
+import { waitingDelayMs } from './poll.js';
 import { banner, button, errorBanner } from './components.js';
 import { clear, h } from './dom.js';
 import { parseRoute } from './router.js';
@@ -20,8 +21,8 @@ const TABS = [
   ['me', 'Я'],
 ];
 const REFRESH_MS = 60_000;
-const WAITING_POLL_MS = 5_000;
 const NOTICE_MS = 10_000;
+const KINDS = ['ok', 'info', 'warn'];
 const SELECTED_KEY = 'trellis.selectedVault';
 
 const root = document.getElementById('app');
@@ -39,16 +40,33 @@ const ctx = {
   // A success message that outlives the re-render that fresh data causes.
   notify: (text, kind = 'ok') => {
     store.notice = text;
-    store.noticeKind = kind;
+    store.noticeKind = KINDS.includes(kind) ? kind : 'info';
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => {
       store.notice = null;
       document.getElementById('notice')?.remove(); // no re-render: nobody's typing is interrupted
     }, NOTICE_MS);
-    document.getElementById('notice')?.replaceWith(noticeBanner() ?? document.createComment(''));
-    if (!document.getElementById('notice')) render();
+    // Never re-render the screen for this: half-typed fields must survive.
+    const fresh = noticeBanner();
+    const existing = document.getElementById('notice');
+    const main = root.querySelector('main.content');
+    if (existing) existing.replaceWith(fresh);
+    else if (main) main.prepend(fresh);
+    else render();
+    announce(text);
   },
 };
+if (isMock) globalThis.__ctx = ctx; // test hook, never in the real app
+
+// One live region outside #app: re-renders cannot swallow the announcement.
+function announce(text) {
+  const live = document.getElementById('live');
+  if (!live) return;
+  live.textContent = '';
+  setTimeout(() => {
+    live.textContent = text;
+  }, 50);
+}
 
 function remember(address) {
   try {
@@ -83,12 +101,15 @@ function isTyping() {
 
 let lastSnapshot = '';
 let loadSeq = 0;
+let appliedSeq = 0; // newest call whose result is on screen (or was identical to it)
 
 // `background` refreshes (timers, returning to the app) change nothing on
 // screen unless the data really changed, and never interrupt typing.
 // `select` is the vault the person asked for: it only becomes the selection
-// once it has loaded. Only the newest call may write the store, so a slow
-// older answer never overwrites a fresher one.
+// once it has loaded. A result is used only if it is newer than the last one
+// applied, so a slow older answer never overwrites a fresher one; a call that
+// was skipped just because the person is typing does not count as applied, so
+// an older result can still land afterwards.
 async function loadAll({ background = false, select = null } = {}) {
   const seq = ++loadSeq;
   try {
@@ -103,15 +124,21 @@ async function loadAll({ background = false, select = null } = {}) {
       vault = await call('load_vault', { vault: selected });
       history = await call('load_history', { vault: selected, decimals: vault.decimals });
     }
-    if (seq !== loadSeq) return;
+    if (seq < appliedSeq) return;
     if (selected) remember(selected);
     const snapshot = JSON.stringify({ wallet, vaults, selected, vault, history });
     const unchanged = store.loaded && !store.loadError && snapshot === lastSnapshot;
-    if (unchanged || (background && isTyping())) return;
+    if (unchanged) {
+      appliedSeq = seq;
+      return;
+    }
+    if (background && isTyping()) return;
+    appliedSeq = seq;
     lastSnapshot = snapshot;
     update({ wallet, vaults, selected, vault, history, loaded: true, everLoaded: true, loadError: null, waiting: vault ? false : store.waiting });
   } catch (e) {
-    if (seq !== loadSeq || (background && isTyping())) return;
+    if (seq < appliedSeq || (background && isTyping())) return;
+    appliedSeq = seq;
     update({ loaded: true, loadError: e });
   }
 }
@@ -201,11 +228,31 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => {
   if (document.visibilityState === 'visible') loadAll({ background: true });
 }, REFRESH_MS);
-// First launch, code accepted: look for the new vault every few seconds. The
-// tick does nothing once a vault is on screen (loadAll clears `waiting`).
-setInterval(() => {
-  if (store.waiting && !store.vault) loadAll({ background: true });
-}, WAITING_POLL_MS);
+// First launch, code accepted: look for the new vault, backing off as the wait
+// drags on. Nothing is scheduled unless we are waiting without a vault.
+let waitTimer = null;
+let waitAttempt = 0;
+let wasWaiting = false;
+function syncWaitingPoll() {
+  if (!(store.waiting && !store.vault)) {
+    clearTimeout(waitTimer);
+    waitTimer = null;
+    wasWaiting = false;
+    return;
+  }
+  if (!wasWaiting) {
+    wasWaiting = true;
+    waitAttempt = 0;
+  }
+  if (waitTimer !== null) return;
+  waitTimer = setTimeout(async () => {
+    waitTimer = null;
+    waitAttempt++;
+    await loadAll({ background: true });
+    syncWaitingPoll();
+  }, waitingDelayMs(waitAttempt));
+}
+subscribe(syncWaitingPoll);
 
 function retry() {
   update({ loaded: false, loadError: null });

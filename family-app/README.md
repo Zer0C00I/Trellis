@@ -31,7 +31,7 @@ The UI falls back to a scripted backend outside Tauri:
 
 ```
 cd family-app/ui && python3 -m http.server 8765
-# http://localhost:8765/index.html?mock=owner      (also: guardian, empty, waiting, stuck, offline, unconfirmed, unconfirmed-failed, lowsol)
+# http://localhost:8765/index.html?mock=owner      (also: guardian, empty, waiting, stuck, offline, unconfirmed, unconfirmed-failed, unconfirmed-waiting, send-unconfirmed, lowsol)
 ```
 
 ## Tests

@@ -45,13 +45,19 @@ export function card(title, ...children) {
 export async function withFeedback(btn, out, work) {
   btn.disabled = true;
   out.replaceChildren();
+  let keepDisabled = false;
   try {
     return { ok: true, value: await work() };
   } catch (e) {
     out.append(errorBanner(e));
-    if (e.kind === 'unconfirmed') document.dispatchEvent(new CustomEvent('trellis:pending'));
+    if (e.kind === 'unconfirmed') {
+      // Stay disabled: the re-render driven by this event rebuilds the screen
+      // with the money buttons locked, with no clickable moment in between.
+      keepDisabled = true;
+      document.dispatchEvent(new CustomEvent('trellis:pending'));
+    }
     return { ok: false, value: null };
   } finally {
-    btn.disabled = false;
+    if (!keepDisabled) btn.disabled = false;
   }
 }

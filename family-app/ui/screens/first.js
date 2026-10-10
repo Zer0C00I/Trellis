@@ -57,8 +57,10 @@ export function render(ctx) {
     return card(
       'Ждём, пока вас добавят',
       banner('info', 'Устройство приняло ваш код. Оно записывает вас в список, это занимает около минуты. Экран обновится сам. Если за несколько минут ничего не изменилось, нажмите «Ввести код заново».'),
-      button('Проверить сейчас', () => ctx.refresh(), { secondary: true }),
-      button('Ввести код заново', () => ctx.setWaiting(false), { secondary: true }),
+      h('div', { class: 'btn-group' },
+        button('Проверить сейчас', () => ctx.refresh(), { secondary: true }),
+        button('Ввести код заново', () => ctx.setWaiting(false), { secondary: true }),
+      ),
     );
   }
 

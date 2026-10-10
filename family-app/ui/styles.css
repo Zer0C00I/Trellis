@@ -108,6 +108,8 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.85re
 .banner-warn { background: var(--warn-bg); border-color: var(--warn-line); }
 .banner-error { background: var(--err-bg); border-color: var(--err-line); }
 details { font-size: 0.85rem; }
+.btn-group { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 0.8rem; }
+.btn-group .btn { width: 100%; }
 .card > .banner + .btn, .card > .banner + .row { margin-top: 0.8rem; }
 
 .tabs { position: fixed; bottom: 0; left: 0; right: 0; max-width: 560px; margin: 0 auto; display: flex; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
