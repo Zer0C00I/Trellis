@@ -490,7 +490,6 @@ fn new_owner_can_withdraw_real_funds_after_rotation() {
         &family_vault::ID,
     );
 
-    // Fund the vault with real tokens.
     let mint_ix = spl_token::instruction::mint_to(
         &spl_token::id(),
         &ctx.mint,
@@ -508,7 +507,6 @@ fn new_owner_can_withdraw_real_funds_after_rotation() {
     );
     ctx.svm.send_transaction(tx).unwrap();
 
-    // Add a beneficiary and clear its cooldown.
     let add_ben_accounts = family_vault::accounts::AddBeneficiary {
         signer: owner.pubkey(),
         vault: fixture.vault,
@@ -537,7 +535,6 @@ fn new_owner_can_withdraw_real_funds_after_rotation() {
     clock.unix_timestamp += 172_801;
     ctx.svm.set_sysvar(&clock);
 
-    // Request and execute owner rotation to `new_owner`.
     let nonce: u64 = 1;
     let (rotation, _) = Pubkey::find_program_address(
         &[b"rotation", fixture.vault.as_ref(), &nonce.to_le_bytes()],

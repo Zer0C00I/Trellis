@@ -197,7 +197,6 @@ fn withdraws_under_daily_limit_and_tracks_spent_today() {
     let (vault, vault_token_account, beneficiary_list) =
         init_pool_vault(&mut ctx, &owner, DAILY_LIMIT);
 
-    // Fund the vault directly.
     let mint_ix = spl_token::instruction::mint_to(
         &spl_token::id(),
         &ctx.mint,
@@ -227,7 +226,6 @@ fn withdraws_under_daily_limit_and_tracks_spent_today() {
         beneficiary.pubkey(),
     );
 
-    // Clear the 48h beneficiary cooldown.
     let mut clock = ctx
         .svm
         .get_sysvar::<anchor_lang::solana_program::clock::Clock>();
@@ -388,7 +386,6 @@ fn resets_spent_today_after_more_than_a_day_elapses() {
         beneficiary.pubkey(),
     );
 
-    // Clear the 48h beneficiary cooldown.
     let mut clock = ctx
         .svm
         .get_sysvar::<anchor_lang::solana_program::clock::Clock>();

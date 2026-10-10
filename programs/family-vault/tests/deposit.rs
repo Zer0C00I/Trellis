@@ -56,7 +56,6 @@ fn owner_can_deposit_into_own_personal_vault() {
     ctx.svm.airdrop(&elder.pubkey(), 1_000_000_000).unwrap();
     let (vault, vault_token_account) = init_personal_vault(&mut ctx, &elder);
 
-    // Create elder's own token account and mint 100 test tokens (6 decimals) into it.
     let elder_ata =
         spl_associated_token_account::get_associated_token_address(&elder.pubkey(), &ctx.mint);
     let create_ata_ix = spl_associated_token_account::instruction::create_associated_token_account(

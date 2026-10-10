@@ -39,7 +39,7 @@ pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         require!(
             new_spent <= vault.daily_limit,
             VaultError::DailyLimitExceeded
-        ); // over-limit path: family-vault-approvals plan
+        );
         vault.spent_today = new_spent;
     }
 

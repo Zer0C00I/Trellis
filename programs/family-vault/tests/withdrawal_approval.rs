@@ -60,7 +60,6 @@ fn setup_pool_vault_with_approver(
     );
     ctx.svm.send_transaction(tx).unwrap();
 
-    // Fund the vault.
     let mint_ix = spl_token::instruction::mint_to(
         &spl_token::id(),
         &ctx.mint,
@@ -78,7 +77,6 @@ fn setup_pool_vault_with_approver(
     );
     ctx.svm.send_transaction(tx).unwrap();
 
-    // Add beneficiary and clear its cooldown.
     let add_ben_accounts = family_vault::accounts::AddBeneficiary {
         signer: owner.pubkey(),
         vault,
@@ -106,7 +104,6 @@ fn setup_pool_vault_with_approver(
     clock.unix_timestamp += 172_801;
     ctx.svm.set_sysvar(&clock);
 
-    // Initialize approvers and add the approver.
     let (approvers, _) =
         Pubkey::find_program_address(&[b"approvers", vault.as_ref()], &family_vault::ID);
     let init_app_accounts = family_vault::accounts::InitializeApprovers {
@@ -234,7 +231,6 @@ fn approver_can_approve_and_execute_an_over_limit_withdrawal() {
         "requesting must not move funds yet"
     );
 
-    // Approver approves — this executes the transfer.
     let approve_accounts = family_vault::accounts::ApproveWithdrawal {
         signer: approver.pubkey(),
         pending_withdrawal,
