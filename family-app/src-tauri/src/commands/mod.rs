@@ -81,23 +81,39 @@ pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
             "Не удалось прочитать записи приложения.",
         )
         .with_details(e)),
-        Err(pending::LoadError::Corrupt(why)) => match pending::quarantine(&path) {
-            Ok(moved) => Err(ErrorDto::new(
-                "blocked",
-                "Запись о прошлой операции оказалась повреждена, и мы не можем узнать, чем она кончилась. Проверьте историю счёта и свой кошелёк, прежде чем повторять перевод. Запись сохранена отдельно, приложение снова работает.",
-            )
-            .with_details(moved.display().to_string())),
-            Err(e) => Err(ErrorDto::new(
-                "internal",
-                "Не удалось прочитать записи приложения.",
-            )
-            .with_details(format!("{why}; {e}"))),
-        },
+        Err(pending::LoadError::Corrupt(why)) => Err(quarantine_error(state, &why)),
     }
 }
 
-/// Only one money command may run at a time: the pending record is written
-/// only after a send returns, so without this a double tap could pay twice.
+/// Moves an unusable pending record aside (never deletes it) and builds the
+/// one error the person sees about it.
+pub fn quarantine_error(state: &AppState, why: &str) -> ErrorDto {
+    match pending::quarantine(&state.pending_path()) {
+        Ok(moved) => ErrorDto::new(
+            "blocked",
+            "Запись о прошлой операции оказалась повреждена, и мы не можем узнать, чем она кончилась. Проверьте историю счёта и свой кошелёк, прежде чем повторять перевод. Запись сохранена отдельно, приложение снова работает.",
+        )
+        .with_details(moved.display().to_string()),
+        Err(e) => ErrorDto::new("internal", "Не удалось прочитать записи приложения.")
+            .with_details(format!("{why}; {e}")),
+    }
+}
+
+/// A record whose signature does not parse is as good as corrupt.
+pub fn parse_record_signature(record: &PendingTx) -> Option<Signature> {
+    record.signature.parse().ok()
+}
+
+/// Whether this key's pool vault is already among its owned vaults.
+pub fn pool_already_open(pool: &Pubkey, owned: &[Pubkey]) -> bool {
+    owned.contains(pool)
+}
+
+/// Only one state-changing command (money, pairing, checking the pending
+/// record) may run at a time. The pending record is written before the
+/// network is touched (core's before-send hook), but a second command
+/// starting in the same instant would still race with the first one's
+/// reads; this guard serialises them, and a double tap cannot pay twice.
 pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
     BusyGuard::acquire(&state.busy)
         .ok_or_else(|| ErrorDto::new("blocked", "Подождите: предыдущая операция ещё выполняется."))
@@ -200,6 +216,23 @@ mod tests {
 
     fn sig() -> Signature {
         Signature::from([3u8; 64])
+    }
+
+    #[test]
+    fn a_record_with_a_bad_signature_is_recognised() {
+        let mut r = pending_record("x", &sig(), 1);
+        assert_eq!(parse_record_signature(&r), Some(sig()));
+        r.signature = "not a signature".to_string();
+        assert_eq!(parse_record_signature(&r), None);
+    }
+
+    #[test]
+    fn an_existing_pool_is_detected() {
+        let a = Pubkey::new_from_array([1; 32]);
+        let b = Pubkey::new_from_array([2; 32]);
+        assert!(pool_already_open(&a, &[a, b]));
+        assert!(!pool_already_open(&a, &[b]));
+        assert!(!pool_already_open(&a, &[]));
     }
 
     #[test]

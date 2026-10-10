@@ -157,7 +157,9 @@ pub fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind {
 /// [`fetch_history_cached`]. A confirmed transaction never changes, so once
 /// its entries are known (possibly none: a foreign or unrecognized
 /// transaction) it is never fetched again. Bounded: when over capacity the
-/// oldest-inserted signatures are evicted first.
+/// oldest-inserted signatures are evicted first. Give it a capacity of at
+/// least the `limit` you fetch with, or every call evicts what it needs next
+/// and the cache thrashes.
 pub struct HistoryCache {
     capacity: usize,
     entries: HashMap<String, Vec<HistoryEntry>>,
@@ -176,6 +178,16 @@ impl HistoryCache {
 
     fn get(&self, signature: &str) -> Option<&Vec<HistoryEntry>> {
         self.entries.get(signature)
+    }
+
+    /// A transaction first seen with a null block time may get one later:
+    /// keep the newest known time (a null never erases a known one).
+    fn refresh_block_time(&mut self, signature: &str, block_time: Option<i64>) {
+        if let (Some(time), Some(entries)) = (block_time, self.entries.get_mut(signature)) {
+            for entry in entries {
+                entry.block_time = Some(time);
+            }
+        }
     }
 
     fn insert(&mut self, signature: String, entries: Vec<HistoryEntry>) {
@@ -286,6 +298,7 @@ fn collect_history(
 ) -> Result<Vec<HistoryEntry>, ActionError> {
     let mut entries = Vec::new();
     for (signature, block_time) in signatures {
+        cache.refresh_block_time(signature, *block_time);
         if let Some(cached) = cache.get(signature) {
             entries.extend(cached.iter().cloned());
             continue;
@@ -359,6 +372,20 @@ mod tests {
             block_time: Some(1),
             kind: HistoryEntryKind::ApproveWithdrawal,
         }
+    }
+
+    #[test]
+    fn a_cache_hit_takes_the_block_time_from_the_current_listing() {
+        let mut cache = HistoryCache::new(10);
+        let mut fetch = |sig: &str, _t: Option<i64>| Ok(Some(vec![entry(sig)]));
+        let first = vec![("a".to_string(), None)];
+        collect_history(&first, &mut cache, &mut fetch).unwrap();
+        let later = vec![("a".to_string(), Some(555))];
+        let got = collect_history(&later, &mut cache, &mut fetch).unwrap();
+        assert_eq!(got[0].block_time, Some(555));
+        // and a later null does not erase it
+        let again = collect_history(&first, &mut cache, &mut fetch).unwrap();
+        assert_eq!(again[0].block_time, Some(555));
     }
 
     fn sigs(names: &[&str]) -> Vec<(String, Option<i64>)> {

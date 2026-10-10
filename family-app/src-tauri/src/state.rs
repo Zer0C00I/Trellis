@@ -4,8 +4,9 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use family_app_core::history::HistoryCache;
 use solana_client::rpc_client::RpcClient;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
@@ -22,6 +23,9 @@ pub struct AppState {
     /// Set while a money command runs, so a second one cannot start before
     /// the first has either finished or been recorded as unconfirmed.
     pub busy: Arc<AtomicBool>,
+    /// Decoded transactions already seen, so a refresh only asks the node
+    /// about new ones.
+    pub history_cache: Arc<Mutex<HistoryCache>>,
 }
 
 /// Held for the whole of a money command; released on drop, also on panic.

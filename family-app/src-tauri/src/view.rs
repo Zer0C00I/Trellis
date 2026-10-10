@@ -3,6 +3,7 @@
 //! passes `now`), so every rule is unit-tested below.
 
 use family_app_core::vault_view::VaultView;
+use family_vault::state::{MAX_APPROVERS, MAX_BENEFICIARIES};
 use solana_pubkey::Pubkey;
 
 use crate::dto::{GuardianDto, PayeeDto, PendingRequestDto, PermissionsDto, VaultDto};
@@ -30,8 +31,10 @@ pub fn permissions(view: &VaultView, me: &Pubkey, now: i64) -> PermissionsDto {
     PermissionsDto {
         deposit: true,
         send: owner && view.payees.iter().any(|p| p.is_active(now)),
-        add_payee: owner,
-        add_guardian: owner && (view.is_pool || view.guardians.is_empty()),
+        add_payee: owner && view.payees.len() < MAX_BENEFICIARIES,
+        add_guardian: owner
+            && (view.is_pool || view.guardians.is_empty())
+            && view.guardians.len() < MAX_APPROVERS,
         approve: is_guardian(view, me) && !view.pending.is_empty(),
     }
 }
@@ -161,6 +164,20 @@ mod tests {
         let p = permissions(&view(1, true), &me, NOW);
         assert!(p.deposit && p.send && p.add_payee && p.add_guardian);
         assert!(!p.approve);
+    }
+
+    #[test]
+    fn full_lists_are_not_offered_for_more() {
+        let me = key(1);
+        let mut v = view(1, true);
+        v.payees = (0..9).map(|i| payee(10 + i, NOW - 1)).collect();
+        assert!(permissions(&v, &me, NOW).add_payee);
+        v.payees.push(payee(30, NOW - 1));
+        assert!(!permissions(&v, &me, NOW).add_payee);
+        v.guardians = (0..4).map(|i| key(40 + i)).collect();
+        assert!(permissions(&v, &me, NOW).add_guardian);
+        v.guardians.push(key(50));
+        assert!(!permissions(&v, &me, NOW).add_guardian);
     }
 
     #[test]

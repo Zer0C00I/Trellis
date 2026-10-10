@@ -6,13 +6,14 @@
 //!    the rule in (1) survives a crash or close during the confirm wait.
 
 use family_app_core::actions as core;
+use family_app_core::actions::mint_decimals;
+use family_app_core::discovery::{discover_owned_vaults, owned_vault_addresses};
 use family_app_core::wallet::request_devnet_airdrop;
-use family_vault_client::fetch_mint_decimals;
 use tauri::State;
 
 use super::{
     acquire_busy, blocking, ensure_no_pending, finish, load_view, not_allowed, parse_amount,
-    parse_pubkey, run_money,
+    parse_pubkey, pool_already_open, run_money,
 };
 use crate::config::{usdc_mint, AIRDROP_LAMPORTS};
 use crate::dto::{ActionOkDto, ErrorDto, VaultRefDto};
@@ -254,9 +255,19 @@ pub async fn open_family_account(
     blocking(move || {
         let _busy = acquire_busy(&st)?;
         ensure_no_pending(&st)?;
+        let me = st.me();
+        let owned: Vec<_> = discover_owned_vaults(&st.rpc, &st.program_id, &me)?
+            .into_iter()
+            .collect();
+        let [pool, _personal] = owned_vault_addresses(&st.program_id, &me);
+        if pool_already_open(&pool, &owned) {
+            return Err(ErrorDto::new(
+                "invalid",
+                "Семейный счёт уже открыт. Выберите его в списке счетов вверху экрана.",
+            ));
+        }
         let mint = usdc_mint();
-        let decimals = fetch_mint_decimals(&st.rpc, &mint)
-            .map_err(|e| ErrorDto::from(family_app_core::ActionError::Rejected(e)))?;
+        let decimals = mint_decimals(&st.rpc, &mint)?;
         let limit = parse_amount(&daily_limit, decimals)?;
         let vault = run_money(
             &st,

@@ -38,7 +38,7 @@ pub fn payee_status(active_after: i64, now: i64) -> String {
     if now >= active_after {
         return "Можно отправлять".to_string();
     }
-    let secs = (active_after - now) as u64;
+    let secs = active_after.saturating_sub(now) as u64;
     if secs < 3600 {
         return "Можно будет меньше чем через час".to_string();
     }
@@ -263,6 +263,17 @@ mod tests {
         assert_eq!(
             payee_status(now + 48 * 3600, now),
             "Можно будет через 48 часов"
+        );
+    }
+
+    #[test]
+    fn payee_status_survives_an_absurd_clock() {
+        assert_eq!(
+            payee_status(i64::MAX, i64::MIN),
+            format!(
+                "Можно будет через {}",
+                plural_ru((i64::MAX as u64).div_ceil(3600), "час", "часа", "часов")
+            )
         );
     }
 

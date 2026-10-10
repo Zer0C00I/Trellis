@@ -44,6 +44,9 @@ pub fn run() {
                 program_id: config::program_id(),
                 data_dir,
                 busy: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                history_cache: Arc::new(std::sync::Mutex::new(
+                    family_app_core::history::HistoryCache::new(100),
+                )),
             });
             Ok(())
         })

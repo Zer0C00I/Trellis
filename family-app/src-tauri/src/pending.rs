@@ -44,13 +44,25 @@ pub fn load(path: &Path) -> Result<Option<PendingTx>, LoadError> {
 /// the same directory. Never deletes it: it may be the only trace of an
 /// operation that moved money.
 pub fn quarantine(path: &Path) -> Result<std::path::PathBuf, String> {
-    let secs = std::time::SystemTime::now()
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".corrupt-{secs}"));
-    let target = path.with_file_name(name);
+        .unwrap_or_default();
+    let stem = path.file_name().unwrap_or_default().to_os_string();
+    let candidate = |suffix: u32| {
+        let mut name = stem.clone();
+        name.push(format!(".corrupt-{}-{}", now.as_secs(), now.subsec_nanos()));
+        if suffix > 0 {
+            name.push(format!("-{suffix}"));
+        }
+        path.with_file_name(name)
+    };
+    // Unique even within one instant: never overwrite an earlier quarantine.
+    let mut suffix = 0;
+    let mut target = candidate(suffix);
+    while target.exists() {
+        suffix += 1;
+        target = candidate(suffix);
+    }
     std::fs::rename(path, &target)
         .map_err(|e| format!("could not move {} aside: {e}", path.display()))?;
     Ok(target)
@@ -159,6 +171,20 @@ mod tests {
         assert_eq!(std::fs::read(&moved).unwrap(), b"precious garbage");
         assert_eq!(load(&path).unwrap(), None);
         std::fs::remove_file(&moved).unwrap();
+    }
+
+    #[test]
+    fn two_quick_quarantines_give_two_files_and_lose_nothing() {
+        let path = temp_path("twice-quarantined");
+        std::fs::write(&path, b"first").unwrap();
+        let one = quarantine(&path).unwrap();
+        std::fs::write(&path, b"second").unwrap();
+        let two = quarantine(&path).unwrap();
+        assert_ne!(one, two);
+        assert_eq!(std::fs::read(&one).unwrap(), b"first");
+        assert_eq!(std::fs::read(&two).unwrap(), b"second");
+        std::fs::remove_file(&one).unwrap();
+        std::fs::remove_file(&two).unwrap();
     }
 
     #[test]

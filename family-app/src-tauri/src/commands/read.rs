@@ -4,12 +4,15 @@ use std::collections::BTreeSet;
 
 use family_app_core::actions::{confirm_signature, SignatureOutcome};
 use family_app_core::discovery::{discover_my_vaults, discover_owned_vaults};
-use family_app_core::history::fetch_history;
+use family_app_core::history::fetch_history_cached;
 use family_app_core::wallet::{sol_balance, LOW_SOL_LAMPORTS};
 use family_vault_client::format_base_units;
 use tauri::State;
 
-use super::{blocking, load_pending, load_view, now_unix, parse_pubkey};
+use super::{
+    acquire_busy, blocking, load_pending, load_view, now_unix, parse_pubkey,
+    parse_record_signature, quarantine_error,
+};
 use crate::dto::{
     AppInfoDto, ErrorDto, HistoryLineDto, PendingTxDto, ResolutionDto, VaultDto, VaultRefDto,
     WalletDto,
@@ -91,7 +94,15 @@ pub async fn load_history(
     let st = state.inner().clone();
     blocking(move || {
         let vault = parse_pubkey(&vault, "Счёт")?;
-        let entries = fetch_history(&st.rpc, &st.program_id, &vault, HISTORY_LIMIT)?;
+        // A poisoned lock only means an earlier call panicked mid-update;
+        // the cache is still a valid map, so keep using it.
+        let mut cache = st
+            .history_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entries =
+            fetch_history_cached(&st.rpc, &st.program_id, &vault, HISTORY_LIMIT, &mut cache)?;
+        drop(cache);
         Ok(entries
             .into_iter()
             .map(|e| HistoryLineDto {
@@ -120,6 +131,9 @@ pub fn pending_status(state: State<'_, AppState>) -> Result<Option<PendingTxDto>
 pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
+        // It can clear or quarantine the record, so it takes the same guard
+        // as the money commands.
+        let _busy = acquire_busy(&st)?;
         let record = load_pending(&st)?;
         let Some(record) = record else {
             return Ok(ResolutionDto {
@@ -127,10 +141,12 @@ pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto, 
                 message: "Ничего не ожидает проверки.".to_string(),
             });
         };
-        let signature = record.signature.parse().map_err(|_| {
-            ErrorDto::new("internal", "Запись об операции повреждена.")
-                .with_details(record.signature.clone())
-        })?;
+        let Some(signature) = parse_record_signature(&record) else {
+            return Err(quarantine_error(
+                &st,
+                &format!("unparsable signature {:?}", record.signature),
+            ));
+        };
         let outcome = confirm_signature(&st.rpc, &signature, record.last_valid_block_height)?;
         if outcome != SignatureOutcome::StillPossible {
             pending::clear(&st.pending_path()).map_err(|e| {

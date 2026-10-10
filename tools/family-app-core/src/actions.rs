@@ -312,6 +312,13 @@ pub fn confirm_signature(
     Ok(settle(status, height, last_valid_block_height))
 }
 
+/// The mint's `decimals`. A dead connection is `NoConnection`, anything
+/// else (missing or malformed mint) is `Rejected`.
+pub fn mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, ActionError> {
+    let data = rpc.get_account_data(mint).map_err(map_client_error)?;
+    family_vault_client::decode_mint_decimals(&data).map_err(ActionError::Rejected)
+}
+
 fn fetch_vault(rpc: &RpcClient, vault: &Pubkey) -> Result<Vault, ActionError> {
     let bytes = rpc.get_account_data(vault).map_err(map_client_error)?;
     Vault::try_deserialize(&mut &bytes[..]).map_err(|e| ActionError::Rejected(e.to_string()))

@@ -8,7 +8,8 @@
 //! per slot) exceed the public Devnet node's limit of 10 `getProgramAccounts`
 //! per 10 seconds, which turns a launch into a 10+ second wait on HTTP 429
 //! retries. Asking for every list of one kind (filtered by exact account
-//! size and the account discriminator) takes 2 requests and moves the "is it me" test to the client.
+//! size and the account discriminator) takes 2 requests and moves the
+//! "is it me" test to the client.
 //! That is the right trade at MVP scale (each list is 851 or 201 bytes, so
 //! even a thousand vaults is about a megabyte); a large deployment should put
 //! an indexer or a provider-side filter in front of this.
