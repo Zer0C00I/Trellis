@@ -3,7 +3,7 @@ import { PublicKey } from '@solana/web3.js';
 // ─── Program & Token Constants ───────────────────────────────────────────────
 export const FAMILY_VAULT_PROGRAM_ID = new PublicKey(
   // Replace with actual deployed program ID
-  '11111111111111111111111111111111'
+  '9ozRBpTmDJJzcmJhKEbfvsoe7qqo2584bus1rSMG4zwJ'
 );
 
 export const USDC_DEVNET_MINT = new PublicKey(
@@ -15,7 +15,7 @@ export const USDC_DECIMALS = 6;
 // ─── Mock Mode ───────────────────────────────────────────────────────────────
 // Set to true for demo/development before the Anchor program is deployed.
 // When true, all hooks return realistic mock data and actions show simulated toasts.
-export const MOCK_MODE = true;
+export const MOCK_MODE = false;
 
 // ─── PDA Seeds ───────────────────────────────────────────────────────────────
 export const VAULT_SEED = 'vault';

@@ -1,5 +1,8 @@
+"use client";
+
 import Image from 'next/image';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 
 export default function Home() {
   return (
@@ -27,7 +30,12 @@ export default function Home() {
       <section className="relative bg-black text-white pt-48 pb-32 px-8 overflow-hidden flex flex-col items-center text-center">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-blue-900/40 via-emerald-900/20 to-black blur-[120px] pointer-events-none"></div>
         
-        <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="relative z-10 max-w-5xl mx-auto flex flex-col items-center"
+        >
           <div className="text-emerald-400 font-mono text-sm tracking-widest uppercase mb-6">
             THE SELF-CUSTODIAL ESTATE PROTOCOL
           </div>
@@ -53,22 +61,34 @@ export default function Home() {
               </button>
             </Link>
           </div>
-        </div>
+        </motion.div>
       </section>
 
       {/* 3. Features Section (Comprehensive) */}
       <section id="features" className="bg-white text-black py-32 px-8">
         <div className="max-w-[1200px] mx-auto">
-          <div className="text-center mb-20">
+          <motion.div 
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7 }}
+            className="text-center mb-20"
+          >
             <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-500 mb-6 block">
               [ BLOCK: 849201A3F ] CORE CAPABILITIES
             </span>
             <h2 className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 leading-[1.1]">
               Uncompromising security for<br />your digital legacy.
             </h2>
-          </div>
+          </motion.div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6"
+          >
             {/* Feature 1 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
@@ -107,9 +127,15 @@ export default function Home() {
                 </p>
               </div>
             </div>
-          </div>
+          </motion.div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.7, delay: 0.4 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
+          >
             {/* Feature 4 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
@@ -135,7 +161,7 @@ export default function Home() {
                 </p>
               </div>
             </div>
-          </div>
+          </motion.div>
 
         </div>
       </section>

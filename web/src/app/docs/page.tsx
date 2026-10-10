@@ -1,4 +1,58 @@
+"use client";
+
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { useState } from 'react';
+
+function CodeSnippet() {
+  const [copied, setCopied] = useState(false);
+
+  const code = `// programs/family-vault/src/state/vault.rs
+#[account]
+pub struct Vault {
+    pub owner: Pubkey,
+    pub vault_token_account: Pubkey,
+    pub daily_limit: u64,
+    pub spent_today: u64,
+    pub last_spend_reset: i64,
+    pub guardian_threshold: u8,
+}`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative bg-black border border-white/10 p-6 rounded-xl font-mono text-sm shadow-2xl group">
+      <button 
+        onClick={handleCopy}
+        className="absolute top-4 right-4 p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+      >
+        {copied ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        )}
+      </button>
+      <div className="overflow-x-auto">
+        <pre className="text-slate-300">
+          <span className="text-slate-500">// programs/family-vault/src/state/vault.rs</span>{"\n"}
+          <span className="text-purple-400">#[account]</span>{"\n"}
+          <span className="text-emerald-400">pub struct</span> <span className="text-amber-300">Vault</span> {"{"}{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> owner: <span className="text-amber-300">Pubkey</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> vault_token_account: <span className="text-amber-300">Pubkey</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> daily_limit: <span className="text-amber-300">u64</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> spent_today: <span className="text-amber-300">u64</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> last_spend_reset: <span className="text-amber-300">i64</span>,{"\n"}
+          {"    "}<span className="text-emerald-400">pub</span> guardian_threshold: <span className="text-amber-300">u8</span>,{"\n"}
+          {"}"}
+        </pre>
+      </div>
+    </div>
+  );
+}
 
 export default function DocsPage() {
   return (
@@ -68,7 +122,13 @@ export default function DocsPage() {
         <div className="max-w-4xl mx-auto space-y-24">
           
           {/* Header */}
-          <header id="introduction" className="space-y-6 scroll-mt-32">
+          <motion.header 
+            id="introduction" 
+            className="space-y-6 scroll-mt-32"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">
               v2.0 Protocol Reference
             </div>
@@ -78,12 +138,19 @@ export default function DocsPage() {
             <p className="text-xl md:text-2xl text-slate-400 font-light leading-relaxed max-w-2xl">
               The official documentation for the Trellis Kiosk ecosystem, Solana smart contract protocol, and enterprise deployment guidelines.
             </p>
-          </header>
+          </motion.header>
 
           <hr className="border-white/10" />
 
           {/* Section: Hardware Kiosk */}
-          <section id="kiosk" className="space-y-8 scroll-mt-32">
+          <motion.section 
+            id="kiosk" 
+            className="space-y-8 scroll-mt-32"
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+          >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
               The Trellis Kiosk Terminal
             </h2>
@@ -115,12 +182,19 @@ export default function DocsPage() {
                 Every Trellis Kiosk comes paired with three Trellis Black Cards. These NFC-enabled physical cards act as physical 2FA markers. To authorize a withdrawal exceeding the daily limit, the primary executor must tap the Black Card on the terminal reader while providing biometric authorization.
               </p>
             </div>
-          </section>
+          </motion.section>
 
           <hr className="border-white/10" />
 
           {/* Section: Protocol Architecture */}
-          <section id="architecture" className="space-y-8 scroll-mt-32">
+          <motion.section 
+            id="architecture" 
+            className="space-y-8 scroll-mt-32"
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+          >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
               Smart Contract Protocol
             </h2>
@@ -129,20 +203,7 @@ export default function DocsPage() {
             </p>
             
             <h3 className="text-xl font-bold text-white mt-12 mb-4">Vault PDA State</h3>
-            <div className="bg-black border border-white/10 p-6 rounded-xl font-mono text-sm overflow-x-auto shadow-2xl">
-              <pre className="text-slate-300">
-<span className="text-slate-500">// programs/family-vault/src/state/vault.rs</span>
-<span className="text-purple-400">#[account]</span>
-<span className="text-emerald-400">pub struct</span> <span className="text-amber-300">Vault</span> {'{'}
-    <span className="text-emerald-400">pub</span> owner: <span className="text-amber-300">Pubkey</span>,
-    <span className="text-emerald-400">pub</span> vault_token_account: <span className="text-amber-300">Pubkey</span>,
-    <span className="text-emerald-400">pub</span> daily_limit: <span className="text-amber-300">u64</span>,
-    <span className="text-emerald-400">pub</span> spent_today: <span className="text-amber-300">u64</span>,
-    <span className="text-emerald-400">pub</span> last_spend_reset: <span className="text-amber-300">i64</span>,
-    <span className="text-emerald-400">pub</span> guardian_threshold: <span className="text-amber-300">u8</span>,
-{'}'}
-              </pre>
-            </div>
+            <CodeSnippet />
 
             <div className="space-y-12 mt-12">
               <div id="multisig">
@@ -159,12 +220,19 @@ export default function DocsPage() {
                 </p>
               </div>
             </div>
-          </section>
+          </motion.section>
 
           <hr className="border-white/10" />
 
           {/* Section: Pricing & Enterprise */}
-          <section id="pricing" className="space-y-8 scroll-mt-32 pb-24">
+          <motion.section 
+            id="pricing" 
+            className="space-y-8 scroll-mt-32 pb-24"
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+          >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
               Pricing & Enterprise Deployment
             </h2>
@@ -312,7 +380,7 @@ export default function DocsPage() {
                 </div>
               </div>
             </div>
-          </section>
+          </motion.section>
 
         </div>
       </main>

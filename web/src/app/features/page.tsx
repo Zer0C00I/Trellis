@@ -1,5 +1,8 @@
+"use client";
+
 import Image from 'next/image';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 
 export default function FeaturesPage() {
   return (
@@ -27,7 +30,12 @@ export default function FeaturesPage() {
       <section className="relative bg-black text-white pt-48 pb-16 px-8 overflow-hidden flex flex-col items-center text-center">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-blue-900/40 via-purple-900/20 to-black blur-[120px] pointer-events-none"></div>
         
-        <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="relative z-10 max-w-5xl mx-auto flex flex-col items-center"
+        >
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-6 leading-tight">
             Cryptographically enforced.<br />
             No trusted third parties.
@@ -35,7 +43,7 @@ export default function FeaturesPage() {
           <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
             Trellis replaces the entire legacy estate planning stack with immutable Solana smart contracts. Your rules, mathematically guaranteed.
           </p>
-        </div>
+        </motion.div>
       </section>
 
       {/* Core Protocol Features */}
@@ -43,7 +51,13 @@ export default function FeaturesPage() {
         <div className="max-w-[1200px] mx-auto">
           
           {/* Feature 1: Inheritance */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center"
+          >
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-500 mb-6 block">
                 [ BLOCK: 11048A ] INHERITANCE
@@ -69,10 +83,16 @@ export default function FeaturesPage() {
                   <div className="text-xs text-slate-500 font-medium">Time until unlock: 342 Days</div>
                </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 2: Multi-Sig */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center"
+          >
             <div className="order-2 md:order-1 bg-[#050505] p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
                <div className="bg-black border border-blue-500/30 shadow-[0_0_30px_rgba(59,130,246,0.15)] rounded-2xl p-6 w-full max-w-sm relative z-10">
                   <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Governance Quorum</div>
@@ -102,10 +122,16 @@ export default function FeaturesPage() {
                 <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Revoke or rotate Guardians at any time</li>
               </ul>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 3: Mathematical Limits */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center"
+          >
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-purple-500 mb-6 block">
                 [ BLOCK: 39482C ] SPENDING LOGIC
@@ -134,10 +160,16 @@ export default function FeaturesPage() {
                   </div>
                </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 4: DeFi Composability */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-32 items-center"
+          >
             <div className="order-2 md:order-1 bg-[#050505] p-8 rounded-3xl shadow-2xl relative overflow-hidden h-[400px] flex items-center justify-center">
                <div className="bg-black border border-amber-500/30 shadow-[0_0_30px_rgba(245,158,11,0.15)] rounded-2xl p-6 w-full max-w-sm relative z-10">
                   <div className="text-xs font-mono text-slate-400 mb-4 uppercase">Estate Yield Accrual</div>
@@ -170,10 +202,16 @@ export default function FeaturesPage() {
                 <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Strict whitelists block interaction with risky protocols</li>
               </ul>
             </div>
-          </div>
+          </motion.div>
 
           {/* Feature 5: Speed & Exemption */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center"
+          >
             <div>
               <span className="text-xs font-mono font-bold uppercase tracking-widest text-blue-600 mb-6 block">
                 [ BLOCK: 99100Z ] INFRASTRUCTURE
@@ -197,7 +235,7 @@ export default function FeaturesPage() {
                   <div className="text-sm text-slate-500 font-medium bg-slate-100 py-2 rounded-lg">Status: Finalized</div>
                </div>
             </div>
-          </div>
+          </motion.div>
 
         </div>
       </section>
