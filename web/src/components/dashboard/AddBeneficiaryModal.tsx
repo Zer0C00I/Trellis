@@ -1,17 +1,36 @@
 import { useState } from 'react'
 import { PublicKey } from '@solana/web3.js'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { useAnchorProvider } from '../../config/useAnchorProvider'
 import { findPoolVaultPda } from '../../config/solana'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 
-export function AddBeneficiaryModal({ onAdded }: { onAdded: () => void }) {
+function isSolanaAddress(value: string) {
+  try {
+    new PublicKey(value.trim())
+    return value.trim().length >= 32
+  } catch {
+    return false
+  }
+}
+
+export function AddBeneficiaryModal({
+  onAdded,
+  open: openProp,
+  onOpenChange,
+}: {
+  onAdded: () => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
   const { program, provider } = useAnchorProvider()
-  const [open, setOpen] = useState(false)
+  const [innerOpen, setInnerOpen] = useState(false)
+  const open = openProp ?? innerOpen
+  const setOpen = onOpenChange ?? setInnerOpen
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
@@ -55,7 +74,9 @@ export function AddBeneficiaryModal({ onAdded }: { onAdded: () => void }) {
         })
         .rpc()
 
-      toast.success(`Beneficiary added! Tx: ${tx.slice(0, 8)}...`)
+      toast.success(`Family member added. They can be paid in 48 hours.`, {
+        description: `Transaction ${tx.slice(0, 8)}…`,
+      })
       setOpen(false)
       setName('')
       setAddress('')
@@ -64,65 +85,83 @@ export function AddBeneficiaryModal({ onAdded }: { onAdded: () => void }) {
       console.error(err)
       const message = err instanceof Error ? err.message : String(err)
       if (message.includes('AccountNotInitialized')) {
-        toast.error('Vault is not initialized! Please create a vault first.')
+        toast.error('Create your vault first, then add family members.')
       } else {
-        toast.error(message || 'Failed to add beneficiary')
+        toast.error(message || 'Could not add the family member.')
       }
     } finally {
       setLoading(false)
     }
   }
 
+  const nameBytes = new TextEncoder().encode(name.trim()).length
+  const nameTooLong = nameBytes > 32
+  const addressInvalid = address.trim().length > 0 && !isSolanaAddress(address)
+  const canSubmit = nameBytes > 0 && !nameTooLong && isSolanaAddress(address) && !loading
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200">
-          + Add Beneficiary
+        <Button>
+          <Plus /> Add family member
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] border-zinc-800 bg-zinc-950">
+      <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
-          <DialogTitle className="text-zinc-100">Add New Beneficiary</DialogTitle>
+          <DialogTitle>Add a family member</DialogTitle>
+          <DialogDescription>
+            They can be paid 48 hours after you add them. The wait protects you if someone else gets your key.
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-zinc-400">
-              Beneficiary Name
-            </Label>
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="name">Name</Label>
+              <span className={`tabular text-sm ${nameTooLong ? 'text-rust' : 'text-moss'}`} aria-live="polite">
+                {nameBytes}/32
+              </span>
+            </div>
             <Input
               id="name"
-              placeholder="e.g. Alice (Daughter)"
+              placeholder="Alice (daughter)"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              maxLength={32}
-              className="bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-600"
+              autoComplete="off"
+              aria-invalid={nameTooLong || undefined}
+              aria-describedby="name-hint"
             />
+            <p id="name-hint" className={`text-sm ${nameTooLong ? 'text-rust' : 'text-moss'}`}>
+              {nameTooLong ? 'Too long. Names are stored on-chain and fit 32 bytes.' : 'Only you see this name.'}
+            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="address" className="text-zinc-400">
-              Solana Wallet Address
-            </Label>
+            <Label htmlFor="address">Their Solana address</Label>
             <Input
               id="address"
-              placeholder="Solana Pubkey"
+              placeholder="e.g. 7xKp…3f2a"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               required
-              className="bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-600"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono text-sm"
+              aria-invalid={addressInvalid || undefined}
+              aria-describedby="address-hint"
             />
+            <p id="address-hint" className={`text-sm ${addressInvalid ? 'text-rust' : 'text-moss'}`}>
+              {addressInvalid
+                ? "That isn't a Solana address. Check for missing characters."
+                : 'Ask them to copy it from their wallet.'}
+            </p>
           </div>
-          <Button
-            type="submit"
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white mt-2"
-            disabled={loading}
-          >
+          <Button type="submit" size="lg" className="w-full" disabled={!canSubmit}>
             {loading ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Confirming...
-              </span>
+              <>
+                <Loader2 className="animate-spin" /> Adding
+              </>
             ) : (
-              'Add Beneficiary'
+              'Add family member'
             )}
           </Button>
         </form>

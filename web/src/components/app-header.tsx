@@ -2,12 +2,10 @@
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { Menu, X } from 'lucide-react'
 import { ClusterUiSelect } from './cluster/cluster-ui'
 import { WalletButton } from '@/components/solana/wallet-button'
-
-import Image from 'next/image'
+import { Wordmark } from '@/components/site/wordmark'
 
 export function AppHeader({ links = [] }: { links: { label: string; path: string }[] }) {
   const pathname = usePathname()
@@ -18,67 +16,72 @@ export function AppHeader({ links = [] }: { links: { label: string; path: string
   }
 
   return (
-    <header className="relative z-50 px-4 py-4 bg-black/40 backdrop-blur-2xl border-b border-white/10">
-      <div className="mx-auto flex justify-between items-center max-w-6xl">
-        <div className="flex items-center gap-4">
-          <Link className="flex items-center gap-2 hover:opacity-80 transition-opacity" href="/">
-            <Image
-              src="/logo.png"
-              alt="Trellis"
-              width={240}
-              height={80}
-              className="h-20 w-auto -my-6 invert mix-blend-screen"
-            />
-          </Link>
-          <div className="hidden md:flex items-center ml-4">
-            <ul className="flex gap-4 flex-nowrap items-center">
-              {links.map(({ label, path }) => (
-                <li key={path}>
-                  <Link
-                    className={`text-sm hover:text-white transition-colors ${isActive(path) ? 'text-white font-medium' : 'text-muted-foreground'}`}
-                    href={path}
-                  >
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+    <header className="sticky top-0 z-40 border-b border-rule bg-lichen/90 backdrop-blur-md">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-ivy focus:px-3 focus:py-2 focus:text-lichen"
+      >
+        Skip to content
+      </a>
+      <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-6 px-4 sm:px-6">
+        <Link className="-my-2 shrink-0" href="/" aria-label="Trellis home">
+          <Wordmark className="h-12 w-auto" />
+        </Link>
+        <nav aria-label="Dashboard" className="hidden md:block">
+          <ul className="flex items-center gap-1">
+            {links.map(({ label, path }) => (
+              <li key={path}>
+                <Link
+                  className={`rounded-md px-3 py-2 text-[15px] transition-colors hover:bg-ivy/[0.06] ${
+                    isActive(path) ? 'font-semibold text-ivy' : 'text-moss hover:text-ivy'
+                  }`}
+                  aria-current={isActive(path) ? 'page' : undefined}
+                  href={path}
+                >
+                  {label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-        <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setShowMenu(!showMenu)}>
-          {showMenu ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </Button>
-
-        <div className="hidden md:flex items-center gap-3">
-          <WalletButton />
+        <div className="ml-auto hidden items-center gap-2 md:flex">
           <ClusterUiSelect />
+          <WalletButton />
         </div>
 
-        {showMenu && (
-          <div className="md:hidden fixed inset-x-0 top-[56px] bottom-0 bg-background/95 backdrop-blur-xl">
-            <div className="flex flex-col p-4 gap-4 border-t border-white/5">
-              <ul className="flex flex-col gap-4">
-                {links.map(({ label, path }) => (
-                  <li key={path}>
-                    <Link
-                      className={`block text-lg py-2 ${isActive(path) ? 'text-white' : 'text-muted-foreground'}`}
-                      href={path}
-                      onClick={() => setShowMenu(false)}
-                    >
-                      {label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex flex-col gap-4">
-                <WalletButton />
-                <ClusterUiSelect />
-              </div>
-            </div>
-          </div>
-        )}
+        <button
+          type="button"
+          className="ml-auto grid size-10 place-items-center rounded-md text-ivy hover:bg-ivy/[0.06] md:hidden"
+          aria-expanded={showMenu}
+          aria-label={showMenu ? 'Close menu' : 'Open menu'}
+          onClick={() => setShowMenu(!showMenu)}
+        >
+          {showMenu ? <X className="size-5" /> : <Menu className="size-5" />}
+        </button>
       </div>
+
+      {showMenu && (
+        <div className="border-t border-rule px-4 pb-5 pt-2 md:hidden">
+          <ul className="flex flex-col">
+            {links.map(({ label, path }) => (
+              <li key={path}>
+                <Link
+                  className={`block border-b border-rule py-3 text-lg ${isActive(path) ? 'font-semibold text-ivy' : 'text-moss'}`}
+                  href={path}
+                  onClick={() => setShowMenu(false)}
+                >
+                  {label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <WalletButton />
+            <ClusterUiSelect />
+          </div>
+        </div>
+      )}
     </header>
   )
 }

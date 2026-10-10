@@ -27,7 +27,7 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
     try {
       const pubkey = new PublicKey(address.trim())
       setIsSubmitting(true)
-      toastId = toast.loading('Adding trusted guardian...')
+      toastId = toast.loading('Adding guardian…')
 
       const owner = provider.wallet.publicKey
 
@@ -39,7 +39,7 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
       const approversAccount = await program.account.trustedApprovers.fetchNullable(approversPda)
 
       if (!approversAccount) {
-        toast.loading('Initializing Guardian System...', { id: toastId })
+        toast.loading('Setting up guardians for this vault…', { id: toastId })
         await program.methods
           .initializeApprovers()
           .accountsPartial({
@@ -51,7 +51,7 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
           .rpc()
       }
 
-      toast.loading('Adding Guardian...', { id: toastId })
+      toast.loading('Adding guardian…', { id: toastId })
 
       const tx = await program.methods
         .addTrustedApprover(pubkey)
@@ -63,7 +63,7 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
         })
         .rpc()
 
-      toast.success('Guardian added! Tx: ' + tx.slice(0, 8) + '...', { id: toastId })
+      toast.success('Guardian added', { id: toastId, description: `Transaction ${tx.slice(0, 8)}…` })
       setAddress('')
       if (onSuccess) onSuccess()
       onClose()
@@ -73,51 +73,70 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
       const friendly = message.includes('ExistingApproverRequired')
         ? 'Adding a second guardian requires an existing guardian to co-sign.'
         : message.includes('CannotApproveOwnWithdrawals')
-          ? 'You cannot add your own wallet as a guardian.'
-          : message || 'Failed to add guardian'
+          ? "Your own wallet can't be a guardian. Use someone else's address."
+          : message || 'Could not add the guardian.'
       toast.error(friendly, { id: toastId })
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const trimmed = address.trim()
+  let valid = false
+  try {
+    valid = trimmed.length >= 32 && !!new PublicKey(trimmed)
+  } catch {
+    valid = false
+  }
+  const ownAddress = valid && provider?.wallet.publicKey.toBase58() === trimmed
+  const invalid = trimmed.length > 0 && (!valid || ownAddress)
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] bg-zinc-950 border border-zinc-800 text-zinc-100">
+      <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
-          <DialogTitle>Add Trusted Guardian</DialogTitle>
-          <DialogDescription className="text-zinc-400">
-            Guardians can co-sign large withdrawal requests. They cannot initiate withdrawals themselves.
+          <DialogTitle>Add a guardian</DialogTitle>
+          <DialogDescription>
+            A guardian signs requests above the daily limit. They can&apos;t start a withdrawal themselves. Adding a
+            second guardian needs the first one to co-sign.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <label className="text-sm font-medium text-zinc-400">Guardian Solana Address</label>
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+          <div className="space-y-2">
+            <label htmlFor="guardian-address" className="block text-[15px] font-medium text-ivy">
+              Guardian&apos;s Solana address
+            </label>
             <Input
+              id="guardian-address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Enter public key..."
-              className="bg-zinc-900 border-zinc-800"
+              placeholder="e.g. 9ozR…4zwJ"
+              className="font-mono text-sm"
+              autoComplete="off"
+              spellCheck={false}
               required
+              aria-invalid={invalid || undefined}
+              aria-describedby="guardian-hint"
             />
+            <p id="guardian-hint" className={`text-sm ${invalid ? 'text-rust' : 'text-moss'}`}>
+              {ownAddress
+                ? "That's your own wallet. A guardian has to be someone else."
+                : invalid
+                  ? "That isn't a Solana address. Check for missing characters."
+                  : 'Pick someone you trust who answers their phone.'}
+            </p>
           </div>
-          <DialogFooter className="mt-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="hover:bg-zinc-800 text-zinc-400"
-            >
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button type="submit" disabled={isSubmitting || !valid || ownAddress}>
               {isSubmitting ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Adding...
-                </span>
+                <>
+                  <Loader2 className="animate-spin" /> Adding
+                </>
               ) : (
-                'Add Guardian'
+                'Add guardian'
               )}
             </Button>
           </DialogFooter>

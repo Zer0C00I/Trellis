@@ -13,9 +13,9 @@ export function AppLayout({
   links: { label: string; path: string }[]
 }) {
   return (
-    <div className="flex flex-col min-h-screen bg-black bg-[url('/bg-trellis.jpg')] bg-cover bg-center bg-fixed font-sans selection:bg-blue-500/30 selection:text-blue-200">
+    <div className="flex min-h-screen flex-col">
       <AppHeader links={links} />
-      <main className="flex-grow container mx-auto p-4 md:p-8">
+      <main id="main" className="mx-auto w-full max-w-[1200px] flex-grow px-4 sm:px-6">
         <ClusterChecker>{children}</ClusterChecker>
       </main>
       <AppFooter />

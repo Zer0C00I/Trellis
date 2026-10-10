@@ -28,11 +28,12 @@ export function ClusterChecker({ children }: { children: ReactNode }) {
       <AppAlert
         action={
           <Button variant="outline" onClick={() => query.refetch()}>
-            Refresh
+            Try again
           </Button>
         }
       >
-        Error connecting to cluster <span className="font-bold">{cluster.name}</span>.
+        Can&apos;t reach Solana <span className="font-semibold capitalize">{cluster.name}</span>. Check your connection
+        or VPN, then try again.
       </AppAlert>
     )
   }
@@ -44,7 +45,10 @@ export function ClusterUiSelect() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline">{cluster.name}</Button>
+        <Button variant="outline" aria-label={`Network: ${cluster.name}. Change network`}>
+          <span aria-hidden className="size-2 rounded-full bg-sap" />
+          <span className="capitalize">{cluster.name}</span>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {clusters.map((item) => (

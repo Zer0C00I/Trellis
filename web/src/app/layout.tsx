@@ -1,25 +1,36 @@
 import type { Metadata } from 'next'
+import { JetBrains_Mono, Onest } from 'next/font/google'
 import './globals.css'
 import { AppProviders } from '@/components/app-providers'
-import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import React from 'react'
 
+const onest = Onest({
+  subsets: ['latin', 'cyrillic'],
+  variable: '--font-onest',
+  display: 'swap',
+})
+
+// Only for wallet addresses and signatures, where telling l from 1 matters.
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+})
+
 export const metadata: Metadata = {
-  title: "Trellis — Relative's Portal",
+  title: 'Trellis: crypto inheritance without middlemen',
   description:
-    "Secure administration portal for Trellis on Solana. Manage beneficiaries, approve withdrawals, and protect your family's crypto.",
+    'A self-custodial USDC vault on Solana. Name who it goes to, cap what leaves each day, and add guardians who sign off on more.',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <body className={`antialiased`}>
+    <html lang="en" className={`${onest.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+      <body className="antialiased">
         <AppProviders>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            {children}
-            <Toaster />
-          </ThemeProvider>
+          {children}
+          <Toaster />
         </AppProviders>
       </body>
     </html>

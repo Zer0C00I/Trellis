@@ -1,15 +1,20 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/web3.js'
 import { BN, ProgramAccount } from '@coral-xyz/anchor'
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token'
-import { BeneficiaryTable } from '../../components/dashboard/BeneficiaryTable'
+import { BeneficiaryTable, type Beneficiary } from '../../components/dashboard/BeneficiaryTable'
 import { AddBeneficiaryModal } from '../../components/dashboard/AddBeneficiaryModal'
 import { AddApproverModal } from '../../components/dashboard/AddApproverModal'
 import { DepositUsdcModal } from '../../components/dashboard/DepositUsdcModal'
+import { VaultPanel } from '../../components/dashboard/VaultPanel'
+import { GuardianList } from '../../components/dashboard/GuardianList'
+import { PendingList } from '../../components/dashboard/PendingList'
+import { SetupChecklist } from '../../components/dashboard/SetupChecklist'
 import { Button } from '../../components/ui/button'
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import { useAnchorProvider } from '../../config/useAnchorProvider'
 import {
   USDC_MINT,
@@ -17,43 +22,29 @@ import {
   DEFAULT_POOL_DAILY_LIMIT_USDC,
   findPoolVaultPda,
   explorerTxUrl,
-  explorerAddressUrl,
 } from '../../config/solana'
-import { Loader2 } from 'lucide-react'
+import { Check, Loader2, Plus } from 'lucide-react'
 
 // Rent for vault + beneficiary list + vault token account is ~0.011 SOL; keep headroom for fees.
 const MIN_SOL_FOR_INIT = 0.02
-const U64_MAX = new BN('18446744073709551615')
-
-function formatUsdc(units: BN): string {
-  const s = units.toString().padStart(USDC_DECIMALS + 1, '0')
-  const whole = s.slice(0, -USDC_DECIMALS)
-  const frac = s.slice(-USDC_DECIMALS).slice(0, 2)
-  return `$${Number(whole).toLocaleString()}.${frac}`
-}
-
-/** "100 USDC", or "100.5 USDC" when there is a fractional part. */
-function formatUsdcAmount(units: BN): string {
-  const s = units.toString().padStart(USDC_DECIMALS + 1, '0')
-  const whole = Number(s.slice(0, -USDC_DECIMALS)).toLocaleString()
-  const frac = s.slice(-USDC_DECIMALS).replace(/0+$/, '')
-  return `${frac ? `${whole}.${frac}` : whole} USDC`
-}
 
 interface VaultSummary {
   dailyLimit: BN
   spentToday: BN
   isPool: boolean
+  lastResetDay: number
   vaultTokenAccount: PublicKey
   balance: BN
 }
 
 export default function Dashboard() {
   const { connected } = useWallet()
+  const { setVisible: openWalletModal } = useWalletModal()
   const { program, provider } = useAnchorProvider()
 
   const [isApproverModalOpen, setIsApproverModalOpen] = useState(false)
   const [isDepositOpen, setIsDepositOpen] = useState(false)
+  const [isBeneficiaryOpen, setIsBeneficiaryOpen] = useState(false)
   const [refreshCounter, setRefreshCounter] = useState(0)
   const refresh = useCallback(() => setRefreshCounter((c) => c + 1), [])
 
@@ -66,6 +57,9 @@ export default function Dashboard() {
   const [programDeployed, setProgramDeployed] = useState<boolean | null>(null)
 
   const [pendingRequests, setPendingRequests] = useState<ProgramAccount[]>([])
+  const [nowSecs, setNowSecs] = useState(0)
+  const [family, setFamily] = useState<Beneficiary[] | null>(null)
+  const [guardianCount, setGuardianCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (!program || !provider) return
@@ -105,10 +99,12 @@ export default function Dashboard() {
           dailyLimit: vault.dailyLimit,
           spentToday: vault.spentToday,
           isPool: vault.isPool,
+          lastResetDay: vault.lastResetDay.toNumber(),
           vaultTokenAccount: vault.vaultTokenAccount,
           balance: new BN(tokenBal.value.amount),
         })
         setPendingRequests(pending.filter((req) => !req.account.executed))
+        setNowSecs(Math.floor(Date.now() / 1000))
         setVaultExists(true)
       } catch (e: unknown) {
         console.error('Error loading vault:', e)
@@ -195,222 +191,197 @@ export default function Dashboard() {
     }
   }
 
+  const familyNames = useMemo(
+    () => new Map((family ?? []).map((b) => [b.address.toBase58(), b.name] as [string, string])),
+    [family],
+  )
+
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <h1 className="text-3xl font-bold text-white tracking-tight">Trellis Admin</h1>
-        <p className="text-slate-400 font-light">Connect a wallet set to Solana Devnet to manage your vault.</p>
+      <div className="mx-auto max-w-xl py-16 sm:py-24">
+        <h1 className="text-[34px] font-semibold leading-tight sm:text-[42px]">Your family vault</h1>
+        <p className="mt-4 text-lg leading-relaxed text-moss">
+          Connect a wallet set to Solana Devnet. Trellis reads your vault from the chain and asks your wallet to sign
+          anything that changes it. It never holds your keys.
+        </p>
+        <Button size="lg" variant="secondary" className="mt-8" onClick={() => openWalletModal(true)}>
+          Connect wallet
+        </Button>
+        <p className="mt-4 text-sm text-moss">
+          No Phantom yet? Install it from phantom.com, then switch it to Devnet in Settings, Developer settings.
+        </p>
       </div>
     )
   }
 
   if (vaultExists === null) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-        <Toaster theme="dark" />
+      <div className="grid gap-6 py-8 lg:grid-cols-[1.15fr_1fr]" aria-busy="true" aria-label="Loading your vault">
+        <div className="h-[340px] animate-pulse rounded-[14px] bg-ivy/80" />
+        <div className="h-[340px] animate-pulse rounded-[14px] bg-ivy/[0.05]" />
       </div>
     )
   }
 
   if (vaultExists === false) {
     const lowSol = solBalance !== null && solBalance < MIN_SOL_FOR_INIT
+    const notDeployed = programDeployed === false
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in duration-500 max-w-lg mx-auto text-center">
-        <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight mt-8">Welcome to Trellis</h1>
-        <p className="text-slate-400 font-light leading-relaxed">
-          Your secure, self-custodial on-chain inheritance and spending limit system. To get started, create your vault
-          on Solana Devnet with a {DEFAULT_POOL_DAILY_LIMIT_USDC} USDC daily spending limit.
+      <div className="mx-auto max-w-xl py-12 sm:py-20">
+        <h1 className="text-[34px] font-semibold leading-tight sm:text-[42px]">Create your vault</h1>
+        <p className="mt-4 text-lg leading-relaxed text-moss">
+          The vault holds USDC that only you can move, only to people you name, and no more than{' '}
+          {DEFAULT_POOL_DAILY_LIMIT_USDC} USDC a day without a guardian.
         </p>
 
-        {programDeployed === false && (
-          <p className="w-full rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300">
-            The Trellis program is not deployed on Devnet yet.
-          </p>
-        )}
-
-        {lowSol && (
-          <div className="w-full rounded-xl border border-blue-500/30 bg-blue-950/20 p-6 text-sm text-blue-200 flex flex-col gap-4">
-            <span className="leading-relaxed">
-              Your wallet has {solBalance?.toFixed(4)} Devnet SOL. Creating a vault needs about {MIN_SOL_FOR_INIT} SOL.
-              Make sure your wallet is set to <b>Devnet</b>, then fund it at{' '}
-              <a
-                href="https://faucet.solana.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-white transition-colors"
+        <ol className="mt-10 border-t border-rule">
+          <li className="flex gap-4 border-b border-rule py-5">
+            <StepMark done />
+            <div>
+              <p className="text-[17px] font-medium">Wallet connected</p>
+              <p className="mt-1 text-[15px] text-moss">Make sure it&apos;s set to Devnet.</p>
+            </div>
+          </li>
+          <li className="flex gap-4 border-b border-rule py-5">
+            <StepMark done={solBalance !== null && !lowSol} />
+            <div className="flex-1">
+              <p className="text-[17px] font-medium">Devnet SOL for rent and fees</p>
+              <p className="mt-1 text-[15px] leading-relaxed text-moss">
+                You have <span className="tabular">{solBalance?.toFixed(4) ?? '…'}</span> SOL. Creating a vault needs
+                about {MIN_SOL_FOR_INIT} SOL.
+              </p>
+              {lowSol && (
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <Button id="airdrop-sol-button" variant="outline" onClick={handleAirdrop} disabled={airdropping}>
+                    {airdropping ? (
+                      <>
+                        <Loader2 className="animate-spin" /> Requesting 1 SOL
+                      </>
+                    ) : (
+                      'Request 1 test SOL'
+                    )}
+                  </Button>
+                  <a
+                    href="https://faucet.solana.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[15px] text-wisteria underline decoration-wisteria/40 underline-offset-4 hover:decoration-wisteria"
+                  >
+                    Or use faucet.solana.com
+                  </a>
+                </div>
+              )}
+            </div>
+          </li>
+          <li className="flex gap-4 border-b border-rule py-5">
+            <StepMark done={false} />
+            <div className="flex-1">
+              <p className="text-[17px] font-medium">Create the vault</p>
+              <p className="mt-1 text-[15px] text-moss">One transaction. Your wallet will ask you to approve it.</p>
+              {notDeployed && (
+                <p role="alert" className="mt-3 border-l-4 border-rust bg-rust/[0.07] px-4 py-3 text-[15px] text-rust">
+                  The Trellis program isn&apos;t deployed on Devnet right now, so vaults can&apos;t be created.
+                </p>
+              )}
+              <Button
+                id="initialize-vault-button"
+                size="lg"
+                onClick={handleInitializeVault}
+                disabled={initializing || lowSol || notDeployed}
+                className="mt-4 w-full sm:w-auto"
               >
-                faucet.solana.com
-              </a>
-              .
-            </span>
-            <Button
-              id="airdrop-sol-button"
-              variant="outline"
-              onClick={handleAirdrop}
-              disabled={airdropping}
-              className="border-blue-500/50 text-blue-300 hover:bg-blue-500/20 bg-transparent rounded-xl"
-            >
-              {airdropping ? 'Requesting...' : 'Try 1 SOL airdrop'}
-            </Button>
-          </div>
-        )}
-
-        <Button
-          id="initialize-vault-button"
-          size="lg"
-          onClick={handleInitializeVault}
-          disabled={initializing || lowSol || programDeployed === false}
-          className="bg-blue-600 hover:bg-blue-500 text-white w-full py-6 text-lg mt-6 shadow-[0_0_20px_-5px_rgba(37,99,235,0.5)] rounded-full transition-all hover:scale-105"
-        >
-          {initializing ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" /> Deploying Protocol...
-            </span>
-          ) : (
-            'Deploy Trellis Vault'
-          )}
-        </Button>
-        <Toaster theme="dark" />
+                {initializing ? (
+                  <>
+                    <Loader2 className="animate-spin" /> Creating vault
+                  </>
+                ) : (
+                  'Create vault'
+                )}
+              </Button>
+            </div>
+          </li>
+        </ol>
       </div>
     )
   }
 
-  const unlimited = summary ? summary.dailyLimit.eq(U64_MAX) : false
-  const spentPct =
-    summary && !unlimited && !summary.dailyLimit.isZero()
-      ? Math.min(100, summary.spentToday.muln(10000).div(summary.dailyLimit).toNumber() / 100)
-      : 0
+  // spent_today only resets on-chain at the next withdrawal of a new UTC day,
+  // so a stale counter from an earlier day means nothing has been sent today.
+  const today = Math.floor(nowSecs / 86_400)
+  const spentToday = summary && summary.lastResetDay === today ? summary.spentToday : new BN(0)
 
   return (
-    <div className="flex flex-col gap-10 max-w-6xl mx-auto p-6 animate-in fade-in duration-500 relative">
-      <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-blue-900/10 blur-[120px] pointer-events-none rounded-full"></div>
-      <div className="absolute top-1/2 left-0 w-[400px] h-[400px] bg-emerald-900/10 blur-[100px] pointer-events-none rounded-full"></div>
+    <div className="py-6 sm:py-10">
+      <h1 className="sr-only">Vault dashboard</h1>
 
-      <div className="flex justify-between items-end relative z-10">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">Vault Dashboard</h1>
-          <p className="text-slate-400 font-light mt-3 text-lg">Manage beneficiaries and guardians for your vault.</p>
-          {vaultPda && (
-            <a
-              href={explorerAddressUrl(vaultPda.toBase58())}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-mono text-slate-500 hover:text-emerald-400 transition-colors mt-2 inline-block tracking-widest"
-            >
-              [ VAULT: {vaultPda.toBase58().slice(0, 4)}…{vaultPda.toBase58().slice(-4)} ]
-            </a>
-          )}
-        </div>
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:gap-8">
+        {summary && vaultPda ? (
+          <VaultPanel
+            balance={summary.balance}
+            dailyLimit={summary.dailyLimit}
+            spentToday={spentToday}
+            isPool={summary.isPool}
+            vaultAddress={vaultPda.toBase58()}
+            onDeposit={() => setIsDepositOpen(true)}
+          />
+        ) : (
+          <div className="h-[340px] animate-pulse rounded-[14px] bg-ivy/80" />
+        )}
 
-        <div className="flex flex-col items-end gap-2 relative z-10">
-          {pendingRequests.length > 0 ? (
-            <Button
-              variant="outline"
-              className="border-yellow-500/50 text-yellow-500 hover:bg-transparent cursor-default gap-2 shadow-[0_0_15px_rgba(234,179,8,0.15)] rounded-xl"
-              title="Waiting for a guardian to approve from their own device. The vault owner cannot approve their own withdrawals."
-            >
-              <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
-              {pendingRequests.length} Awaiting Guardian{pendingRequests.length > 1 ? 's' : ''}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              className="border-white/10 text-slate-500 bg-white/[0.02] gap-2 cursor-default rounded-xl"
-            >
-              <span className="h-2 w-2 rounded-full bg-slate-700" />
-              No Pending Requests
-            </Button>
-          )}
+        <div className="flex flex-col gap-6">
+          <SetupChecklist
+            steps={[
+              { label: 'Create the vault', done: true },
+              {
+                label: 'Deposit some USDC',
+                done: !!summary && !summary.balance.isZero(),
+                action: { label: 'Deposit', onClick: () => setIsDepositOpen(true) },
+              },
+              {
+                label: 'Add a family member',
+                done: (family?.length ?? 0) > 0,
+                action: { label: 'Add', onClick: () => setIsBeneficiaryOpen(true) },
+              },
+              {
+                label: 'Add a guardian',
+                done: (guardianCount ?? 0) > 0,
+                action: { label: 'Add', onClick: () => setIsApproverModalOpen(true) },
+              },
+            ]}
+          />
+          <PendingList requests={pendingRequests} names={familyNames} nowSecs={nowSecs} />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-        <div className="p-8 rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-lg flex flex-col justify-between">
+      <section aria-labelledby="family-heading" className="mt-12">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">Total Balance</h3>
-            <p className="text-4xl md:text-5xl font-mono tracking-tight text-white mt-4">
-              {summary ? formatUsdc(summary.balance) : '—'}
-            </p>
+            <h2 id="family-heading" className="text-[27px] font-semibold">
+              Family
+            </h2>
+            <p className="mt-1 text-[15px] text-moss">The only people this vault can pay.</p>
           </div>
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/5">
-            <span className="text-xs font-mono text-slate-500 uppercase">USDC Devnet</span>
-            <Button
-              id="open-deposit-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setIsDepositOpen(true)}
-              className="h-8 rounded-xl border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-            >
-              Deposit
-            </Button>
-          </div>
+          <AddBeneficiaryModal onAdded={refresh} open={isBeneficiaryOpen} onOpenChange={setIsBeneficiaryOpen} />
         </div>
-        <div className="p-8 rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-lg flex flex-col justify-between">
-          <div>
-            <h3 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">Daily Limit</h3>
-            <p className="text-4xl md:text-5xl font-mono tracking-tight text-white mt-4">
-              {summary ? (unlimited ? 'Unlimited' : formatUsdcAmount(summary.dailyLimit)) : '—'}
-            </p>
-          </div>
-          <span className="text-xs font-mono text-slate-500 mt-8 pt-6 border-t border-white/5 block leading-relaxed">
-            {summary?.isPool
-              ? 'Enforced on-chain. Resets every UTC day. Above it needs a guardian.'
-              : 'Personal vault — owner withdrawals are not capped'}
-          </span>
-        </div>
-        <div className="p-8 rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-lg relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute top-0 right-0 p-6 opacity-[0.03]">
-            <svg
-              width="60"
-              height="60"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-              <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
-              <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">Spent Today</h3>
-            <p className="text-4xl md:text-5xl font-mono tracking-tight text-emerald-400 mt-4">
-              {summary ? formatUsdc(summary.spentToday) : '—'}
-            </p>
-          </div>
-          <div className="mt-8 pt-6 border-t border-white/5">
-            <div className="w-full bg-black/50 rounded-full h-2 shadow-inner">
-              <div
-                className="bg-emerald-500 h-2 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-                style={{ width: `${spentPct}%` }}
-              ></div>
-            </div>
-          </div>
-        </div>
-      </div>
+        {vaultPda && <BeneficiaryTable vaultPda={vaultPda} refreshCounter={refreshCounter} onLoaded={setFamily} />}
+      </section>
 
-      <div className="relative z-10">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white tracking-tight">Approved Beneficiaries</h2>
-          <div className="flex gap-2">
-            <Button
-              id="open-add-guardian-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setIsApproverModalOpen(true)}
-              className="rounded-xl border-white/10 text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
-            >
-              + Add Guardian
-            </Button>
-            <AddBeneficiaryModal onAdded={refresh} />
+      <section aria-labelledby="guardians-heading" className="mt-12">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="guardians-heading" className="text-[27px] font-semibold">
+              Guardians
+            </h2>
+            <p className="mt-1 text-[15px] text-moss">
+              They sign anything above the daily limit, from their own device.
+            </p>
           </div>
+          <Button id="open-add-guardian-button" variant="outline" onClick={() => setIsApproverModalOpen(true)}>
+            <Plus /> Add guardian
+          </Button>
         </div>
-        {vaultPda && <BeneficiaryTable vaultPda={vaultPda} refreshCounter={refreshCounter} />}
-      </div>
+        {vaultPda && <GuardianList vaultPda={vaultPda} refreshCounter={refreshCounter} onLoaded={setGuardianCount} />}
+      </section>
 
       {vaultPda && (
         <AddApproverModal
@@ -429,7 +400,19 @@ export default function Dashboard() {
           onSuccess={refresh}
         />
       )}
-      <Toaster theme="dark" />
     </div>
+  )
+}
+
+function StepMark({ done }: { done: boolean }) {
+  return (
+    <span
+      aria-label={done ? 'Done' : 'To do'}
+      className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-full border-2 ${
+        done ? 'border-sap bg-sap text-white' : 'border-ivy/30'
+      }`}
+    >
+      {done && <Check className="size-4" strokeWidth={3} />}
+    </span>
   )
 }
