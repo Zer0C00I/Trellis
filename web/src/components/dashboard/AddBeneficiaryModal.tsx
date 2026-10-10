@@ -5,6 +5,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { useAnchorProvider } from '../../config/useAnchorProvider'
+import { findPoolVaultPda } from '../../config/solana'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 
@@ -38,10 +39,7 @@ export function AddBeneficiaryModal({ onAdded }: { onAdded: () => void }) {
 
       const owner = provider.wallet.publicKey
 
-      const [vaultPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('vault'), owner.toBuffer(), Buffer.from('personal')],
-        program.programId,
-      )
+      const vaultPda = findPoolVaultPda(owner, program.programId)
 
       const [beneficiaryListPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('beneficiaries'), vaultPda.toBuffer()],

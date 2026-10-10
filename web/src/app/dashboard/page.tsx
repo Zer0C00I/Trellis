@@ -11,7 +11,14 @@ import { DepositUsdcModal } from '../../components/dashboard/DepositUsdcModal'
 import { Button } from '../../components/ui/button'
 import { Toaster, toast } from 'sonner'
 import { useAnchorProvider } from '../../config/useAnchorProvider'
-import { USDC_MINT, USDC_DECIMALS, explorerTxUrl, explorerAddressUrl } from '../../config/solana'
+import {
+  USDC_MINT,
+  USDC_DECIMALS,
+  DEFAULT_POOL_DAILY_LIMIT_USDC,
+  findPoolVaultPda,
+  explorerTxUrl,
+  explorerAddressUrl,
+} from '../../config/solana'
 import { Loader2 } from 'lucide-react'
 
 // Rent for vault + beneficiary list + vault token account is ~0.011 SOL; keep headroom for fees.
@@ -23,6 +30,14 @@ function formatUsdc(units: BN): string {
   const whole = s.slice(0, -USDC_DECIMALS)
   const frac = s.slice(-USDC_DECIMALS).slice(0, 2)
   return `$${Number(whole).toLocaleString()}.${frac}`
+}
+
+/** "100 USDC", or "100.5 USDC" when there is a fractional part. */
+function formatUsdcAmount(units: BN): string {
+  const s = units.toString().padStart(USDC_DECIMALS + 1, '0')
+  const whole = Number(s.slice(0, -USDC_DECIMALS)).toLocaleString()
+  const frac = s.slice(-USDC_DECIMALS).replace(/0+$/, '')
+  return `${frac ? `${whole}.${frac}` : whole} USDC`
 }
 
 interface VaultSummary {
@@ -59,10 +74,7 @@ export default function Dashboard() {
     const load = async () => {
       try {
         const owner = provider.wallet.publicKey
-        const [pda] = PublicKey.findProgramAddressSync(
-          [Buffer.from('vault'), owner.toBuffer(), Buffer.from('personal')],
-          program.programId,
-        )
+        const pda = findPoolVaultPda(owner, program.programId)
 
         const [programInfo, lamports, vault] = await Promise.all([
           provider.connection.getAccountInfo(program.programId),
@@ -146,19 +158,17 @@ export default function Dashboard() {
     const toastId = toast.loading('Creating your vault on Devnet...')
     try {
       const owner = provider.wallet.publicKey
-      const [pda] = PublicKey.findProgramAddressSync(
-        [Buffer.from('vault'), owner.toBuffer(), Buffer.from('personal')],
-        program.programId,
-      )
+      const pda = findPoolVaultPda(owner, program.programId)
       const [beneficiaryListPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('beneficiaries'), pda.toBuffer()],
         program.programId,
       )
       const vaultTokenAccount = getAssociatedTokenAddressSync(USDC_MINT, pda, true)
 
-      // Personal vault: the program ignores daily_limit and stores u64::MAX.
+      // Pool vault: daily_limit is in USDC base units and must be > 0.
+      const dailyLimit = new BN(DEFAULT_POOL_DAILY_LIMIT_USDC).mul(new BN(10).pow(new BN(USDC_DECIMALS)))
       const sig = await program.methods
-        .initializeVault(false, new BN(0))
+        .initializeVault(true, dailyLimit)
         .accountsPartial({
           payer: owner,
           owner,
@@ -209,8 +219,8 @@ export default function Dashboard() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-in fade-in duration-500 max-w-lg mx-auto text-center">
         <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight mt-8">Welcome to Trellis</h1>
         <p className="text-slate-400 font-light leading-relaxed">
-          Your secure, self-custodial on-chain inheritance and spending limit system. To get started, create your
-          personal vault on Solana Devnet.
+          Your secure, self-custodial on-chain inheritance and spending limit system. To get started, create your vault
+          on Solana Devnet with a {DEFAULT_POOL_DAILY_LIMIT_USDC} USDC daily spending limit.
         </p>
 
         {programDeployed === false && (
@@ -340,11 +350,13 @@ export default function Dashboard() {
           <div>
             <h3 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-widest">Daily Limit</h3>
             <p className="text-4xl md:text-5xl font-mono tracking-tight text-white mt-4">
-              {summary ? (unlimited ? 'Unlimited' : formatUsdc(summary.dailyLimit)) : '—'}
+              {summary ? (unlimited ? 'Unlimited' : formatUsdcAmount(summary.dailyLimit)) : '—'}
             </p>
           </div>
           <span className="text-xs font-mono text-slate-500 mt-8 pt-6 border-t border-white/5 block leading-relaxed">
-            {summary?.isPool ? 'Max auto-approved per day' : 'Personal vault — owner withdrawals are not capped'}
+            {summary?.isPool
+              ? 'Enforced on-chain. Resets every UTC day. Above it needs a guardian.'
+              : 'Personal vault — owner withdrawals are not capped'}
           </span>
         </div>
         <div className="p-8 rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-lg relative overflow-hidden flex flex-col justify-between">
