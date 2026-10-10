@@ -1,15 +1,10 @@
-//! Pure instruction builders for every `family-vault` operation a
-//! bank-style client needs (open an account, deposit, send, add a payee,
-//! add one urgently, add a trusted person, request/approve an over-limit
-//! withdrawal). Each function only builds a `solana_instruction::
-//! Instruction` — it never talks to an RPC and never signs anything, so
-//! callers (currently `family-app-core`; `admin-cli` and `kiosk-gui`
-//! predate this module and keep their own inline copies for now) are free
-//! to batch, simulate, or hand these to a wallet for signing.
+//! Pure instruction builders for every `family-vault` operation a bank-style
+//! client needs (open an account, deposit, send, add a payee, add a trusted
+//! person, request/approve an over-limit withdrawal). Each function only
+//! builds a `solana_instruction::Instruction`: no RPC, no signing, so callers
+//! are free to batch, simulate, or hand it to a wallet.
 //!
-//! Owner-rotation instructions (`request`/`cancel`/`execute_owner_rotation`)
-//! are deliberately not here — out of scope for the family-app MVP (see
-//! the family-app design spec).
+//! Owner-rotation instructions are deliberately not here.
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use solana_instruction::Instruction;

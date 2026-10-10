@@ -1,10 +1,8 @@
 //! Shared chain-facing primitives for every `family-vault` client
-//! (kiosk-gui, admin-cli, and future family-app): pubkey conversion
-//! between the two incompatible Solana crate generations coexisting in
-//! this workspace, PDA derivation, and mint-decimals lookup. Each of
-//! these was independently duplicated across `kiosk-gui/src/chain.rs`,
-//! `kiosk-gui/src/setup.rs`, and `tools/admin-cli/src/main.rs` before
-//! this crate existed — this is the single source of truth now.
+//! (kiosk-gui, admin-cli, family-app): pubkey conversion between the two
+//! incompatible Solana crate generations in this workspace, PDA derivation,
+//! instruction builders, BLE pairing frames, amount parsing and mint-decimals
+//! lookup.
 
 pub mod builders;
 pub mod pairing;
@@ -173,9 +171,8 @@ pub fn format_base_units(amount: u64, decimals: u32) -> String {
     }
 }
 
-/// Reads decimals live from the Mint account — different SPL tokens
-/// (real USDC, wrapped SOL, a custom demo token) declare different
-/// decimals, so this can't be a hardcoded constant.
+/// Reads decimals live from the Mint account: different SPL tokens declare
+/// different decimals, so this can't be a hardcoded constant.
 pub fn fetch_mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> Result<u32, String> {
     let data = rpc
         .get_account_data(mint)

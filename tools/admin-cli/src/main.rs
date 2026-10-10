@@ -1,17 +1,10 @@
 //! Admin CLI for the `family-vault` program: initialize vaults, manage
 //! beneficiaries/approvers, and drive owner-side flows that the kiosk GUI
-//! deliberately never exposes to the vault owner's own device (see
-//! `docs/superpowers/specs/2026-09-21-kiosk-blockchain-wiring-design.md`,
-//! "Вне скоупа этого plan'а" — those operations belong to a family-facing
-//! admin surface, which this tool is a command-line stand-in for until a
-//! real web app exists).
+//! deliberately never exposes on the vault owner's own device.
 //!
-//! Every subcommand builds one instruction via `family-vault`'s
-//! Anchor-generated `instruction`/`accounts` client bindings (the same
-//! `anchor_lang::prelude::Pubkey` <-> `solana_pubkey::Pubkey` conversion
-//! pattern as `kiosk-gui/src/chain.rs`, since these are two distinct
-//! `Pubkey` types from different generations of the Solana crate
-//! ecosystem), signs it, and sends it with `send_and_confirm_transaction`.
+//! Every subcommand builds one instruction from `family-vault`'s
+//! Anchor-generated client bindings, signs it, and sends it with
+//! `send_and_confirm_transaction`.
 
 mod registry;
 
@@ -27,9 +20,8 @@ use spl_token::solana_program::program_pack::Pack;
 use family_vault_client::{to_anchor, to_client};
 use registry::{PersonEntry, VaultEntry};
 
-/// `family-vault` only exports its declared id as `anchor_lang::prelude::Pubkey`
-/// (via `declare_id!`) — this tool needs it in the client-era `solana_pubkey`
-/// type for PDA derivation, RPC calls, and `Instruction::program_id`.
+/// `family-vault` exports its id only as `anchor_lang::prelude::Pubkey`; this
+/// tool needs the `solana_pubkey` type for PDA derivation and RPC calls.
 fn program_id() -> Pubkey {
     to_client(family_vault::ID)
 }
@@ -133,8 +125,7 @@ fn system_program_id() -> Pubkey {
 }
 
 /// `send`/`deposit` accept whole-unit amounts (e.g. `--amount 10`) and
-/// convert to base units using this, so nobody using this tool has to do
-/// that math themselves.
+/// convert to base units using this.
 fn fetch_mint_decimals(rpc: &RpcClient, mint: &Pubkey) -> u32 {
     family_vault_client::fetch_mint_decimals(rpc, mint).unwrap_or_else(|e| {
         eprintln!("{e}");
@@ -221,20 +212,14 @@ fn arg_name_list(args: &[String], flag: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Bank-style: "open an account for <owner>". Runs `initialize_vault`
-/// on-chain, then registers the resulting vault under `--name` so later
-/// commands (`send`, `deposit`, `add-beneficiary`) never need the raw
-/// vault pubkey again.
+/// Runs `initialize_vault` on-chain, then registers the resulting vault under
+/// `--name` so later commands never need the raw vault pubkey.
 ///
-/// For `--pool` vaults, also runs the rest of the family-vault opening
-/// flow in one command: `initialize_approvers`, then one
+/// For `--pool` vaults, also runs `initialize_approvers`, then one
 /// `add_trusted_approver` per `--approvers` name and one `add_beneficiary`
-/// per `--beneficiaries` name — so a family member never has to chain six
-/// separate raw-pubkey commands by hand. Each step is its own transaction,
-/// sent in order; a failure partway through leaves everything up to that
-/// point on-chain (the vault, approvers list, and any approvers/payees
-/// already added are all real and can be inspected/retried individually
-/// with the existing single-purpose commands).
+/// per `--beneficiaries` name. Each step is its own transaction, sent in
+/// order; a failure partway through leaves everything up to that point
+/// on-chain, and the rest can be retried with the single-purpose commands.
 fn cmd_create_vault(args: &[String]) {
     let path = registry_path(args);
     let mut reg = registry::load(&path);
@@ -448,10 +433,9 @@ fn cmd_deposit(args: &[String]) {
     }
 }
 
-/// Bank-style "send money": register the recipient as a beneficiary
-/// first (see `cmd_add_beneficiary`) — the program only ever pays out
-/// to its closed address book, by design (see the parent family-vault
-/// design spec's "closed address book" anti-scam rationale).
+/// The recipient must be registered as a beneficiary first (see
+/// `cmd_add_beneficiary`): the program only pays out to its closed address
+/// book, as an anti-scam measure.
 fn cmd_add_beneficiary(args: &[String]) {
     let path = registry_path(args);
     let reg = registry::load(&path);
@@ -489,9 +473,9 @@ fn cmd_add_beneficiary(args: &[String]) {
     }
 }
 
-/// Two-approver fast lane: adds a payee immediately, skipping the normal
-/// 48h cooldown — see `family_vault::instructions::add_beneficiary_urgent`
-/// for why this needs two distinct trusted approvers, not the owner.
+/// Adds a payee immediately, skipping the normal 48h cooldown. Needs two
+/// distinct trusted approvers, not the owner (see
+/// `family_vault::instructions::add_beneficiary_urgent`).
 fn cmd_add_beneficiary_urgent(args: &[String]) {
     let path = registry_path(args);
     let reg = registry::load(&path);
@@ -534,9 +518,8 @@ fn cmd_add_beneficiary_urgent(args: &[String]) {
     }
 }
 
-/// Bank-style "send money from account to account". The recipient must
-/// already be an approved payee (`add-beneficiary`) — the program
-/// enforces this on-chain regardless of what this tool sends.
+/// The recipient must already be an approved payee (`add-beneficiary`); the
+/// program enforces this on-chain.
 fn cmd_send(args: &[String]) {
     let path = registry_path(args);
     let reg = registry::load(&path);

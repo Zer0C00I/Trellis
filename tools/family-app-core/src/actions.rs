@@ -1,10 +1,7 @@
-//! Everyday bank-style actions, each a thin RPC-send/sign wrapper around
-//! one of `family_vault_client::builders`' pure instruction builders.
-//! Covers the same everyday commands as `admin-cli` (see that tool's
-//! `cmd_*` functions), minus owner rotation, but returns `Result` instead
-//! of printing and calling `std::process::exit` — this is a library a
-//! future UI calls into, not a CLI. Owner-rotation actions are out of
-//! scope for the MVP (see the family-app design spec) and are not here.
+//! Everyday bank-style actions, each a thin sign-and-send wrapper around one
+//! of `family_vault_client::builders`' instruction builders. Same commands as
+//! `admin-cli` minus owner rotation, but returning `Result` instead of
+//! printing and exiting.
 //!
 //! Amounts are always in the token's base units (`u64`). A UI reads
 //! `decimals` from `vault_view::VaultView` and converts what the user typed
@@ -32,15 +29,13 @@ use solana_signer::Signer;
 use solana_transaction_status_client_types::{TransactionConfirmationStatus, TransactionStatus};
 use std::time::{Duration, Instant};
 
-/// Called by `send_instructions` after the transaction is signed (so its
-/// signature is known) and BEFORE it is sent, with the signature and the
-/// last valid block height. A caller that must remember the operation (so
-/// it survives a crash during the confirm wait) writes its record here. If
-/// the hook fails, nothing is sent.
+/// Called after the transaction is signed (so its signature is known) and
+/// BEFORE it is sent, with the signature and last valid block height. A
+/// caller that must survive a crash during the confirm wait records the
+/// operation here. If the hook fails, nothing is sent.
 pub type BeforeSend<'a> = &'a dyn Fn(&Signature, u64) -> Result<(), String>;
 
-/// Runs the hook, and only if it succeeds the `send` step. A failing hook
-/// means nothing was sent: the error says so.
+/// Runs the hook, and only if it succeeds the `send` step.
 fn hook_then_send<T>(
     signature: &Signature,
     last_valid_block_height: u64,
@@ -128,14 +123,11 @@ fn track_poll_result(consecutive_errors: u32, lookup_succeeded: bool) -> (u32, b
     (count, count > MAX_CONSECUTIVE_POLL_ERRORS)
 }
 
-/// Maps an error from `send_transaction`. Once the request may have reached
-/// the node, only a DEFINITE refusal is `Rejected`: an RPC error response
-/// (preflight failure, unhealthy node, ... - in solana-rpc-client 4.2.2 a
-/// preflight failure arrives as `RpcError::RpcResponseError` with
-/// `SendTransactionPreflightFailure` data, see `http_sender.rs`) or a
-/// `TransactionError`. Everything else (I/O, HTTP transport, unparsable or
-/// mismatched responses, JSON errors, middleware, custom) can happen AFTER
-/// the node accepted the transaction, so the outcome is `Unconfirmed`.
+/// Maps an error from `send_transaction`. Only a DEFINITE refusal is
+/// `Rejected`: an RPC error response (in solana-rpc-client 4.2.2 a preflight
+/// failure arrives as `RpcError::RpcResponseError`) or a `TransactionError`.
+/// Everything else (I/O, HTTP transport, unparsable responses, ...) can
+/// happen AFTER the node accepted the transaction, so it is `Unconfirmed`.
 fn send_error(
     err: solana_client::client_error::ClientError,
     signature: Signature,
@@ -154,20 +146,15 @@ fn send_error(
 }
 
 /// Sends one or more instructions in a single transaction, signed by
-/// `payer` plus any `extra_signers` (e.g. a second trusted approver for
-/// `add_beneficiary_urgent`, or an existing approver co-signing a new
-/// one).
+/// `payer` plus any `extra_signers` (e.g. a second approver co-signing).
 ///
 /// The transaction is signed once, sent, and then its signature is polled
-/// for up to ~60s (this only bounds how long the call blocks), or until its
-/// blockhash has expired. A few consecutive failed status lookups are
-/// tolerated.
+/// for up to ~60s, or until its blockhash has expired. A few consecutive
+/// failed status lookups are tolerated.
 ///
 /// `before_send` runs after signing and before the network is touched (see
 /// [`BeforeSend`]); if it fails, nothing is sent and the result is
-/// `Rejected`. A caller that records the operation there has the record on
-/// disk before any money can move, so a crash or close during the wait
-/// cannot lose it. Retry rule for callers:
+/// `Rejected`. Retry rule for callers:
 ///
 /// - `Ok(signature)`: confirmed on chain. Never resend.
 /// - `Rejected` / `NoConnection`: the transaction was NOT accepted (the node
@@ -341,11 +328,9 @@ fn fetch_vault_token_account_and_mint(
 }
 
 /// Opens a pool (family) vault for `owner` with a `daily_limit` in the
-/// token's base units (not whole tokens; `u64::MAX` means unlimited), then
-/// initializes its approvers list — the two steps a family always needs before adding
-/// anyone. Returns the new vault's address. Adding the first approvers
-/// and payees is a separate call to `add_trusted_approver`/
-/// `add_beneficiary` per person, same as `admin-cli`.
+/// token's base units (`u64::MAX` means unlimited), then initializes its
+/// approvers list. Returns the new vault's address. Approvers and payees are
+/// added separately with `add_trusted_approver`/`add_beneficiary`.
 pub fn open_pool_vault(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -374,9 +359,8 @@ pub fn open_pool_vault(
 }
 
 /// Deposits `amount_base_units` (the token's smallest unit, so 2.5 USDC is
-/// 2_500_000) from `depositor` into the vault. The UI gets `decimals` from
-/// `VaultView` and converts typed text with `parse_decimal_amount`. Zero is
-/// `Rejected` before any RPC.
+/// 2_500_000) from `depositor` into the vault. Zero is `Rejected` before any
+/// RPC.
 pub fn deposit(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -400,10 +384,8 @@ pub fn deposit(
 }
 
 /// Sends `amount_base_units` (the token's smallest unit) from the vault to
-/// `recipient`. The recipient must already be an approved payee — the
-/// program enforces this regardless of what this function sends. The UI
-/// gets `decimals` from `VaultView` and converts typed text with
-/// `parse_decimal_amount`. Zero is `Rejected` before any RPC.
+/// `recipient`. The recipient must already be an approved payee (enforced by
+/// the program). Zero is `Rejected` before any RPC.
 pub fn send(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -443,7 +425,6 @@ pub fn add_beneficiary(
 
 /// Two distinct trusted approvers, not the owner — skips the normal 48h
 /// cooldown. See `family_vault::instructions::add_beneficiary_urgent`.
-// The mandatory `before_send` hook is the eighth argument.
 #[allow(clippy::too_many_arguments)]
 pub fn add_beneficiary_urgent(
     rpc: &RpcClient,
@@ -492,9 +473,8 @@ pub fn add_trusted_approver(
 }
 
 /// Approves a pending over-limit withdrawal by nonce. Reads the pending
-/// request's recipient and the vault's token/mint from chain first (the
-/// caller only needs to remember the nonce), matching `admin-cli`'s own
-/// `approve-withdrawal` behavior.
+/// request's recipient and the vault's token/mint from chain first, so the
+/// caller only needs the nonce.
 pub fn approve_withdrawal(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -525,10 +505,9 @@ pub fn approve_withdrawal(
     send_instructions(rpc, signer, &[ix], &[], before_send)
 }
 
-/// Requests an over-limit withdrawal of `amount_base_units` (the token's
-/// smallest unit; the UI converts with `parse_decimal_amount` using the
-/// `decimals` from `VaultView`) from a pool vault, to be later confirmed
-/// with `approve_withdrawal`. Zero is `Rejected` before any RPC.
+/// Requests an over-limit withdrawal of `amount_base_units` from a pool
+/// vault, to be later confirmed with `approve_withdrawal`. Zero is
+/// `Rejected` before any RPC.
 ///
 /// The caller picks `nonce`: take it from `VaultView::next_free_nonce` (or
 /// `vault_view::next_free_nonce`), and STORE it before calling. On
@@ -539,11 +518,7 @@ pub fn approve_withdrawal(
 /// duplicate fails with "account already in use"). A new nonce would create
 /// a second, identical pending request, and two approvals could then each
 /// move the amount. If another device took the nonce first, the program
-/// rejects this request and no funds move. Not part of the MVP's default
-/// "send" flow (that goes straight through `send`/`Withdraw` for
-/// within-limit amounts) but needed once a pool vault's daily limit is
-/// exceeded.
-// The mandatory `before_send` hook is the eighth argument.
+/// rejects this request and no funds move.
 #[allow(clippy::too_many_arguments)]
 pub fn request_withdrawal(
     rpc: &RpcClient,

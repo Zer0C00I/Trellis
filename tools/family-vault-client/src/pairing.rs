@@ -1,7 +1,6 @@
 //! Wire format for first-run family-member pairing over BLE, shared by the
 //! kiosk (BLE peripheral) and family-app (BLE central) so both sides use
-//! the same encoder/decoder. See the family-app design spec, "Identity &
-//! Bootstrap".
+//! the same encoder/decoder.
 //!
 //! One writable characteristic carries a single frame:
 //!
@@ -226,8 +225,6 @@ mod tests {
         encode_frame(&sample()).unwrap()
     }
 
-    // --- frame assembly -------------------------------------------------
-
     #[test]
     fn a_frame_delivered_in_one_write_round_trips() {
         let mut assembler = FrameAssembler::default();
@@ -412,8 +409,6 @@ mod tests {
         assert_eq!(encode_frame(&req), Err(FrameError::NameTooLong));
     }
 
-    // --- fallback code as an auth field ---------------------------------
-
     #[test]
     fn auth_from_pin_is_the_six_digits_zero_padded() {
         let field = auth_from_pin("482913").unwrap();
@@ -429,8 +424,6 @@ mod tests {
         assert_eq!(auth_from_pin("١٢٣٤٥٦"), Err(FrameError::BadPin));
         assert_eq!(auth_from_pin(""), Err(FrameError::BadPin));
     }
-
-    // --- QR payload -----------------------------------------------------
 
     #[test]
     fn a_qr_payload_round_trips() {
@@ -479,8 +472,6 @@ mod tests {
             "sign characters are not hex digits"
         );
     }
-
-    // --- misc -----------------------------------------------------------
 
     #[test]
     fn max_name_len_matches_the_on_chain_limit() {

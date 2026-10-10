@@ -31,14 +31,13 @@ use spl_token::solana_program::program_pack::Pack;
 
 /// How many request nonces `0..NONCE_SCAN_LIMIT` are inspected.
 ///
-/// This window is a deliberate MVP limit. `PendingWithdrawal` does not store
-/// its nonce (it lives only in the PDA seeds), nonces are chosen by the
-/// caller and are never reused (executed requests keep their account), so
-/// finding "pending requests" and "a free nonce" means probing PDAs. Probing
-/// a bounded, small window keeps the cost at two `get_multiple_accounts`
-/// calls. A vault that has used all 200 nonces reports an error instead of
-/// silently hiding older requests; lifting the limit needs a program-side
-/// index or a `getProgramAccounts` scan.
+/// `PendingWithdrawal` does not store its nonce (it lives only in the PDA
+/// seeds) and nonces are never reused (executed requests keep their account),
+/// so finding pending requests and a free nonce means probing PDAs. A small
+/// window keeps that at two `get_multiple_accounts` calls. A vault that has
+/// used all 200 nonces reports an error instead of silently hiding older
+/// requests; lifting the limit needs a program-side index or a
+/// `getProgramAccounts` scan.
 pub const NONCE_SCAN_LIMIT: u64 = 200;
 
 /// `getMultipleAccounts` accepts at most 100 keys per call.
@@ -363,11 +362,8 @@ fn now_unix() -> i64 {
 ///
 /// Time-dependent fields ([`VaultView::spent_today`]) use the DEVICE clock
 /// (`SystemTime::now`) and are advisory only: the program uses cluster time
-/// and is authoritative. Likewise pass your device time to
-/// [`Payee::is_active`] knowing it is only a hint.
-/// A missing vault or
-/// payee list is an error; a missing approvers account just means no
-/// guardians yet. See the module docs for the exact RPC calls.
+/// and is authoritative. A missing vault or payee list is an error; a
+/// missing approvers account just means no guardians yet.
 pub fn fetch_vault_view(
     rpc: &RpcClient,
     program_id: &Pubkey,

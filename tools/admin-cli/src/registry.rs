@@ -1,7 +1,5 @@
 //! Local name registry: lets `admin-cli` be driven by names ("бабушка",
 //! "внук", "бабушкин кошелёк") instead of raw pubkeys/keypair paths.
-//! Nobody using a family-facing panel should need to know what a pubkey
-//! or a PDA is — see the discussion in this tool's `main.rs` doc comment.
 //!
 //! Stored as plain JSON at `--registry <path>` (default
 //! `~/.family-vault/accounts.json`), created on first `register-person`/

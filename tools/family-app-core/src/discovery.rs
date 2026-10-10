@@ -90,8 +90,7 @@ fn approver_list_has(list: &TrustedApprovers, me: &Pubkey) -> bool {
 
 /// Every vault `me` participates in, as payee or approver or both,
 /// deduplicated and sorted. Two requests. Any failure fails the whole call:
-/// a vault must never be silently missing. MVP scope decision (family-app
-/// design spec): the UI shows one vault at a time, but this returns them all.
+/// a vault must never be silently missing.
 pub fn discover_my_vaults(
     rpc: &RpcClient,
     program_id: &Pubkey,

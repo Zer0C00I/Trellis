@@ -1,9 +1,7 @@
 //! Read-only transaction history for a vault: what happened, in plain
-//! terms, without exposing raw instruction bytes to a caller. Two RPC
-//! calls per signature (`getSignaturesForAddress` then `getTransaction`)
-//! — a completely different Solana RPC surface than `discovery`'s
-//! `getProgramAccounts` scan, since history lives in the ledger, not in
-//! any account's current state.
+//! terms, without exposing raw instruction bytes to a caller. Uses
+//! `getSignaturesForAddress` then `getTransaction` per signature, since
+//! history lives in the ledger, not in any account's current state.
 //!
 //! A confirmed transaction never changes, so [`fetch_history_cached`] keeps
 //! the decoded entries of each signature in a caller-owned, bounded
@@ -46,22 +44,18 @@ pub enum HistoryEntryKind {
     Unknown,
 }
 
-/// The first 8 bytes of any Anchor instruction's encoded data are its
-/// discriminator, fixed per instruction type regardless of argument
-/// values — `disc_of` reads it from a throwaway instance purely to learn
-/// that prefix, never to inspect the (irrelevant) dummy values.
+/// The first 8 bytes of an Anchor instruction's data are its discriminator,
+/// fixed per instruction type; `disc_of` reads it from a throwaway instance
+/// (the dummy argument values are irrelevant).
 fn disc_of(data: Vec<u8>) -> [u8; 8] {
     let mut d = [0u8; 8];
     d.copy_from_slice(&data[..8]);
     d
 }
 
-/// Decodes one instruction's raw bytes into a `HistoryEntryKind`. A
-/// transaction touching this vault can legitimately contain other
-/// programs' instructions too (e.g. the System Program's account-creation
-/// instruction alongside `InitializeVault`) or a corrupt/short payload —
-/// both decode as `Unknown` rather than an error, so one bad instruction
-/// never fails the whole history fetch.
+/// Decodes one instruction's raw bytes into a `HistoryEntryKind`. Other
+/// programs' instructions and corrupt/short payloads decode as `Unknown`
+/// rather than an error, so one bad instruction never fails the whole fetch.
 pub fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind {
     if data.len() < 8 {
         return HistoryEntryKind::Unknown;
@@ -154,12 +148,10 @@ pub fn decode_instruction_kind(data: &[u8]) -> HistoryEntryKind {
 }
 
 /// Decoded transactions by signature, owned by the caller and passed to
-/// [`fetch_history_cached`]. A confirmed transaction never changes, so once
-/// its entries are known (possibly none: a foreign or unrecognized
-/// transaction) it is never fetched again. Bounded: when over capacity the
-/// oldest-inserted signatures are evicted first. Give it a capacity of at
-/// least the `limit` you fetch with, or every call evicts what it needs next
-/// and the cache thrashes.
+/// [`fetch_history_cached`]. Once a transaction's entries are known
+/// (possibly none) it is never fetched again. When over capacity the
+/// oldest-inserted signatures are evicted first, so give it a capacity of at
+/// least the `limit` you fetch with, or it thrashes.
 pub struct HistoryCache {
     capacity: usize,
     entries: HashMap<String, Vec<HistoryEntry>>,
@@ -203,14 +195,11 @@ impl HistoryCache {
     }
 }
 
-/// Fetches up to `limit` recent signatures touching `vault`, decodes each
-/// transaction's instructions that belong to `program_id`, and returns
-/// the recognized ones as plain `HistoryEntry` values (an `Unknown`-
-/// decoded instruction, or one from a different program in the same
-/// transaction, is silently skipped — it is not history-worthy on its
-/// own). A failed transaction (one that errored on-chain) never changed
-/// vault state and is skipped entirely. Every call refetches every
-/// transaction; use [`fetch_history_cached`] to avoid that on refresh.
+/// Fetches up to `limit` recent signatures touching `vault` and returns the
+/// recognized instructions of `program_id` as plain `HistoryEntry` values
+/// (`Unknown` and foreign-program instructions are skipped). A transaction
+/// that errored on-chain never changed vault state and is skipped entirely.
+/// Every call refetches every transaction; see [`fetch_history_cached`].
 pub fn fetch_history(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -221,10 +210,9 @@ pub fn fetch_history(
 }
 
 /// Same as [`fetch_history`], but `getTransaction` is only called for
-/// signatures not already in `cache`. The signature list is still fetched
-/// every time (new transactions appear), and the result is identical to an
-/// uncached fetch. A transaction that could not be fetched (pruned, not
-/// found, odd encoding) is not cached, since it may succeed later.
+/// signatures not already in `cache` (the signature list is still fetched
+/// every time). A transaction that could not be fetched (pruned, not found,
+/// odd encoding) is not cached, since it may succeed later.
 pub fn fetch_history_cached(
     rpc: &RpcClient,
     program_id: &Pubkey,
