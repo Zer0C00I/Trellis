@@ -115,8 +115,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
     // Last-fetched snapshots, kept around so a beneficiary tap (which only
     // carries a small integer `id`) can be resolved back to the wallet
-    // pubkey `submit_withdraw` needs. `chain.rs` doesn't track this itself
-    // — see Task 4's Interfaces note.
+    // pubkey `submit_withdraw` needs. `chain.rs` doesn't track this itself.
     let personal_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let pool_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
@@ -349,12 +348,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
                 .map(|(_, addr)| *addr);
             let Some(addr) = addr else { return };
 
-            // Family Wallet has no dedicated amount-select/confirm screens
-            // of its own in this plan's scope (spec: "Family Wallet" data
-            // flow reuses the same withdraw call) — send the first preset
-            // amount directly and reuse the shared Result screen. A richer
-            // Family Wallet amount-select flow is future work, not part of
-            // this plan.
+            // Family Wallet has no amount-select/confirm screens of its own:
+            // send the first preset amount directly and reuse the shared
+            // Result screen.
             let amount = 10u64;
             let cfg = cfg.clone();
             let app_weak = app.as_weak();

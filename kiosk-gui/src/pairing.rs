@@ -325,8 +325,6 @@ mod tests {
         [0xEE; AUTH_LEN]
     }
 
-    // --- credentials ----------------------------------------------------
-
     #[test]
     fn from_random_bytes_derives_a_zero_padded_six_digit_pin() {
         let mut bytes = [9u8; 20];
@@ -364,8 +362,6 @@ mod tests {
     fn display_pin_groups_digits_in_threes() {
         assert_eq!(display_pin("482913"), "482 913");
     }
-
-    // --- cooldown schedule ------------------------------------------------
 
     #[test]
     fn cooldown_schedule_doubles_up_to_the_maximum() {
@@ -423,8 +419,6 @@ mod tests {
         assert!(!g.is_current(old));
         assert!(g.is_current(newest));
     }
-
-    // --- gate -----------------------------------------------------------
 
     #[test]
     fn gate_accepts_the_qr_secret() {
@@ -505,8 +499,6 @@ mod tests {
             AuthCheck::Wrong { attempts_left: 4 }
         );
     }
-
-    // --- session --------------------------------------------------------
 
     #[test]
     fn session_accepts_the_qr_secret_in_one_write() {
@@ -764,8 +756,6 @@ mod tests {
             WriteOutcome::Accepted(_)
         ));
     }
-
-    // --- redaction, counters --------------------------------------------
 
     #[test]
     fn credentials_debug_redacts_secret_and_pin() {

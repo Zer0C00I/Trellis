@@ -115,8 +115,7 @@ pub fn write_kiosk_config(
         // инициализация" step 4): pool fields equal the personal
         // vault's own addresses until a family app creates a real pool
         // vault. Family Wallet will show the same data as My Wallet
-        // until then — the same graceful-degradation path already
-        // exercised manually with this exact placeholder trick.
+        // until then.
         values.personal_vault,
         values.personal_beneficiary_list,
     );
@@ -216,8 +215,6 @@ pub fn self_initialize_personal_vault(
     let (beneficiary_list, _) =
         family_vault_client::beneficiary_list_pda(&program_id_client, &vault);
 
-    // Idempotency by existence check, not error-string matching — see
-    // this function's doc comment.
     if rpc.get_account_data(&vault).is_ok() {
         return Ok((vault, beneficiary_list));
     }
