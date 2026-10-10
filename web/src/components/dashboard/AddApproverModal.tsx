@@ -36,11 +36,9 @@ export function AddApproverModal({ isOpen, onClose, vaultPda, onSuccess }: AddAp
         program.programId,
       )
 
-      // We need to check if the approvers PDA exists first.
       const approversAccount = await program.account.trustedApprovers.fetchNullable(approversPda)
 
       if (!approversAccount) {
-        // Initialize approvers system first
         toast.loading('Initializing Guardian System...', { id: toastId })
         await program.methods
           .initializeApprovers()

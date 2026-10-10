@@ -194,7 +194,6 @@ export default function Dashboard() {
     )
   }
 
-  // Still checking existence
   if (vaultExists === null) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -204,7 +203,6 @@ export default function Dashboard() {
     )
   }
 
-  // Vault does not exist -> Show initialization screen
   if (vaultExists === false) {
     const lowSol = solBalance !== null && solBalance < MIN_SOL_FOR_INIT
     return (
@@ -295,7 +293,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Alerts Section */}
         <div className="flex flex-col items-end gap-2 relative z-10">
           {pendingRequests.length > 0 ? (
             <Button
@@ -318,7 +315,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Financial Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
         <div className="p-8 rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-lg flex flex-col justify-between">
           <div>
@@ -385,7 +381,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Beneficiary Management */}
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-white tracking-tight">Approved Beneficiaries</h2>

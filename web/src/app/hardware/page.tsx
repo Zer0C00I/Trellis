@@ -4,7 +4,6 @@ import Link from 'next/link'
 export default function HardwarePage() {
   return (
     <div className="min-h-screen bg-black font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
-      {/* Global Navigation */}
       <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 z-50 px-6 py-4 flex justify-between items-center shadow-[0_0_40px_-10px_rgba(0,0,0,0.5)]">
         <Link href="/" className="flex items-center gap-2">
           <Image
@@ -36,7 +35,6 @@ export default function HardwarePage() {
         </Link>
       </nav>
 
-      {/* Header */}
       <section className="relative bg-black text-white pt-48 pb-16 px-8 overflow-hidden flex flex-col items-center text-center">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-emerald-900/40 via-green-900/20 to-black blur-[120px] pointer-events-none"></div>
 
@@ -53,15 +51,12 @@ export default function HardwarePage() {
         </div>
       </section>
 
-      {/* Hardware Mockup Hero */}
       <section className="bg-black pb-32 px-8 relative z-10">
         <div className="max-w-[1000px] mx-auto">
           <div className="w-full bg-[#050505] border border-white/10 p-2 md:p-6 rounded-[2rem] shadow-[0_0_80px_rgba(16,185,129,0.15)] relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/10 to-transparent pointer-events-none"></div>
-            {/* Tablet/Kiosk screen */}
             <div className="aspect-[16/10] bg-black border border-white/5 rounded-2xl overflow-hidden relative">
               <div className="absolute inset-0 flex flex-col">
-                {/* Status Bar */}
                 <div className="h-8 border-b border-white/10 flex justify-between items-center px-4 bg-white/5 text-[10px] font-mono text-slate-500">
                   <div>TRELLIS KIOSK</div>
                   <div className="flex gap-4">
@@ -69,7 +64,6 @@ export default function HardwarePage() {
                     <span>EXAMPLE SCREEN</span>
                   </div>
                 </div>
-                {/* Main UI */}
                 <div className="flex-grow flex flex-col items-center justify-center relative p-8 gap-8">
                   <div className="text-center">
                     <p className="text-slate-500 font-mono text-xs uppercase tracking-widest mb-2">Your balance</p>
@@ -90,7 +84,6 @@ export default function HardwarePage() {
         </div>
       </section>
 
-      {/* What the kiosk is */}
       <section className="bg-white text-black py-32 px-8">
         <div className="max-w-[1200px] mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 mb-24">
@@ -153,7 +146,6 @@ export default function HardwarePage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="bg-black text-slate-500 py-20 px-8 border-t border-white/10">
         <div className="max-w-[1200px] mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">

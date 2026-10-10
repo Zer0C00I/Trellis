@@ -4,7 +4,6 @@ import Link from 'next/link'
 export default function Home() {
   return (
     <div className="min-h-screen bg-black font-sans selection:bg-blue-500/30 selection:text-blue-200">
-      {/* 1. Global Navigation */}
       <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 z-50 px-6 py-4 flex justify-between items-center shadow-[0_0_40px_-10px_rgba(0,0,0,0.5)]">
         <Link href="/" className="flex items-center gap-2">
           <Image
@@ -36,7 +35,6 @@ export default function Home() {
         </Link>
       </nav>
 
-      {/* 2. Hero Section (Web3 Glow) */}
       <section className="relative bg-black text-white pt-48 pb-32 px-8 overflow-hidden flex flex-col items-center text-center">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-blue-900/40 via-emerald-900/20 to-black blur-[120px] pointer-events-none"></div>
 
@@ -72,7 +70,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 3. Features Section (Comprehensive) */}
       <section id="features" className="bg-white text-black py-32 px-8">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-20">
@@ -87,7 +84,6 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            {/* Feature 1 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-500 rounded-2xl flex items-center justify-center mb-8">
@@ -108,7 +104,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Feature 2 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center mb-8">
@@ -129,7 +124,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Feature 3 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-indigo-100 text-indigo-500 rounded-2xl flex items-center justify-center mb-8">
@@ -152,7 +146,6 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Feature 4 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-emerald-100 text-emerald-500 rounded-2xl flex items-center justify-center mb-8">
@@ -169,7 +162,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Feature 5 */}
             <div className="bg-slate-50 border border-slate-200 rounded-3xl p-10 shadow-xl shadow-slate-200/50 flex flex-col justify-between">
               <div>
                 <div className="w-12 h-12 bg-purple-100 text-purple-500 rounded-2xl flex items-center justify-center mb-8">
@@ -193,7 +185,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. Hardware Kiosk Section (Black) */}
       <section id="hardware" className="bg-[#050505] text-white py-32 px-8 relative overflow-hidden">
         <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-900/10 blur-[100px] pointer-events-none"></div>
         <div className="max-w-[1200px] mx-auto flex flex-col lg:flex-row justify-between items-center relative z-10 gap-16">
@@ -215,7 +206,6 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Kiosk UI Mock */}
           <div className="z-10 w-full max-w-lg bg-black border border-white/10 p-6 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none"></div>
             <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-4">
@@ -241,7 +231,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 5. Who does what */}
       <section id="how-it-works" className="bg-blue-950 text-white py-32 px-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/20 blur-[120px] pointer-events-none rounded-full translate-x-1/4 -translate-y-1/4"></div>
         <div className="max-w-[1200px] mx-auto relative z-10">
@@ -334,7 +323,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 6. FAQ (Crisp White) */}
       <section className="bg-white text-black py-32 px-8">
         <div className="max-w-[800px] mx-auto">
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-blue-600 mb-8 block text-center">
@@ -377,7 +365,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer (Polished) */}
       <footer className="bg-black text-slate-500 py-20 px-8 border-t border-white/10">
         <div className="max-w-[1200px] mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">

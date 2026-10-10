@@ -38,19 +38,16 @@ export function AddBeneficiaryModal({ onAdded }: { onAdded: () => void }) {
 
       const owner = provider.wallet.publicKey
 
-      // Derive the vault PDA
       const [vaultPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('vault'), owner.toBuffer(), Buffer.from('personal')],
         program.programId,
       )
 
-      // Derive the beneficiary list PDA
       const [beneficiaryListPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('beneficiaries'), vaultPda.toBuffer()],
         program.programId,
       )
 
-      // Submit transaction via Anchor RPC
       const tx = await program.methods
         .addBeneficiary(name.trim(), targetAddress)
         .accountsPartial({

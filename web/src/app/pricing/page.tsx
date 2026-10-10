@@ -4,7 +4,6 @@ import Link from 'next/link'
 export default function PricingPage() {
   return (
     <div className="min-h-screen bg-black font-sans selection:bg-blue-500/30 selection:text-blue-200">
-      {/* Global Navigation */}
       <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 z-50 px-6 py-4 flex justify-between items-center shadow-[0_0_40px_-10px_rgba(0,0,0,0.5)]">
         <Link href="/" className="flex items-center gap-2">
           <Image
@@ -36,7 +35,6 @@ export default function PricingPage() {
         </Link>
       </nav>
 
-      {/* Pricing Header */}
       <section className="relative bg-black text-white pt-48 pb-16 px-8 overflow-hidden flex flex-col items-center text-center">
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-emerald-900/40 via-blue-900/20 to-black blur-[120px] pointer-events-none"></div>
 
@@ -52,7 +50,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* What is free / what is planned */}
       <section className="bg-black text-white pb-32 px-8 relative z-10">
         <div className="max-w-[900px] mx-auto space-y-8">
           <div className="bg-black border border-white/10 rounded-3xl p-8 md:p-10">
@@ -101,7 +98,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="bg-black text-slate-500 py-20 px-8 border-t border-white/10">
         <div className="max-w-[1200px] mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">

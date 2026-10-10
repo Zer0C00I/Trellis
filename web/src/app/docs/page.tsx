@@ -4,7 +4,6 @@ import { PROGRAM_ID, USDC_MINT } from '@/config/solana'
 export default function DocsPage() {
   return (
     <div className="min-h-screen bg-[#020202] text-slate-300 font-sans flex flex-col md:flex-row selection:bg-emerald-500/30">
-      {/* Mobile Header (Hidden on md+) */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-black sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-slate-400 hover:text-white transition-colors">
@@ -30,7 +29,6 @@ export default function DocsPage() {
         <span className="text-xs uppercase tracking-widest text-slate-500">Docs</span>
       </div>
 
-      {/* Left Sidebar (Fixed) */}
       <aside className="w-full md:w-72 md:fixed md:inset-y-0 md:left-0 bg-[#050505] border-r border-white/10 flex flex-col">
         <div className="p-8 hidden md:block border-b border-white/10 sticky top-0 bg-[#050505] z-10 flex-shrink-0">
           <Link
@@ -110,10 +108,8 @@ export default function DocsPage() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 md:ml-72 p-6 md:p-16 lg:px-24 lg:py-20 overflow-x-hidden">
         <div className="max-w-4xl mx-auto space-y-24">
-          {/* Header */}
           <header id="introduction" className="space-y-6 scroll-mt-32">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">
               Prototype · Solana Devnet
