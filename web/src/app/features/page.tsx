@@ -55,7 +55,7 @@ export default function FeaturesPage() {
             No trusted third parties.
           </h1>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
-            Trellis replaces the entire legacy estate planning stack with immutable Solana smart contracts. Your rules,
+            Trellis replaces the entire legacy estate planning stack with custom Solana smart contracts. Your rules,
             mathematically guaranteed.
           </p>
         </motion.div>

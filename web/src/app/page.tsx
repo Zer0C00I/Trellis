@@ -187,7 +187,7 @@ export default function Home() {
                 </div>
                 <h3 className="text-blue-600 font-bold text-2xl mb-4">Built to Keep Working</h3>
                 <p className="text-lg text-slate-600 leading-relaxed font-medium">
-                  Smart contracts don&apos;t sleep. Trellis is a series of immutable Solana programs. There are no
+                  Smart contracts don&apos;t sleep. Trellis is a series of custom Solana smart contracts. There are no
                   backend servers to fail, no subscription paywalls to freeze your funds, and nothing to crash. Your
                   Vault&apos;s logic executes exactly as programmed, 100% of the time.
                 </p>
