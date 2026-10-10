@@ -1,6 +1,6 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,45 +8,45 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useDeposit } from '@/hooks/use-transactions';
-import { PublicKey } from '@solana/web3.js';
-import { ArrowUpRight, AlertCircle } from 'lucide-react';
-import type { VaultType } from '@/lib/types';
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useDeposit } from '@/hooks/use-transactions'
+import { PublicKey } from '@solana/web3.js'
+import { ArrowUpRight, AlertCircle } from 'lucide-react'
+import type { VaultType } from '@/lib/types'
 
 interface DepositModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  vaultType: VaultType;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  vaultType: VaultType
 }
 
 export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProps) {
-  const [amount, setAmount] = useState('');
-  const [amountError, setAmountError] = useState<string | null>(null);
-  const { deposit, loading } = useDeposit();
+  const [amount, setAmount] = useState('')
+  const [amountError, setAmountError] = useState<string | null>(null)
+  const { deposit, loading } = useDeposit()
 
   const handleDeposit = async () => {
-    const num = parseFloat(amount);
+    const num = parseFloat(amount)
     if (isNaN(num) || num <= 0) {
-      setAmountError('Enter a valid amount greater than 0');
-      return;
+      setAmountError('Enter a valid amount greater than 0')
+      return
     }
     if (num > 1_000_000) {
-      setAmountError('Amount exceeds maximum');
-      return;
+      setAmountError('Amount exceeds maximum')
+      return
     }
 
-    setAmountError(null);
-    const lamports = BigInt(Math.round(num * 1_000_000));
-    const result = await deposit(lamports, PublicKey.default);
+    setAmountError(null)
+    const lamports = BigInt(Math.round(num * 1_000_000))
+    const result = await deposit(lamports, PublicKey.default)
     if (result) {
-      setAmount('');
-      onOpenChange(false);
+      setAmount('')
+      onOpenChange(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,9 +71,7 @@ export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProp
               Amount (USDC)
             </Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                $
-              </span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
               <Input
                 id="deposit-amount"
                 type="number"
@@ -82,8 +80,8 @@ export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProp
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => {
-                  setAmount(e.target.value);
-                  setAmountError(null);
+                  setAmount(e.target.value)
+                  setAmountError(null)
                 }}
                 className="pl-7 bg-white/5 border-white/10 font-mono"
               />
@@ -112,8 +110,7 @@ export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProp
           <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 space-y-1">
             <p className="font-medium">ℹ️ Devnet Transaction</p>
             <p className="text-blue-300/70">
-              This deposits devnet USDC. No real funds are transferred.
-              Get devnet USDC from the{' '}
+              This deposits devnet USDC. No real funds are transferred. Get devnet USDC from the{' '}
               <a
                 href="https://faucet.circle.com/"
                 target="_blank"
@@ -128,11 +125,7 @@ export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProp
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="border-white/10"
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-white/10">
             Cancel
           </Button>
           <Button
@@ -145,5 +138,5 @@ export function DepositModal({ open, onOpenChange, vaultType }: DepositModalProp
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

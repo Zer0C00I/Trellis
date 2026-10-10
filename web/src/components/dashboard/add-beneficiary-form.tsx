@@ -1,7 +1,7 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { PublicKey } from '@solana/web3.js';
+import { useState } from 'react'
+import { PublicKey } from '@solana/web3.js'
 import {
   Dialog,
   DialogContent,
@@ -9,73 +9,69 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useAddBeneficiary } from '@/hooks/use-transactions';
-import { BENEFICIARY_COOLDOWN_HOURS } from '@/lib/constants';
-import { AlertCircle, Clock, UserPlus } from 'lucide-react';
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useAddBeneficiary } from '@/hooks/use-transactions'
+import { BENEFICIARY_COOLDOWN_HOURS } from '@/lib/constants'
+import { AlertCircle, Clock, UserPlus } from 'lucide-react'
 
 interface AddBeneficiaryFormProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: () => void
 }
 
-export function AddBeneficiaryForm({
-  open,
-  onOpenChange,
-  onSuccess,
-}: AddBeneficiaryFormProps) {
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [addressError, setAddressError] = useState<string | null>(null);
-  const { addBeneficiary, loading } = useAddBeneficiary();
+export function AddBeneficiaryForm({ open, onOpenChange, onSuccess }: AddBeneficiaryFormProps) {
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [addressError, setAddressError] = useState<string | null>(null)
+  const { addBeneficiary, loading } = useAddBeneficiary()
 
   const validate = (): boolean => {
-    let valid = true;
+    let valid = true
 
     if (!name.trim() || name.trim().length < 2) {
-      setNameError('Name must be at least 2 characters');
-      valid = false;
+      setNameError('Name must be at least 2 characters')
+      valid = false
     } else if (name.trim().length > 32) {
-      setNameError('Name must be 32 characters or less');
-      valid = false;
+      setNameError('Name must be 32 characters or less')
+      valid = false
     } else {
-      setNameError(null);
+      setNameError(null)
     }
 
     try {
-      new PublicKey(address);
-      setAddressError(null);
+      new PublicKey(address)
+      setAddressError(null)
     } catch {
-      setAddressError('Invalid Solana public key');
-      valid = false;
+      setAddressError('Invalid Solana public key')
+      valid = false
     }
 
-    return valid;
-  };
+    return valid
+  }
 
   const handleSubmit = async () => {
-    if (!validate()) return;
+    if (!validate()) return
 
-    const pubkey = new PublicKey(address);
+    const pubkey = new PublicKey(address)
     const result = await addBeneficiary(
       name.trim(),
       pubkey,
       PublicKey.default, // beneficiaryList PDA placeholder
-      PublicKey.default // vault PDA placeholder
-    );
+      PublicKey.default, // vault PDA placeholder
+    )
 
     if (result) {
-      setName('');
-      setAddress('');
-      onSuccess();
+      setName('')
+      setAddress('')
+      onSuccess()
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -88,9 +84,8 @@ export function AddBeneficiaryForm({
             Add Beneficiary
           </DialogTitle>
           <DialogDescription>
-            Add a new recipient to the closed address book. The beneficiary
-            will be subject to a mandatory cooldown period before becoming
-            active.
+            Add a new recipient to the closed address book. The beneficiary will be subject to a mandatory cooldown
+            period before becoming active.
           </DialogDescription>
         </DialogHeader>
 
@@ -99,12 +94,9 @@ export function AddBeneficiaryForm({
           <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-300">
             <Clock className="h-4 w-4 text-amber-400" />
             <AlertDescription className="text-xs">
-              <span className="font-semibold">
-                {BENEFICIARY_COOLDOWN_HOURS}-hour anti-scam cooldown.
-              </span>{' '}
-              This beneficiary will not be available for transfers until{' '}
-              {BENEFICIARY_COOLDOWN_HOURS} hours after being added. This
-              protects against social engineering attacks.
+              <span className="font-semibold">{BENEFICIARY_COOLDOWN_HOURS}-hour anti-scam cooldown.</span> This
+              beneficiary will not be available for transfers until {BENEFICIARY_COOLDOWN_HOURS} hours after being
+              added. This protects against social engineering attacks.
             </AlertDescription>
           </Alert>
 
@@ -117,8 +109,8 @@ export function AddBeneficiaryForm({
               placeholder="e.g. Pharmacy — CVS"
               value={name}
               onChange={(e) => {
-                setName(e.target.value);
-                setNameError(null);
+                setName(e.target.value)
+                setNameError(null)
               }}
               className="bg-white/5 border-white/10"
             />
@@ -139,8 +131,8 @@ export function AddBeneficiaryForm({
               placeholder="Enter recipient's Solana public key..."
               value={address}
               onChange={(e) => {
-                setAddress(e.target.value);
-                setAddressError(null);
+                setAddress(e.target.value)
+                setAddressError(null)
               }}
               className="bg-white/5 border-white/10 font-mono text-sm"
             />
@@ -154,11 +146,7 @@ export function AddBeneficiaryForm({
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="border-white/10"
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-white/10">
             Cancel
           </Button>
           <Button
@@ -171,5 +159,5 @@ export function AddBeneficiaryForm({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

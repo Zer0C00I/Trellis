@@ -1,66 +1,52 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import type { BeneficiaryListAccount } from '@/lib/types';
-import { getBeneficiaryStatus, truncateAddress } from '@/lib/types';
-import { MAX_BENEFICIARIES } from '@/lib/constants';
-import { Copy, Check, UserPlus, Clock, ShieldCheck } from 'lucide-react';
-import { toast } from 'sonner';
-import { AddBeneficiaryForm } from './add-beneficiary-form';
+import { useEffect, useState } from 'react'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import type { BeneficiaryListAccount } from '@/lib/types'
+import { getBeneficiaryStatus, truncateAddress } from '@/lib/types'
+import { MAX_BENEFICIARIES } from '@/lib/constants'
+import { Copy, Check, UserPlus, Clock, ShieldCheck } from 'lucide-react'
+import { toast } from 'sonner'
+import { AddBeneficiaryForm } from './add-beneficiary-form'
 
 interface BeneficiaryTableProps {
-  beneficiaryList: BeneficiaryListAccount | null;
-  loading: boolean;
-  onRefresh: () => void;
+  beneficiaryList: BeneficiaryListAccount | null
+  loading: boolean
+  onRefresh: () => void
 }
 
-export function BeneficiaryTable({
-  beneficiaryList,
-  loading,
-  onRefresh,
-}: BeneficiaryTableProps) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const [, setTick] = useState(0);
+export function BeneficiaryTable({ beneficiaryList, loading, onRefresh }: BeneficiaryTableProps) {
+  const [addOpen, setAddOpen] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [, setTick] = useState(0)
 
   // Re-render every minute for countdown timers
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(interval);
-  }, []);
+    const interval = setInterval(() => setTick((t) => t + 1), 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
-  const entries = beneficiaryList?.entries || [];
-  const isFull = entries.length >= MAX_BENEFICIARIES;
+  const entries = beneficiaryList?.entries || []
+  const isFull = entries.length >= MAX_BENEFICIARIES
 
   const copyAddress = (address: string, idx: number) => {
-    navigator.clipboard.writeText(address);
-    setCopiedIdx(idx);
-    toast.success('Address copied');
-    setTimeout(() => setCopiedIdx(null), 2000);
-  };
+    navigator.clipboard.writeText(address)
+    setCopiedIdx(idx)
+    toast.success('Address copied')
+    setTimeout(() => setCopiedIdx(null), 2000)
+  }
 
   if (loading) {
     return (
       <div className="rounded-xl border border-white/10 bg-card/50 overflow-hidden">
         <div className="p-4 space-y-3">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-12 rounded-lg bg-white/5 animate-pulse"
-            />
+            <div key={i} className="h-12 rounded-lg bg-white/5 animate-pulse" />
           ))}
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -69,8 +55,7 @@ export function BeneficiaryTable({
         <div>
           <h3 className="text-sm font-semibold">Approved Beneficiaries</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {entries.length}/{MAX_BENEFICIARIES} slots used — closed address
-            book
+            {entries.length}/{MAX_BENEFICIARIES} slots used — closed address book
           </p>
         </div>
         <Button
@@ -88,55 +73,33 @@ export function BeneficiaryTable({
         <Table>
           <TableHeader>
             <TableRow className="border-white/10 hover:bg-transparent">
-              <TableHead className="text-xs font-medium text-muted-foreground w-10">
-                #
-              </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">
-                Name
-              </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">
-                Address
-              </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground">
-                Status
-              </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground text-right">
-                Added
-              </TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground w-10">#</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">Name</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">Address</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground">Status</TableHead>
+              <TableHead className="text-xs font-medium text-muted-foreground text-right">Added</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {entries.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="h-24 text-center text-muted-foreground text-sm"
-                >
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground text-sm">
                   No beneficiaries added yet
                 </TableCell>
               </TableRow>
             ) : (
               entries.map((b, idx) => {
-                const status = getBeneficiaryStatus(b);
-                const addr = b.address.toBase58();
-                const addedDate = new Date(
-                  Number(b.addedAt) * 1000
-                ).toLocaleDateString('en-US', {
+                const status = getBeneficiaryStatus(b)
+                const addr = b.address.toBase58()
+                const addedDate = new Date(Number(b.addedAt) * 1000).toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',
-                });
+                })
 
                 return (
-                  <TableRow
-                    key={addr}
-                    className="border-white/5 hover:bg-white/5 transition-colors"
-                  >
-                    <TableCell className="text-xs text-muted-foreground font-mono">
-                      {idx + 1}
-                    </TableCell>
-                    <TableCell className="font-medium text-sm">
-                      {b.name}
-                    </TableCell>
+                  <TableRow key={addr} className="border-white/5 hover:bg-white/5 transition-colors">
+                    <TableCell className="text-xs text-muted-foreground font-mono">{idx + 1}</TableCell>
+                    <TableCell className="font-medium text-sm">{b.name}</TableCell>
                     <TableCell>
                       <button
                         onClick={() => copyAddress(addr, idx)}
@@ -163,11 +126,9 @@ export function BeneficiaryTable({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
-                      {addedDate}
-                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">{addedDate}</TableCell>
                   </TableRow>
-                );
+                )
               })
             )}
           </TableBody>
@@ -178,10 +139,10 @@ export function BeneficiaryTable({
         open={addOpen}
         onOpenChange={setAddOpen}
         onSuccess={() => {
-          onRefresh();
-          setAddOpen(false);
+          onRefresh()
+          setAddOpen(false)
         }}
       />
     </div>
-  );
+  )
 }

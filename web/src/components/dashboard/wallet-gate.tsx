@@ -1,13 +1,13 @@
-'use client';
+'use client'
 
-import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletButton } from '@/components/solana/wallet-button';
-import { Shield, Lock, Users } from 'lucide-react';
+import { useWallet } from '@solana/wallet-adapter-react'
+import { WalletButton } from '@/components/solana/wallet-button'
+import { Shield, Lock, Users } from 'lucide-react'
 
 export function WalletGate({ children }: { children: React.ReactNode }) {
-  const { connected } = useWallet();
+  const { connected } = useWallet()
 
-  if (connected) return <>{children}</>;
+  if (connected) return <>{children}</>
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center">
@@ -33,8 +33,8 @@ export function WalletGate({ children }: { children: React.ReactNode }) {
               Trellis
             </h1>
             <p className="text-muted-foreground text-sm leading-relaxed max-w-sm mx-auto">
-              Relative&apos;s Management Portal — secure administration for
-              your family&apos;s financial safety on Solana.
+              Relative&apos;s Management Portal — secure administration for your family&apos;s financial safety on
+              Solana.
             </p>
           </div>
 
@@ -58,12 +58,9 @@ export function WalletGate({ children }: { children: React.ReactNode }) {
             <WalletButton />
           </div>
 
-          <p className="text-xs text-muted-foreground/60">
-            Connect your wallet to access the admin dashboard
-          </p>
+          <p className="text-xs text-muted-foreground/60">Connect your wallet to access the admin dashboard</p>
         </div>
       </div>
     </div>
-  );
+  )
 }
-

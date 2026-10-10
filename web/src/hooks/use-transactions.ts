@@ -1,86 +1,83 @@
-'use client';
+'use client'
 
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
-import { useCallback, useState } from 'react';
-import { toast } from 'sonner';
-import { MOCK_MODE, FAMILY_VAULT_PROGRAM_ID } from '@/lib/constants';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js'
+import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
+import { MOCK_MODE, FAMILY_VAULT_PROGRAM_ID } from '@/lib/constants'
 
 interface TxState {
-  loading: boolean;
-  error: string | null;
+  loading: boolean
+  error: string | null
 }
 
 function useTransactionExecutor() {
-  const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
-  const [state, setState] = useState<TxState>({ loading: false, error: null });
+  const { connection } = useConnection()
+  const { publicKey, sendTransaction } = useWallet()
+  const [state, setState] = useState<TxState>({ loading: false, error: null })
 
   const execute = useCallback(
-    async (
-      instruction: TransactionInstruction,
-      description: string
-    ): Promise<string | null> => {
+    async (instruction: TransactionInstruction, description: string): Promise<string | null> => {
       if (MOCK_MODE) {
-        setState({ loading: true, error: null });
-        toast.loading(`${description}...`, { id: description });
+        setState({ loading: true, error: null })
+        toast.loading(`${description}...`, { id: description })
 
         // Simulate network delay
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 1500))
 
-        const mockSig = 'mock_' + Math.random().toString(36).slice(2, 10);
+        const mockSig = 'mock_' + Math.random().toString(36).slice(2, 10)
         toast.success(`${description} — confirmed`, {
           id: description,
           description: `Signature: ${mockSig}`,
           duration: 5000,
-        });
-        setState({ loading: false, error: null });
-        return mockSig;
+        })
+        setState({ loading: false, error: null })
+        return mockSig
       }
 
       if (!publicKey) {
-        toast.error('Wallet not connected');
-        return null;
+        toast.error('Wallet not connected')
+        return null
       }
 
       try {
-        setState({ loading: true, error: null });
-        toast.loading(`${description}...`, { id: description });
+        setState({ loading: true, error: null })
+        toast.loading(`${description}...`, { id: description })
 
-        const tx = new Transaction().add(instruction);
-        const sig = await sendTransaction(tx, connection);
+        const tx = new Transaction().add(instruction)
+        const sig = await sendTransaction(tx, connection)
 
-        toast.loading(`Confirming ${description}...`, { id: description });
-        await connection.confirmTransaction(sig, 'confirmed');
+        toast.loading(`Confirming ${description}...`, { id: description })
+        await connection.confirmTransaction(sig, 'confirmed')
 
         toast.success(`${description} — confirmed`, {
           id: description,
           description: `Signature: ${sig.slice(0, 16)}...`,
           duration: 5000,
-        });
-        setState({ loading: false, error: null });
-        return sig;
+        })
+        setState({ loading: false, error: null })
+        return sig
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Transaction failed';
+        const msg = err instanceof Error ? err.message : 'Transaction failed'
         toast.error(`${description} failed`, {
           id: description,
           description: msg,
           duration: 8000,
-        });
-        setState({ loading: false, error: msg });
-        return null;
+        })
+        setState({ loading: false, error: msg })
+        return null
       }
     },
-    [publicKey, connection, sendTransaction]
-  );
+    [publicKey, connection, sendTransaction],
+  )
 
-  return { execute, ...state };
+  return { execute, ...state }
 }
 
 // ─── Add Beneficiary ─────────────────────────────────────────────────────────
 
 export function useAddBeneficiary() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const addBeneficiary = useCallback(
     async (name: string, address: PublicKey, beneficiaryListPda: PublicKey, vaultPda: PublicKey) => {
@@ -94,20 +91,20 @@ export function useAddBeneficiary() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: false }, // authority placeholder
         ],
         data: Buffer.from([]), // Placeholder — Anchor will encode properly
-      });
+      })
 
-      return execute(ix, `Adding beneficiary "${name}"`);
+      return execute(ix, `Adding beneficiary "${name}"`)
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { addBeneficiary, loading, error };
+  return { addBeneficiary, loading, error }
 }
 
 // ─── Approve Withdrawal ──────────────────────────────────────────────────────
 
 export function useApproveWithdrawal() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const approveWithdrawal = useCallback(
     async (requestPubkey: PublicKey) => {
@@ -118,20 +115,20 @@ export function useApproveWithdrawal() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: false },
         ],
         data: Buffer.from([]),
-      });
+      })
 
-      return execute(ix, 'Approving withdrawal');
+      return execute(ix, 'Approving withdrawal')
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { approveWithdrawal, loading, error };
+  return { approveWithdrawal, loading, error }
 }
 
 // ─── Deposit USDC ────────────────────────────────────────────────────────────
 
 export function useDeposit() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const deposit = useCallback(
     async (amount: bigint, vaultPda: PublicKey) => {
@@ -144,21 +141,21 @@ export function useDeposit() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: false }, // depositor
         ],
         data: Buffer.from([]),
-      });
+      })
 
-      const usdcAmount = (Number(amount) / 1_000_000).toFixed(2);
-      return execute(ix, `Depositing $${usdcAmount} USDC`);
+      const usdcAmount = (Number(amount) / 1_000_000).toFixed(2)
+      return execute(ix, `Depositing $${usdcAmount} USDC`)
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { deposit, loading, error };
+  return { deposit, loading, error }
 }
 
 // ─── Request Owner Rotation ──────────────────────────────────────────────────
 
 export function useRequestRotation() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const requestRotation = useCallback(
     async (newOwner: PublicKey, vaultPda: PublicKey) => {
@@ -170,20 +167,20 @@ export function useRequestRotation() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: true }, // requester
         ],
         data: Buffer.from([]),
-      });
+      })
 
-      return execute(ix, 'Requesting owner rotation (72h timelock)');
+      return execute(ix, 'Requesting owner rotation (72h timelock)')
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { requestRotation, loading, error };
+  return { requestRotation, loading, error }
 }
 
 // ─── Execute Owner Rotation ──────────────────────────────────────────────────
 
 export function useExecuteRotation() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const executeRotation = useCallback(
     async (rotationPubkey: PublicKey, vaultPda: PublicKey) => {
@@ -195,20 +192,20 @@ export function useExecuteRotation() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: false }, // executor
         ],
         data: Buffer.from([]),
-      });
+      })
 
-      return execute(ix, 'Executing owner rotation');
+      return execute(ix, 'Executing owner rotation')
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { executeRotation, loading, error };
+  return { executeRotation, loading, error }
 }
 
 // ─── Cancel Owner Rotation ───────────────────────────────────────────────────
 
 export function useCancelRotation() {
-  const { execute, loading, error } = useTransactionExecutor();
+  const { execute, loading, error } = useTransactionExecutor()
 
   const cancelRotation = useCallback(
     async (rotationPubkey: PublicKey, vaultPda: PublicKey) => {
@@ -220,12 +217,12 @@ export function useCancelRotation() {
           { pubkey: PublicKey.default, isSigner: true, isWritable: false }, // authority
         ],
         data: Buffer.from([]),
-      });
+      })
 
-      return execute(ix, 'Cancelling owner rotation');
+      return execute(ix, 'Cancelling owner rotation')
     },
-    [execute]
-  );
+    [execute],
+  )
 
-  return { cancelRotation, loading, error };
+  return { cancelRotation, loading, error }
 }

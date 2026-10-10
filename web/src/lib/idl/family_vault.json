@@ -8,16 +8,7 @@
   "instructions": [
     {
       "name": "add_beneficiary",
-      "discriminator": [
-        105,
-        214,
-        106,
-        141,
-        180,
-        166,
-        123,
-        238
-      ],
+      "discriminator": [105, 214, 106, 141, 180, 166, 123, 238],
       "accounts": [
         {
           "name": "signer",
@@ -25,9 +16,7 @@
         },
         {
           "name": "vault",
-          "relations": [
-            "beneficiary_list"
-          ]
+          "relations": ["beneficiary_list"]
         },
         {
           "name": "beneficiary_list",
@@ -47,16 +36,7 @@
     },
     {
       "name": "add_beneficiary_urgent",
-      "discriminator": [
-        165,
-        35,
-        241,
-        172,
-        208,
-        195,
-        139,
-        241
-      ],
+      "discriminator": [165, 35, 241, 172, 208, 195, 139, 241],
       "accounts": [
         {
           "name": "approver_one",
@@ -68,10 +48,7 @@
         },
         {
           "name": "vault",
-          "relations": [
-            "approvers",
-            "beneficiary_list"
-          ]
+          "relations": ["approvers", "beneficiary_list"]
         },
         {
           "name": "approvers"
@@ -94,16 +71,7 @@
     },
     {
       "name": "add_trusted_approver",
-      "discriminator": [
-        180,
-        152,
-        190,
-        205,
-        170,
-        55,
-        62,
-        44
-      ],
+      "discriminator": [180, 152, 190, 205, 170, 55, 62, 44],
       "accounts": [
         {
           "name": "signer",
@@ -111,9 +79,7 @@
         },
         {
           "name": "vault",
-          "relations": [
-            "approvers"
-          ]
+          "relations": ["approvers"]
         },
         {
           "name": "approvers",
@@ -138,16 +104,7 @@
     },
     {
       "name": "approve_withdrawal",
-      "discriminator": [
-        75,
-        48,
-        146,
-        122,
-        201,
-        158,
-        210,
-        123
-      ],
+      "discriminator": [75, 48, 146, 122, 201, 158, 210, 123],
       "accounts": [
         {
           "name": "signer",
@@ -171,10 +128,7 @@
         {
           "name": "vault",
           "writable": true,
-          "relations": [
-            "pending_withdrawal",
-            "approvers"
-          ]
+          "relations": ["pending_withdrawal", "approvers"]
         },
         {
           "name": "token_program",
@@ -185,16 +139,7 @@
     },
     {
       "name": "cancel_owner_rotation",
-      "discriminator": [
-        39,
-        81,
-        105,
-        231,
-        8,
-        133,
-        175,
-        150
-      ],
+      "discriminator": [39, 81, 105, 231, 8, 133, 175, 150],
       "accounts": [
         {
           "name": "signer",
@@ -202,10 +147,7 @@
         },
         {
           "name": "vault",
-          "relations": [
-            "approvers",
-            "rotation"
-          ]
+          "relations": ["approvers", "rotation"]
         },
         {
           "name": "approvers"
@@ -219,16 +161,7 @@
     },
     {
       "name": "deposit",
-      "discriminator": [
-        242,
-        35,
-        198,
-        137,
-        82,
-        225,
-        242,
-        182
-      ],
+      "discriminator": [242, 35, 198, 137, 82, 225, 242, 182],
       "accounts": [
         {
           "name": "depositor",
@@ -259,16 +192,7 @@
     },
     {
       "name": "execute_owner_rotation",
-      "discriminator": [
-        249,
-        170,
-        199,
-        242,
-        181,
-        65,
-        124,
-        90
-      ],
+      "discriminator": [249, 170, 199, 242, 181, 65, 124, 90],
       "accounts": [
         {
           "name": "signer",
@@ -277,9 +201,7 @@
         {
           "name": "vault",
           "writable": true,
-          "relations": [
-            "rotation"
-          ]
+          "relations": ["rotation"]
         },
         {
           "name": "rotation",
@@ -290,16 +212,7 @@
     },
     {
       "name": "initialize_approvers",
-      "discriminator": [
-        107,
-        181,
-        254,
-        161,
-        180,
-        128,
-        81,
-        225
-      ],
+      "discriminator": [107, 181, 254, 161, 180, 128, 81, 225],
       "accounts": [
         {
           "name": "payer",
@@ -316,17 +229,7 @@
             "seeds": [
               {
                 "kind": "const",
-                "value": [
-                  97,
-                  112,
-                  112,
-                  114,
-                  111,
-                  118,
-                  101,
-                  114,
-                  115
-                ]
+                "value": [97, 112, 112, 114, 111, 118, 101, 114, 115]
               },
               {
                 "kind": "account",
@@ -344,16 +247,7 @@
     },
     {
       "name": "initialize_vault",
-      "discriminator": [
-        48,
-        191,
-        163,
-        44,
-        71,
-        129,
-        63,
-        164
-      ],
+      "discriminator": [48, 191, 163, 44, 71, 129, 63, 164],
       "accounts": [
         {
           "name": "payer",
@@ -375,21 +269,7 @@
             "seeds": [
               {
                 "kind": "const",
-                "value": [
-                  98,
-                  101,
-                  110,
-                  101,
-                  102,
-                  105,
-                  99,
-                  105,
-                  97,
-                  114,
-                  105,
-                  101,
-                  115
-                ]
+                "value": [98, 101, 110, 101, 102, 105, 99, 105, 97, 114, 105, 101, 115]
               },
               {
                 "kind": "account",
@@ -413,38 +293,8 @@
               {
                 "kind": "const",
                 "value": [
-                  6,
-                  221,
-                  246,
-                  225,
-                  215,
-                  101,
-                  161,
-                  147,
-                  217,
-                  203,
-                  225,
-                  70,
-                  206,
-                  235,
-                  121,
-                  172,
-                  28,
-                  180,
-                  133,
-                  237,
-                  95,
-                  91,
-                  55,
-                  145,
-                  58,
-                  140,
-                  245,
-                  133,
-                  126,
-                  255,
-                  0,
-                  169
+                  6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95,
+                  91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169
                 ]
               },
               {
@@ -455,38 +305,8 @@
             "program": {
               "kind": "const",
               "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
+                140, 151, 37, 143, 78, 36, 137, 241, 187, 61, 16, 41, 20, 142, 13, 131, 11, 90, 19, 153, 218, 255, 16,
+                132, 4, 142, 123, 216, 219, 233, 248, 89
               ]
             }
           }
@@ -517,16 +337,7 @@
     },
     {
       "name": "request_owner_rotation",
-      "discriminator": [
-        198,
-        42,
-        144,
-        40,
-        100,
-        139,
-        245,
-        219
-      ],
+      "discriminator": [198, 42, 144, 40, 100, 139, 245, 219],
       "accounts": [
         {
           "name": "signer",
@@ -535,9 +346,7 @@
         },
         {
           "name": "vault",
-          "relations": [
-            "approvers"
-          ]
+          "relations": ["approvers"]
         },
         {
           "name": "approvers"
@@ -549,16 +358,7 @@
             "seeds": [
               {
                 "kind": "const",
-                "value": [
-                  114,
-                  111,
-                  116,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
+                "value": [114, 111, 116, 97, 116, 105, 111, 110]
               },
               {
                 "kind": "account",
@@ -589,16 +389,7 @@
     },
     {
       "name": "request_withdrawal",
-      "discriminator": [
-        251,
-        85,
-        121,
-        205,
-        56,
-        201,
-        12,
-        177
-      ],
+      "discriminator": [251, 85, 121, 205, 56, 201, 12, 177],
       "accounts": [
         {
           "name": "signer",
@@ -608,9 +399,7 @@
         {
           "name": "vault",
           "writable": true,
-          "relations": [
-            "beneficiary_list"
-          ]
+          "relations": ["beneficiary_list"]
         },
         {
           "name": "beneficiary_list"
@@ -625,15 +414,7 @@
             "seeds": [
               {
                 "kind": "const",
-                "value": [
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116
-                ]
+                "value": [114, 101, 113, 117, 101, 115, 116]
               },
               {
                 "kind": "account",
@@ -664,16 +445,7 @@
     },
     {
       "name": "withdraw",
-      "discriminator": [
-        183,
-        18,
-        70,
-        156,
-        148,
-        109,
-        161,
-        34
-      ],
+      "discriminator": [183, 18, 70, 156, 148, 109, 161, 34],
       "accounts": [
         {
           "name": "signer",
@@ -690,9 +462,7 @@
         {
           "name": "vault",
           "writable": true,
-          "relations": [
-            "beneficiary_list"
-          ]
+          "relations": ["beneficiary_list"]
         },
         {
           "name": "beneficiary_list"
@@ -713,68 +483,23 @@
   "accounts": [
     {
       "name": "BeneficiaryList",
-      "discriminator": [
-        108,
-        99,
-        165,
-        13,
-        225,
-        127,
-        232,
-        206
-      ]
+      "discriminator": [108, 99, 165, 13, 225, 127, 232, 206]
     },
     {
       "name": "PendingRotation",
-      "discriminator": [
-        106,
-        14,
-        119,
-        215,
-        174,
-        177,
-        242,
-        97
-      ]
+      "discriminator": [106, 14, 119, 215, 174, 177, 242, 97]
     },
     {
       "name": "PendingWithdrawal",
-      "discriminator": [
-        61,
-        103,
-        179,
-        177,
-        148,
-        199,
-        63,
-        171
-      ]
+      "discriminator": [61, 103, 179, 177, 148, 199, 63, 171]
     },
     {
       "name": "TrustedApprovers",
-      "discriminator": [
-        97,
-        204,
-        189,
-        162,
-        190,
-        93,
-        28,
-        154
-      ]
+      "discriminator": [97, 204, 189, 162, 190, 93, 28, 154]
     },
     {
       "name": "Vault",
-      "discriminator": [
-        211,
-        8,
-        232,
-        43,
-        2,
-        152,
-        117,
-        119
-      ]
+      "discriminator": [211, 8, 232, 43, 2, 152, 117, 119]
     }
   ],
   "errors": [
@@ -912,10 +637,7 @@
           {
             "name": "name",
             "type": {
-              "array": [
-                "u8",
-                32
-              ]
+              "array": ["u8", 32]
             }
           },
           {
@@ -1056,10 +778,7 @@
           {
             "name": "entries",
             "type": {
-              "array": [
-                "pubkey",
-                5
-              ]
+              "array": ["pubkey", 5]
             }
           }
         ]
