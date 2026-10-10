@@ -17,6 +17,21 @@ pub const LOW_SOL_LAMPORTS: u64 = 10_000_000;
 const AIRDROP_WAIT: Duration = Duration::from_secs(30);
 const AIRDROP_POLL: Duration = Duration::from_secs(1);
 
+/// How many `confirm_transaction` errors in a row the wait tolerates; the
+/// next one ends it. The airdrop may well have landed despite a flaky poll.
+const MAX_CONSECUTIVE_POLL_ERRORS: u32 = 3;
+
+/// The count of consecutive poll errors after one more poll: a success
+/// resets it, an error adds one. `None` once the budget is exhausted (the
+/// error just seen is the `MAX_CONSECUTIVE_POLL_ERRORS + 1`-th in a row).
+fn next_error_streak(streak: u32, poll_failed: bool) -> Option<u32> {
+    if !poll_failed {
+        return Some(0);
+    }
+    let streak = streak + 1;
+    (streak <= MAX_CONSECUTIVE_POLL_ERRORS).then_some(streak)
+}
+
 pub fn sol_balance(rpc: &RpcClient, address: &Pubkey) -> Result<u64, ActionError> {
     rpc.get_balance(address).map_err(map_client_error)
 }
@@ -33,15 +48,20 @@ pub fn request_devnet_airdrop(
         .request_airdrop(address, lamports)
         .map_err(map_client_error)?;
     let deadline = Instant::now() + AIRDROP_WAIT;
+    let mut error_streak = 0;
     loop {
         match rpc.confirm_transaction(&signature) {
             Ok(true) => return Ok(()),
-            Ok(false) => {}
-            Err(e) => return Err(map_client_error(e)),
+            Ok(false) => error_streak = 0,
+            Err(e) => match next_error_streak(error_streak, true) {
+                Some(streak) => error_streak = streak,
+                None => return Err(map_client_error(e)),
+            },
         }
         if Instant::now() >= deadline {
             return Err(ActionError::Rejected(
-                "the faucet request did not complete in time".to_string(),
+                "the faucet request did not finish in time; the SOL may still arrive, check the balance"
+                    .to_string(),
             ));
         }
         std::thread::sleep(AIRDROP_POLL);
@@ -51,6 +71,31 @@ pub fn request_devnet_airdrop(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn three_poll_errors_in_a_row_are_tolerated_the_fourth_is_not() {
+        let mut streak = 0;
+        for expected in 1..=3 {
+            streak = next_error_streak(streak, true).expect("within budget");
+            assert_eq!(streak, expected);
+        }
+        assert_eq!(next_error_streak(streak, true), None);
+    }
+
+    #[test]
+    fn a_successful_poll_resets_the_error_streak() {
+        let mut streak = 0;
+        for _ in 0..3 {
+            streak = next_error_streak(streak, true).unwrap();
+        }
+        streak = next_error_streak(streak, false).unwrap();
+        assert_eq!(streak, 0);
+        // A full budget is available again.
+        for _ in 0..3 {
+            streak = next_error_streak(streak, true).unwrap();
+        }
+        assert_eq!(next_error_streak(streak, true), None);
+    }
 
     #[test]
     fn the_low_sol_threshold_is_a_sensible_fraction_of_one_sol() {

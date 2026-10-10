@@ -121,8 +121,14 @@ pub fn pair_with_kiosk(qr_text: &str, name: &str, my_pubkey: Pubkey) -> Result<(
 /// guessable, so the kiosk limits wrong attempts and locks out for a while;
 /// a wrong code surfaces as `WriteRejected`.
 pub fn pair_with_kiosk_pin(pin: &str, name: &str, my_pubkey: Pubkey) -> Result<(), PairingError> {
-    let auth = auth_from_pin(pin.trim()).map_err(|_| PairingError::BadPin)?;
+    let auth = pin_auth(pin)?;
     pair_with_auth(auth, name, my_pubkey)
+}
+
+/// The auth field for a typed fallback code: surrounding whitespace is
+/// ignored, anything but six ASCII digits is `BadPin`.
+fn pin_auth(pin: &str) -> Result<AuthField, PairingError> {
+    auth_from_pin(pin.trim()).map_err(|_| PairingError::BadPin)
 }
 
 /// The frame the kiosk expects, for any kind of credential.
@@ -271,9 +277,15 @@ mod tests {
 
     #[test]
     fn surrounding_whitespace_around_the_fallback_code_is_ignored() {
-        // Only the BadPin check is offline-testable; a padded valid code must
-        // get past it (it then fails at Bluetooth, never with BadPin).
-        assert!(auth_from_pin(" 123456 ".trim()).is_ok());
+        let plain = pin_auth("123456").unwrap();
+        assert_eq!(pin_auth(" 123456 ").unwrap(), plain);
+        assert_eq!(pin_auth("\t123456\n").unwrap(), plain);
+        for bad in ["", " 12345 ", "12 3456", "\t1234567\n"] {
+            assert!(
+                matches!(pin_auth(bad), Err(PairingError::BadPin)),
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]

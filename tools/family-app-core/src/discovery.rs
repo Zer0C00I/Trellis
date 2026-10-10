@@ -8,31 +8,43 @@
 //! per slot) exceed the public Devnet node's limit of 10 `getProgramAccounts`
 //! per 10 seconds, which turns a launch into a 10+ second wait on HTTP 429
 //! retries. Asking for every list of one kind (filtered by exact account
-//! size only) takes 2 requests and moves the "is it me" test to the client.
+//! size and the account discriminator) takes 2 requests and moves the "is it me" test to the client.
 //! That is the right trade at MVP scale (each list is 851 or 201 bytes, so
 //! even a thousand vaults is about a megabyte); a large deployment should put
 //! an indexer or a provider-side filter in front of this.
 
 use std::collections::BTreeSet;
 
-use anchor_lang::AccountDeserialize;
+use anchor_lang::{AccountDeserialize, Discriminator};
 use family_vault::state::{BeneficiaryList, TrustedApprovers, MAX_APPROVERS, MAX_BENEFICIARIES};
 use solana_account_decoder_client_types::UiAccountEncoding;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
-use solana_client::rpc_filter::RpcFilterType;
+use solana_client::rpc_filter::{Memcmp, RpcFilterType};
 use solana_pubkey::Pubkey;
 
 use crate::error::{map_client_error, ActionError};
 
-/// The raw data of every program account of exactly `data_size` bytes.
-fn fetch_accounts_of_size(
+/// The filters for one list kind: exactly `data_size` bytes AND starting
+/// with the account `discriminator` (filters are ANDed by the node), so a
+/// future account type of the same size is never returned.
+fn list_filters(data_size: u64, discriminator: &[u8]) -> Vec<RpcFilterType> {
+    vec![
+        RpcFilterType::DataSize(data_size),
+        RpcFilterType::Memcmp(Memcmp::new_base58_encoded(0, discriminator)),
+    ]
+}
+
+/// The raw data of every program account of exactly `data_size` bytes whose
+/// first 8 bytes are `discriminator`.
+fn fetch_accounts_of_kind(
     rpc: &RpcClient,
     program_id: &Pubkey,
     data_size: u64,
+    discriminator: &[u8],
 ) -> Result<Vec<Vec<u8>>, ActionError> {
     let config = RpcProgramAccountsConfig {
-        filters: Some(vec![RpcFilterType::DataSize(data_size)]),
+        filters: Some(list_filters(data_size, discriminator)),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64),
             data_slice: None,
@@ -85,14 +97,24 @@ pub fn discover_my_vaults(
     me: &Pubkey,
 ) -> Result<Vec<Pubkey>, ActionError> {
     let mut vaults = BTreeSet::new();
-    for data in fetch_accounts_of_size(rpc, program_id, BeneficiaryList::SPACE as u64)? {
+    for data in fetch_accounts_of_kind(
+        rpc,
+        program_id,
+        BeneficiaryList::SPACE as u64,
+        BeneficiaryList::DISCRIMINATOR,
+    )? {
         let list = BeneficiaryList::try_deserialize(&mut &data[..])
             .map_err(|e| ActionError::Rejected(format!("decoding BeneficiaryList: {e}")))?;
         if payee_list_has(&list, me) {
             vaults.insert(family_vault_client::to_client(list.vault));
         }
     }
-    for data in fetch_accounts_of_size(rpc, program_id, TrustedApprovers::SPACE as u64)? {
+    for data in fetch_accounts_of_kind(
+        rpc,
+        program_id,
+        TrustedApprovers::SPACE as u64,
+        TrustedApprovers::DISCRIMINATOR,
+    )? {
         let list = TrustedApprovers::try_deserialize(&mut &data[..])
             .map_err(|e| ActionError::Rejected(format!("decoding TrustedApprovers: {e}")))?;
         if approver_list_has(&list, me) {
@@ -122,18 +144,38 @@ pub fn discover_owned_vaults(
     let accounts = rpc
         .get_multiple_accounts(&candidates)
         .map_err(crate::error::map_client_error)?;
-    if accounts.len() != candidates.len() {
+    owned_vaults_from(
+        candidates,
+        accounts
+            .into_iter()
+            .map(|account| account.map(|account| account.owner))
+            .collect(),
+        program_id,
+    )
+}
+
+/// Which of the two `candidates` are vaults: those whose account exists and
+/// is owned by `program_id`. `owners[i]` is the owner of `candidates[i]`'s
+/// account, or `None` if it does not exist (taking owners rather than whole
+/// accounts keeps this free of the `solana_account` crate, which this crate
+/// does not depend on). Order of `candidates` is kept.
+fn owned_vaults_from(
+    candidates: [Pubkey; 2],
+    owners: Vec<Option<Pubkey>>,
+    program_id: &Pubkey,
+) -> Result<Vec<Pubkey>, ActionError> {
+    if owners.len() != candidates.len() {
         return Err(ActionError::Rejected(
             "the node returned an unexpected number of accounts".to_string(),
         ));
     }
     Ok(candidates
         .into_iter()
-        .zip(accounts)
-        .filter_map(|(address, account)| match account {
+        .zip(owners)
+        .filter_map(|(address, owner)| match owner {
             // A PDA of this program that exists is a vault; anything else at
             // that address (nothing, or another owner) is not ours.
-            Some(account) if account.owner == *program_id => Some(address),
+            Some(owner) if owner == *program_id => Some(address),
             _ => None,
         })
         .collect())
@@ -230,6 +272,91 @@ mod tests {
         let mut bytes = Vec::new();
         approvers.try_serialize(&mut bytes).unwrap();
         assert_eq!(bytes.len(), TrustedApprovers::SPACE);
+    }
+
+    #[test]
+    fn the_discriminator_filters_use_real_distinct_eight_byte_prefixes() {
+        assert_eq!(BeneficiaryList::DISCRIMINATOR.len(), 8);
+        assert_eq!(TrustedApprovers::DISCRIMINATOR.len(), 8);
+        assert_ne!(
+            BeneficiaryList::DISCRIMINATOR,
+            TrustedApprovers::DISCRIMINATOR
+        );
+
+        let mut bytes = Vec::new();
+        list_with(1, &[1]).try_serialize(&mut bytes).unwrap();
+        assert_eq!(&bytes[..8], BeneficiaryList::DISCRIMINATOR);
+
+        let approvers = TrustedApprovers {
+            vault: anchor_key(99),
+            count: 1,
+            entries: [anchor_key(5); MAX_APPROVERS],
+        };
+        let mut bytes = Vec::new();
+        approvers.try_serialize(&mut bytes).unwrap();
+        assert_eq!(&bytes[..8], TrustedApprovers::DISCRIMINATOR);
+    }
+
+    #[test]
+    fn a_list_request_filters_by_size_and_discriminator() {
+        let filters = list_filters(851, BeneficiaryList::DISCRIMINATOR);
+        assert_eq!(filters.len(), 2);
+        assert!(matches!(filters[0], RpcFilterType::DataSize(851)));
+        assert_eq!(
+            filters[1],
+            RpcFilterType::Memcmp(Memcmp::new_base58_encoded(
+                0,
+                BeneficiaryList::DISCRIMINATOR
+            ))
+        );
+    }
+
+    fn two_candidates() -> [Pubkey; 2] {
+        [client_key(10), client_key(11)]
+    }
+
+    #[test]
+    fn owned_vaults_include_only_accounts_owned_by_the_program() {
+        let program = client_key(1);
+        let other = client_key(2);
+        let [a, b] = two_candidates();
+
+        let both = owned_vaults_from(
+            two_candidates(),
+            vec![Some(program), Some(program)],
+            &program,
+        );
+        assert_eq!(both.unwrap(), vec![a, b]);
+
+        let foreign =
+            owned_vaults_from(two_candidates(), vec![Some(other), Some(program)], &program);
+        assert_eq!(foreign.unwrap(), vec![b]);
+
+        let missing = owned_vaults_from(two_candidates(), vec![None, Some(program)], &program);
+        assert_eq!(missing.unwrap(), vec![b]);
+
+        let none = owned_vaults_from(two_candidates(), vec![None, Some(other)], &program);
+        assert!(none.unwrap().is_empty());
+    }
+
+    #[test]
+    fn owned_vaults_keep_the_candidate_order() {
+        let program = client_key(1);
+        let got = owned_vaults_from(
+            [client_key(11), client_key(10)],
+            vec![Some(program); 2],
+            &program,
+        );
+        assert_eq!(got.unwrap(), vec![client_key(11), client_key(10)]);
+    }
+
+    #[test]
+    fn a_wrong_number_of_accounts_is_rejected() {
+        let program = client_key(1);
+        for owners in [vec![], vec![Some(program)], vec![Some(program); 3]] {
+            let got = owned_vaults_from(two_candidates(), owners, &program);
+            assert!(matches!(got, Err(ActionError::Rejected(_))));
+        }
     }
 
     #[test]
