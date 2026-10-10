@@ -1,0 +1,905 @@
+diff --git a/kiosk-gui/src/lib.rs b/kiosk-gui/src/lib.rs
+index 954c961..b803da3 100644
+--- a/kiosk-gui/src/lib.rs
++++ b/kiosk-gui/src/lib.rs
+@@ -37,12 +37,12 @@ fn config_path() -> std::path::PathBuf {
+     std::path::PathBuf::from("kiosk.toml")
+ }
+ 
+-fn error_message_text(err: &ChainError) -> String {
++fn error_message(err: &ChainError) -> Message {
+     match err {
+-        ChainError::NoConnection => "Нет связи. Попробуй ещё раз позже".to_string(),
++        ChainError::NoConnection => Message::NoConnection,
+         ChainError::ProgramRejected(raw) => {
+             eprintln!("[kiosk-gui] transaction failed: {raw}");
+-            "Не получилось. Попробуй ещё раз или позови родственника".to_string()
++            Message::Failed
+         }
+     }
+ }
+@@ -59,9 +59,11 @@ fn apply_snapshot(app: &AppWindow, is_pool: bool, snapshot: VaultSnapshot) {
+     let model = Rc::new(slint::VecModel::from(items));
+     if is_pool {
+         app.set_family_balance_text(snapshot.balance_text.as_str().into());
++        app.set_family_balance_message(Message::None);
+         app.set_family_beneficiaries(model.into());
+     } else {
+         app.set_balance_text(snapshot.balance_text.as_str().into());
++        app.set_balance_message(Message::None);
+         app.set_beneficiaries(model.into());
+     }
+ }
+@@ -104,8 +106,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
+             }
+             Err(e) => {
+                 eprintln!("[kiosk-gui] failed to load config: {e}");
+-                app.set_balance_text("Нет связи. Попробуй ещё раз позже".into());
+-                app.set_family_balance_text("Нет связи. Попробуй ещё раз позже".into());
++                app.set_balance_message(Message::NoConnection);
++                app.set_family_balance_message(Message::NoConnection);
+                 app.run()?;
+                 return Ok(());
+             }
+@@ -178,7 +180,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
+         app.on_beneficiary_selected(move |id| {
+             let app = app_weak.unwrap();
+             let model = app.get_beneficiaries();
+-            let mut found_name: slint::SharedString = "Получатель".into();
++            let mut found_name = slint::SharedString::default();
+             for i in 0..model.row_count() {
+                 if let Some(item) = model.row_data(i) {
+                     if item.id == id {
+@@ -232,9 +234,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
+ 
+             let Some(cfg) = cfg.lock().unwrap().clone() else {
+                 app.set_result_success(false);
+-                app.set_result_message_text(
+-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
+-                );
++                app.set_result_message(Message::Failed);
+                 app.set_current_screen(Screen::Result);
+                 return;
+             };
+@@ -256,9 +256,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
+ 
+             let Some(addr) = addr else {
+                 app.set_result_success(false);
+-                app.set_result_message_text(
+-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
+-                );
++                app.set_result_message(Message::Failed);
+                 app.set_current_screen(Screen::Result);
+                 return;
+             };
+@@ -274,13 +272,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
+                     match result {
+                         Ok(()) => {
+                             app.set_result_success(true);
+-                            app.set_result_message_text(
+-                                format!("Готово! Деньги отправлены {recipient_name}").into(),
+-                            );
++                            app.set_result_message(Message::Done);
++                            app.set_result_name(recipient_name);
+                         }
+                         Err(e) => {
+                             app.set_result_success(false);
+-                            app.set_result_message_text(error_message_text(&e).into());
++                            app.set_result_message(error_message(&e));
+                         }
+                     }
+                     app.set_current_screen(Screen::Result);
+@@ -331,15 +328,13 @@ pub fn run() -> Result<(), slint::PlatformError> {
+ 
+             let Some(cfg) = cfg.lock().unwrap().clone() else {
+                 app.set_result_success(false);
+-                app.set_result_message_text(
+-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
+-                );
++                app.set_result_message(Message::Failed);
+                 app.set_current_screen(Screen::Result);
+                 return;
+             };
+ 
+             let model = app.get_family_beneficiaries();
+-            let mut found_name: slint::SharedString = "Получатель".into();
++            let mut found_name = slint::SharedString::default();
+             for i in 0..model.row_count() {
+                 if let Some(item) = model.row_data(i) {
+                     if item.id == id {
+@@ -371,13 +366,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
+                     match result {
+                         Ok(()) => {
+                             app.set_result_success(true);
+-                            app.set_result_message_text(
+-                                format!("Готово! Деньги отправлены {found_name}").into(),
+-                            );
++                            app.set_result_message(Message::Done);
++                            app.set_result_name(found_name);
+                         }
+                         Err(e) => {
+                             app.set_result_success(false);
+-                            app.set_result_message_text(error_message_text(&e).into());
++                            app.set_result_message(error_message(&e));
+                         }
+                     }
+                     app.set_current_screen(Screen::Result);
+@@ -426,10 +420,7 @@ fn run_setup_flow(
+             Ok(p) => p,
+             Err(e) => {
+                 eprintln!("[kiosk-gui] setup: failed to load provisioning.toml: {e}");
+-                set_setup_status(
+-                    &app_weak,
+-                    "Не получилось. Обратитесь в поддержку".to_string(),
+-                );
++                set_setup_message(&app_weak, Message::ContactSupport);
+                 return;
+             }
+         };
+@@ -439,10 +430,7 @@ fn run_setup_flow(
+             Ok(k) => k,
+             Err(e) => {
+                 eprintln!("[kiosk-gui] setup: failed to generate/load keypair: {e}");
+-                set_setup_status(
+-                    &app_weak,
+-                    "Не получилось. Обратитесь в поддержку".to_string(),
+-                );
++                set_setup_message(&app_weak, Message::ContactSupport);
+                 return;
+             }
+         };
+@@ -459,10 +447,7 @@ fn run_setup_flow(
+                 if let Some(app) = app_weak.upgrade() {
+                     let qr = setup::render_qr(&owner_pubkey_str);
+                     app.set_setup_qr_image(qr);
+-                    app.set_setup_status_text(
+-                        "Покажите этот код родственнику, у которого будет доступ к приложению семьи"
+-                            .into(),
+-                    );
++                    app.set_setup_message(Message::SetupShowCode);
+                 }
+             });
+         }
+@@ -477,7 +462,7 @@ fn run_setup_flow(
+             }
+         };
+ 
+-        set_setup_status(&app_weak, "Ожидаем подтверждение...".to_string());
++        set_setup_message(&app_weak, Message::SetupWaiting);
+ 
+         loop {
+             match rpc.get_balance(&owner_pubkey_client) {
+@@ -486,7 +471,7 @@ fn run_setup_flow(
+             }
+         }
+ 
+-        set_setup_status(&app_weak, "Почти готово...".to_string());
++        set_setup_message(&app_weak, Message::SetupAlmostDone);
+ 
+         let mut vault_result = None;
+         for attempt in 0..5u32 {
+@@ -505,10 +490,7 @@ fn run_setup_flow(
+         }
+ 
+         let Some((vault, beneficiary_list)) = vault_result else {
+-            set_setup_status(
+-                &app_weak,
+-                "Не получилось. Обратитесь в поддержку".to_string(),
+-            );
++            set_setup_message(&app_weak, Message::ContactSupport);
+             return;
+         };
+ 
+@@ -532,10 +514,7 @@ fn run_setup_flow(
+         };
+         if let Err(e) = setup::write_kiosk_config(&config_path, &values) {
+             eprintln!("[kiosk-gui] setup: failed to write kiosk.toml: {e}");
+-            set_setup_status(
+-                &app_weak,
+-                "Не получилось. Обратитесь в поддержку".to_string(),
+-            );
++            set_setup_message(&app_weak, Message::ContactSupport);
+             return;
+         }
+ 
+@@ -546,10 +525,7 @@ fn run_setup_flow(
+             Ok(cfg) => std::sync::Arc::new(cfg),
+             Err(e) => {
+                 eprintln!("[kiosk-gui] setup: wrote kiosk.toml but failed to reload it: {e}");
+-                set_setup_status(
+-                    &app_weak,
+-                    "Не получилось. Обратитесь в поддержку".to_string(),
+-                );
++                set_setup_message(&app_weak, Message::ContactSupport);
+                 return;
+             }
+         };
+@@ -572,11 +548,11 @@ fn run_setup_flow(
+     });
+ }
+ 
+-fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
++fn set_setup_message(app_weak: &slint::Weak<AppWindow>, message: Message) {
+     let app_weak = app_weak.clone();
+     let _ = slint::invoke_from_event_loop(move || {
+         if let Some(app) = app_weak.upgrade() {
+-            app.set_setup_status_text(text.into());
++            app.set_setup_message(message);
+         }
+     });
+ }
+@@ -597,11 +573,11 @@ fn show_pairing_view(
+     let app_weak = app_weak.clone();
+     let qr_text = credentials.qr_payload();
+     let code = pairing::display_pin(credentials.pin());
+-    let instruction = pairing::pairing_instruction(wait);
++    let wait_secs = pairing::wait_seconds(wait);
+     let _ = slint::invoke_from_event_loop(move || {
+         if let Some(app) = app_weak.upgrade() {
+             app.set_setup_qr_image(setup::render_qr(&qr_text));
+-            app.set_setup_status_text(instruction.into());
++            app.set_pairing_wait_secs(wait_secs);
+             app.set_setup_pin_text(code.into());
+             app.set_setup_pairing_active(true);
+             let generation = PAIRING_VIEW.next();
+@@ -612,7 +588,7 @@ fn show_pairing_view(
+                 slint::Timer::single_shot(wait, move || {
+                     if PAIRING_VIEW.is_current(generation) {
+                         if let Some(app) = app_weak.upgrade() {
+-                            app.set_setup_status_text(pairing::pairing_instruction(None).into());
++                            app.set_pairing_wait_secs(0);
+                         }
+                     }
+                 });
+@@ -629,6 +605,7 @@ fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
+     let _ = slint::invoke_from_event_loop(move || {
+         if let Some(app) = app_weak.upgrade() {
+             PAIRING_VIEW.next();
++            app.set_pairing_wait_secs(0);
+             app.set_setup_pairing_active(false);
+             app.set_setup_pin_text("".into());
+             app.set_setup_qr_image(setup::render_qr(&funding_qr_text));
+@@ -689,7 +666,7 @@ fn run_family_pairing_step(
+     hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
+     // The funding QR is back on screen; do not leave the pairing
+     // instruction next to it on the skip / BLE-unavailable paths.
+-    set_setup_status(app_weak, "Почти готово...".to_string());
++    set_setup_message(app_weak, Message::SetupAlmostDone);
+ 
+     let request = match outcome {
+         Ok(Some(request)) => request,
+@@ -703,7 +680,7 @@ fn run_family_pairing_step(
+         }
+     };
+ 
+-    set_setup_status(app_weak, "Добавляем участника семьи...".to_string());
++    set_setup_message(app_weak, Message::SetupAddingMember);
+     let mut added = false;
+     for attempt in 0..5u32 {
+         match family_member::add_first_family_member(
+@@ -735,7 +712,7 @@ fn run_family_pairing_step(
+             "[kiosk-gui] setup: could not register the family member; add them later with admin-cli"
+         );
+     }
+-    set_setup_status(app_weak, "Почти готово...".to_string());
++    set_setup_message(app_weak, Message::SetupAlmostDone);
+ }
+ 
+ /// Wraps `refresh_vault_state` so it becomes a no-op when `cfg` hasn't
+@@ -782,11 +759,11 @@ fn refresh_vault_state(
+             };
+             match personal_result {
+                 Ok(snapshot) => apply_snapshot(&app, false, snapshot),
+-                Err(e) => app.set_balance_text(error_message_text(&e).into()),
++                Err(e) => app.set_balance_message(error_message(&e)),
+             }
+             match pool_result {
+                 Ok(snapshot) => apply_snapshot(&app, true, snapshot),
+-                Err(e) => app.set_family_balance_text(error_message_text(&e).into()),
++                Err(e) => app.set_family_balance_message(error_message(&e)),
+             }
+             if let Ok(addrs) = personal_addrs {
+                 *personal_beneficiaries.lock().unwrap() = addrs;
+@@ -873,7 +850,7 @@ mod tests {
+             Some(Duration::from_secs(30)),
+         );
+ 
+-        let captured: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
++        let captured: Arc<Mutex<Option<(i32, i32)>>> = Arc::new(Mutex::new(None));
+         let captured_clone = captured.clone();
+         let app_weak = app.as_weak();
+         slint::invoke_from_event_loop(move || {
+@@ -881,7 +858,7 @@ mod tests {
+             // run, the waiting text is in effect.
+             let waiting = app_weak
+                 .upgrade()
+-                .map(|a| a.get_setup_status_text().to_string())
++                .map(|a| a.get_pairing_wait_secs())
+                 .unwrap_or_default();
+ 
+             // Advance mock time past the cooldown; the pending single-shot
+@@ -890,7 +867,7 @@ mod tests {
+ 
+             let after = app_weak
+                 .upgrade()
+-                .map(|a| a.get_setup_status_text().to_string())
++                .map(|a| a.get_pairing_wait_secs())
+                 .unwrap_or_default();
+             *captured_clone.lock().unwrap() = Some((waiting, after));
+             slint::quit_event_loop().unwrap();
+@@ -904,15 +881,8 @@ mod tests {
+             .unwrap()
+             .take()
+             .expect("the queued event-loop closure ran");
+-        assert!(
+-            waiting.contains("Подождите"),
+-            "expected the waiting text, got: {waiting}"
+-        );
+-        assert!(
+-            !after.contains("Подождите"),
+-            "waiting text should have reverted, got: {after}"
+-        );
+-        assert_eq!(after, pairing::pairing_instruction(None));
++        assert_eq!(waiting, 30, "the cooldown must be shown while it lasts");
++        assert_eq!(after, 0, "the cooldown must be cleared once it ends");
+     }
+ 
+     /// A screen change (here, `hide_pairing_view`) that happens before the
+@@ -929,7 +899,7 @@ mod tests {
+             Some(Duration::from_secs(30)),
+         );
+ 
+-        let final_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
++        let final_text: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
+         let final_text_clone = final_text.clone();
+         let app_weak = app.as_weak();
+         slint::invoke_from_event_loop(move || {
+@@ -939,19 +909,19 @@ mod tests {
+             // -- guaranteeing it runs after `hide_pairing_view`'s closure
+             // (and thus after `PAIRING_VIEW.next()`) has actually executed.
+             hide_pairing_view(&app_weak, "some-funding-qr-text");
+-            if let Some(app) = app_weak.upgrade() {
+-                app.set_setup_status_text("Почти готово...".into());
+-            }
+ 
+             let app_weak2 = app_weak.clone();
+             let final_text_clone2 = final_text_clone.clone();
+             slint::invoke_from_event_loop(move || {
+                 // The stale timer must NOT have overwritten this later
+                 // status.
++                if let Some(app) = app_weak2.upgrade() {
++                    // A newer state, which the stale timer must not clobber.
++                    app.set_pairing_wait_secs(7);
++                }
+                 i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
+                 if let Some(app) = app_weak2.upgrade() {
+-                    *final_text_clone2.lock().unwrap() =
+-                        Some(app.get_setup_status_text().to_string());
++                    *final_text_clone2.lock().unwrap() = Some(app.get_pairing_wait_secs());
+                 }
+                 slint::quit_event_loop().unwrap();
+             })
+@@ -966,7 +936,7 @@ mod tests {
+             .unwrap()
+             .take()
+             .expect("the queued event-loop closure ran");
+-        assert_eq!(final_text, "Почти готово...");
++        assert_eq!(final_text, 7);
+     }
+ 
+     /// Exercises `app.slint`'s native `auto-return-timer` (a `Timer`
+diff --git a/kiosk-gui/src/pairing.rs b/kiosk-gui/src/pairing.rs
+index 3c13b45..76a293b 100644
+--- a/kiosk-gui/src/pairing.rs
++++ b/kiosk-gui/src/pairing.rs
+@@ -31,27 +31,13 @@ pub fn cooldown_for_lockout(n: u32) -> Duration {
+         .min(COOLDOWN_MAX)
+ }
+ 
+-/// `30 s` -> `"30 сек."`, `60 s` -> `"1 мин."`; partial minutes round up.
+-/// Abbreviations avoid Russian plural forms.
+-pub fn display_wait(wait: Duration) -> String {
+-    let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+-    if secs < 60 {
+-        format!("{secs} сек.")
+-    } else {
+-        format!("{} мин.", secs.div_ceil(60))
+-    }
+-}
+-
+-/// The setup-screen instruction above the pairing QR. During a cooldown it
+-/// tells the family member to wait; without one it is the normal text.
+-pub fn pairing_instruction(wait: Option<Duration>) -> String {
+-    match wait {
+-        None => "Отсканируйте этот код в приложении семьи или введите цифры:".to_string(),
+-        Some(wait) => format!(
+-            "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:",
+-            display_wait(wait)
+-        ),
+-    }
++/// The cooldown left, in whole seconds rounded up, for the setup screen
++/// (`0` when there is none). The screen words it ("45 sec", "2 min").
++pub fn wait_seconds(wait: Option<Duration>) -> i32 {
++    wait.map_or(0, |wait| {
++        let secs = wait.as_secs().saturating_add(u64::from(wait.subsec_nanos() > 0));
++        i32::try_from(secs).unwrap_or(i32::MAX)
++    })
+ }
+ 
+ /// Monotonic counter identifying the current state of the pairing screen.
+@@ -379,29 +365,13 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn display_wait_uses_seconds_below_a_minute_and_minutes_above() {
+-        assert_eq!(display_wait(Duration::from_secs(30)), "30 сек.");
+-        assert_eq!(display_wait(Duration::from_secs(59)), "59 сек.");
+-        assert_eq!(display_wait(Duration::from_secs(60)), "1 мин.");
+-        assert_eq!(display_wait(Duration::from_secs(90)), "2 мин.");
+-        assert_eq!(display_wait(Duration::from_secs(120)), "2 мин.");
+-        assert_eq!(display_wait(Duration::from_secs(300)), "5 мин.");
+-    }
+-
+-    #[test]
+-    fn pairing_instruction_is_the_normal_text_without_a_wait() {
+-        assert_eq!(
+-            pairing_instruction(None),
+-            "Отсканируйте этот код в приложении семьи или введите цифры:"
+-        );
+-    }
+-
+-    #[test]
+-    fn pairing_instruction_prefixes_the_wait_during_a_cooldown() {
+-        assert_eq!(
+-            pairing_instruction(Some(Duration::from_secs(30))),
+-            "Подождите 30 сек., затем отсканируйте этот код в приложении семьи или введите цифры:"
+-        );
++    fn wait_seconds_rounds_up_and_is_zero_without_a_wait() {
++        assert_eq!(wait_seconds(None), 0);
++        assert_eq!(wait_seconds(Some(Duration::ZERO)), 0);
++        assert_eq!(wait_seconds(Some(Duration::from_secs(30))), 30);
++        assert_eq!(wait_seconds(Some(Duration::from_millis(29_001))), 30);
++        assert_eq!(wait_seconds(Some(Duration::from_secs(300))), 300);
++        assert_eq!(wait_seconds(Some(Duration::MAX)), i32::MAX);
+     }
+ 
+     #[test]
+diff --git a/kiosk-gui/tests/navigation.rs b/kiosk-gui/tests/navigation.rs
+index 1401333..893dbbe 100644
+--- a/kiosk-gui/tests/navigation.rs
++++ b/kiosk-gui/tests/navigation.rs
+@@ -181,9 +181,8 @@ fn confirming_send_navigates_to_result_with_success_message() {
+                 let app = app_weak.unwrap();
+                 let recipient = app.get_confirm_recipient_name();
+                 app.set_result_success(true);
+-                app.set_result_message_text(
+-                    format!("Готово! Деньги отправлены {recipient}").into(),
+-                );
++                app.set_result_message(Message::Done);
++                app.set_result_name(recipient);
+                 app.set_current_screen(Screen::Result);
+             });
+         }
+@@ -195,9 +194,13 @@ fn confirming_send_navigates_to_result_with_success_message() {
+ 
+         assert_eq!(app.get_current_screen(), Screen::Result);
+         assert!(app.get_result_success());
+-        assert_eq!(
+-            app.get_result_message_text(),
+-            slint::SharedString::from("Готово! Деньги отправлены Внук Саша")
++        assert_eq!(app.get_result_message(), Message::Done);
++        assert_eq!(app.get_result_name(), slint::SharedString::from("Внук Саша"));
++        assert!(
++            ElementHandle::find_by_accessible_label(&app, "Done! Money sent to Внук Саша")
++                .next()
++                .is_some(),
++            "the result screen must show the sentence for `Done` with the recipient's name"
+         );
+ 
+         slint::quit_event_loop().unwrap();
+@@ -485,6 +488,76 @@ fn the_russian_translation_is_bundled_and_can_be_selected() {
+     slint::run_event_loop().unwrap();
+ }
+ 
++fn text_exists(app: &AppWindow, text: &str) -> bool {
++    ElementHandle::find_by_accessible_label(app, text).next().is_some()
++}
++
++fn messages_are_worded_by_the_ui_in_both_languages() {
++    slint::spawn_local(async move {
++        let app = AppWindow::new().unwrap();
++
++        // A failed balance fetch shows its sentence instead of the balance.
++        app.set_current_screen(Screen::MyWallet);
++        app.set_balance_text("120 USDC".into());
++        assert!(text_exists(&app, "120 USDC"));
++        app.set_balance_message(Message::NoConnection);
++        assert!(text_exists(&app, "No connection. Try again later"));
++        assert!(!text_exists(&app, "120 USDC"));
++        app.set_balance_message(Message::None);
++        assert!(text_exists(&app, "120 USDC"));
++
++        // The result screen words `Done` with the recipient, or a fallback.
++        app.set_current_screen(Screen::Result);
++        app.set_result_message(Message::Done);
++        app.set_result_name("Внук Саша".into());
++        assert!(text_exists(&app, "Done! Money sent to Внук Саша"));
++        app.set_result_name("".into());
++        assert!(text_exists(&app, "Done! Money sent to Recipient"));
++
++        // The pairing instruction follows the cooldown left.
++        app.set_current_screen(Screen::Setup);
++        app.set_setup_pairing_active(true);
++        let normal = "Scan this code in the family app or type the digits:";
++        assert!(text_exists(&app, normal));
++        app.set_pairing_wait_secs(45);
++        assert!(text_exists(
++            &app,
++            "Wait 45 sec, then scan this code in the family app or type the digits:"
++        ));
++        app.set_pairing_wait_secs(61);
++        assert!(text_exists(
++            &app,
++            "Wait 2 min, then scan this code in the family app or type the digits:"
++        ));
++        app.set_pairing_wait_secs(0);
++        assert!(text_exists(&app, normal));
++
++        // The same states, in Russian.
++        slint::select_bundled_translation("ru").unwrap();
++        assert!(text_exists(
++            &app,
++            "Отсканируйте этот код в приложении семьи или введите цифры:"
++        ));
++        app.set_pairing_wait_secs(61);
++        assert!(text_exists(
++            &app,
++            "Подождите 2 мин., затем отсканируйте этот код в приложении семьи или введите цифры:"
++        ));
++        app.set_current_screen(Screen::Result);
++        assert!(text_exists(&app, "Готово! Деньги отправлены Получатель"));
++        app.set_result_name("Внук Саша".into());
++        assert!(text_exists(&app, "Готово! Деньги отправлены Внук Саша"));
++        app.set_current_screen(Screen::MyWallet);
++        app.set_balance_message(Message::NoConnection);
++        assert!(text_exists(&app, "Нет связи. Попробуй ещё раз позже"));
++
++        slint::select_bundled_translation("en").unwrap();
++        slint::quit_event_loop().unwrap();
++    })
++    .unwrap();
++    slint::run_event_loop().unwrap();
++}
++
+ fn main() {
+     i_slint_backend_testing::init_integration_test_with_system_time();
+ 
+@@ -527,6 +600,9 @@ fn main() {
+     the_russian_translation_is_bundled_and_can_be_selected();
+     println!("test the_russian_translation_is_bundled_and_can_be_selected ... ok");
+ 
++    messages_are_worded_by_the_ui_in_both_languages();
++    println!("test messages_are_worded_by_the_ui_in_both_languages ... ok");
++
+     println!();
+-    println!("test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
++    println!("test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+ }
+diff --git a/kiosk-gui/translations/ru/LC_MESSAGES/kiosk-gui.po b/kiosk-gui/translations/ru/LC_MESSAGES/kiosk-gui.po
+index b8f4383..6b12068 100644
+--- a/kiosk-gui/translations/ru/LC_MESSAGES/kiosk-gui.po
++++ b/kiosk-gui/translations/ru/LC_MESSAGES/kiosk-gui.po
+@@ -41,3 +41,42 @@ msgstr "Отмена"
+ 
+ msgid "OK"
+ msgstr "Ок"
++
++msgid "No connection. Try again later"
++msgstr "Нет связи. Попробуй ещё раз позже"
++
++msgid "That did not work. Try again or call a relative"
++msgstr "Не получилось. Попробуй ещё раз или позови родственника"
++
++msgid "That did not work. Contact support"
++msgstr "Не получилось. Обратитесь в поддержку"
++
++msgid "Done! Money sent to {}"
++msgstr "Готово! Деньги отправлены {}"
++
++msgid "Recipient"
++msgstr "Получатель"
++
++msgid "Waiting for confirmation..."
++msgstr "Ожидаем подтверждение..."
++
++msgid "Almost done..."
++msgstr "Почти готово..."
++
++msgid "Adding a family member..."
++msgstr "Добавляем участника семьи..."
++
++msgid "Show this code to the relative who will have access to the family app"
++msgstr "Покажите этот код родственнику, у которого будет доступ к приложению семьи"
++
++msgid "Scan this code in the family app or type the digits:"
++msgstr "Отсканируйте этот код в приложении семьи или введите цифры:"
++
++msgid "Wait {}, then scan this code in the family app or type the digits:"
++msgstr "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:"
++
++msgid "{} sec"
++msgstr "{} сек."
++
++msgid "{} min"
++msgstr "{} мин."
+diff --git a/kiosk-gui/ui/amount-select.slint b/kiosk-gui/ui/amount-select.slint
+index f6ef736..7da6500 100644
+--- a/kiosk-gui/ui/amount-select.slint
++++ b/kiosk-gui/ui/amount-select.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { Messages } from "messages.slint";
+ 
+ export component AmountSelectScreen inherits Rectangle {
+     in property <string> recipient-name: "";
+@@ -14,7 +15,7 @@ export component AmountSelectScreen inherits Rectangle {
+         spacing: Theme.spacing;
+ 
+         Text {
+-            text: @tr("How much to send to {}?", recipient-name);
++            text: @tr("How much to send to {}?", Messages.recipient(recipient-name));
+             color: Theme.fg;
+             font-size: Theme.font-size-heading;
+             wrap: word-wrap;
+diff --git a/kiosk-gui/ui/app.slint b/kiosk-gui/ui/app.slint
+index a3b529b..72c9b25 100644
+--- a/kiosk-gui/ui/app.slint
++++ b/kiosk-gui/ui/app.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { Message } from "messages.slint";
+ import { SetupScreen } from "setup.slint";
+ import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
+ import { AmountSelectScreen } from "amount-select.slint";
+@@ -6,7 +7,7 @@ import { ConfirmScreen } from "confirm.slint";
+ import { ResultScreen } from "result.slint";
+ import { FamilyWalletScreen } from "family-wallet.slint";
+ 
+-export { BeneficiaryItem }
++export { BeneficiaryItem, Message }
+ 
+ export enum Screen { setup, my-wallet, amount-select, confirm, result, family-wallet }
+ 
+@@ -18,18 +19,22 @@ export component AppWindow inherits Window {
+     in-out property <Screen> current-screen: Screen.my-wallet;
+ 
+     in property <image> setup-qr-image <=> setup.qr-image;
+-    in property <string> setup-status-text <=> setup.status-text;
++    in property <Message> setup-message <=> setup.message;
++    in property <int> pairing-wait-secs <=> setup.pairing-wait-secs;
+     in property <bool> setup-pairing-active <=> setup.pairing-active;
+     in property <string> setup-pin-text <=> setup.pin-text;
+     in property <string> balance-text <=> wallet.balance-text;
++    in property <Message> balance-message <=> wallet.balance-message;
+     in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
+     in property <string> selected-recipient-name <=> amount-select.recipient-name;
+     in property <[string]> presets <=> amount-select.presets;
+     in property <string> confirm-recipient-name <=> confirm.recipient-name;
+     in property <string> confirm-amount-text <=> confirm.amount-text;
+     in property <bool> result-success <=> result.success;
+-    in property <string> result-message-text <=> result.message-text;
++    in property <Message> result-message <=> result.message;
++    in property <string> result-name <=> result.name;
+     in property <string> family-balance-text <=> family-wallet.balance-text;
++    in property <Message> family-balance-message <=> family-wallet.balance-message;
+     in property <[BeneficiaryItem]> family-beneficiaries <=> family-wallet.beneficiaries;
+ 
+     callback skip-pairing-requested <=> setup.skip-pairing-requested;
+diff --git a/kiosk-gui/ui/confirm.slint b/kiosk-gui/ui/confirm.slint
+index cabc28f..9d850ae 100644
+--- a/kiosk-gui/ui/confirm.slint
++++ b/kiosk-gui/ui/confirm.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { Messages } from "messages.slint";
+ 
+ export component ConfirmScreen inherits Rectangle {
+     in property <string> recipient-name: "";
+@@ -14,7 +15,7 @@ export component ConfirmScreen inherits Rectangle {
+         spacing: Theme.spacing;
+ 
+         Text {
+-            text: @tr("Send {} → {}?", amount-text, recipient-name);
++            text: @tr("Send {} → {}?", amount-text, Messages.recipient(recipient-name));
+             color: Theme.fg;
+             font-size: Theme.font-size-heading;
+             wrap: word-wrap;
+diff --git a/kiosk-gui/ui/family-wallet.slint b/kiosk-gui/ui/family-wallet.slint
+index 9ea2f15..3fae11d 100644
+--- a/kiosk-gui/ui/family-wallet.slint
++++ b/kiosk-gui/ui/family-wallet.slint
+@@ -1,8 +1,10 @@
+ import { Theme } from "theme.slint";
+ import { BeneficiaryItem } from "my-wallet.slint";
++import { Message, Messages } from "messages.slint";
+ 
+ export component FamilyWalletScreen inherits Rectangle {
+     in property <string> balance-text: "0";
++    in property <Message> balance-message: Message.none;
+     in property <[BeneficiaryItem]> beneficiaries: [];
+ 
+     callback beneficiary-selected(int);
+@@ -22,7 +24,7 @@ export component FamilyWalletScreen inherits Rectangle {
+         }
+ 
+         Text {
+-            text: balance-text;
++            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+             color: Theme.fg;
+             font-size: Theme.font-size-heading;
+         }
+diff --git a/kiosk-gui/ui/messages.slint b/kiosk-gui/ui/messages.slint
+new file mode 100644
+index 0000000..8f33ad3
+--- /dev/null
++++ b/kiosk-gui/ui/messages.slint
+@@ -0,0 +1,60 @@
++// Every sentence the kiosk shows that Rust decides on. Rust sets a `Message`
++// (and, for a few, a name or a number); the words, and so the language, live
++// here and nowhere else.
++export enum Message {
++    none,
++    no-connection,
++    failed,
++    contact-support,
++    done,
++    setup-waiting,
++    setup-almost-done,
++    setup-adding-member,
++    setup-show-code,
++}
++
++export global Messages {
++    // `name` is only used by `done`; an empty name reads as "Recipient".
++    pure public function text(message: Message, name: string) -> string {
++        if message == Message.no-connection {
++            return @tr("No connection. Try again later");
++        }
++        if message == Message.failed {
++            return @tr("That did not work. Try again or call a relative");
++        }
++        if message == Message.contact-support {
++            return @tr("That did not work. Contact support");
++        }
++        if message == Message.done {
++            return @tr("Done! Money sent to {}", name == "" ? @tr("Recipient") : name);
++        }
++        if message == Message.setup-waiting {
++            return @tr("Waiting for confirmation...");
++        }
++        if message == Message.setup-almost-done {
++            return @tr("Almost done...");
++        }
++        if message == Message.setup-adding-member {
++            return @tr("Adding a family member...");
++        }
++        if message == Message.setup-show-code {
++            return @tr("Show this code to the relative who will have access to the family app");
++        }
++        return "";
++    }
++
++    pure public function recipient(name: string) -> string {
++        return name == "" ? @tr("Recipient") : name;
++    }
++
++    // `wait-secs` is the cooldown left, rounded up; 0 means no cooldown.
++    pure public function pairing-instruction(wait-secs: int) -> string {
++        if wait-secs <= 0 {
++            return @tr("Scan this code in the family app or type the digits:");
++        }
++        return @tr(
++            "Wait {}, then scan this code in the family app or type the digits:",
++            wait-secs < 60 ? @tr("{} sec", wait-secs) : @tr("{} min", Math.ceil(wait-secs / 60))
++        );
++    }
++}
+diff --git a/kiosk-gui/ui/my-wallet.slint b/kiosk-gui/ui/my-wallet.slint
+index fd6d5f6..13ff04d 100644
+--- a/kiosk-gui/ui/my-wallet.slint
++++ b/kiosk-gui/ui/my-wallet.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { Message, Messages } from "messages.slint";
+ 
+ export struct BeneficiaryItem {
+     name: string,
+@@ -7,6 +8,8 @@ export struct BeneficiaryItem {
+ 
+ export component MyWalletScreen inherits Rectangle {
+     in property <string> balance-text: "0";
++    // When not `none`, shown instead of the balance (the last fetch failed).
++    in property <Message> balance-message: Message.none;
+     in property <[BeneficiaryItem]> beneficiaries: [];
+ 
+     callback beneficiary-selected(int);
+@@ -26,7 +29,7 @@ export component MyWalletScreen inherits Rectangle {
+         }
+ 
+         Text {
+-            text: balance-text;
++            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+             color: Theme.fg;
+             font-size: Theme.font-size-heading;
+         }
+diff --git a/kiosk-gui/ui/result.slint b/kiosk-gui/ui/result.slint
+index cee51d8..c375226 100644
+--- a/kiosk-gui/ui/result.slint
++++ b/kiosk-gui/ui/result.slint
+@@ -1,8 +1,11 @@
+ import { Theme } from "theme.slint";
++import { Message, Messages } from "messages.slint";
+ 
+ export component ResultScreen inherits Rectangle {
+     in property <bool> success: true;
+-    in property <string> message-text: "";
++    in property <Message> message: Message.none;
++    // The recipient, for `Message.done`.
++    in property <string> name: "";
+ 
+     callback ok-pressed();
+ 
+@@ -21,7 +24,7 @@ export component ResultScreen inherits Rectangle {
+         }
+ 
+         Text {
+-            text: message-text;
++            text: Messages.text(message, name);
+             color: Theme.fg;
+             font-size: Theme.font-size-heading;
+             horizontal-alignment: center;
+diff --git a/kiosk-gui/ui/setup.slint b/kiosk-gui/ui/setup.slint
+index ce33bb1..7c732aa 100644
+--- a/kiosk-gui/ui/setup.slint
++++ b/kiosk-gui/ui/setup.slint
+@@ -1,10 +1,12 @@
+ import { Theme } from "theme.slint";
++import { Message, Messages } from "messages.slint";
+ 
+ export component SetupScreen inherits Rectangle {
+     // In funding mode this is the funding QR; in pairing mode Rust swaps in
+     // the pairing QR (the same property, so the Image element is shared).
+     in property <image> qr-image;
+-    in property <string> status-text: "";
++    // Funding mode: what the kiosk is doing.
++    in property <Message> message: Message.none;
+ 
+     // Pairing mode: QR on the left, and on the right the instruction, the
+     // fallback code for people who cannot scan, and a way to skip. The
+@@ -12,6 +14,8 @@ export component SetupScreen inherits Rectangle {
+     // control. See the family-app design spec, "Identity & Bootstrap".
+     in property <bool> pairing-active: false;
+     in property <string> pin-text: "";
++    // Pairing mode: seconds of cooldown left (0: none).
++    in property <int> pairing-wait-secs: 0;
+ 
+     callback skip-pairing-requested();
+ 
+@@ -40,7 +44,7 @@ export component SetupScreen inherits Rectangle {
+             }
+ 
+             Text {
+-                text: status-text;
++                text: Messages.text(message, "");
+                 color: Theme.fg;
+                 font-size: Theme.font-size-body;
+                 horizontal-alignment: center;
+@@ -62,7 +66,7 @@ export component SetupScreen inherits Rectangle {
+                 alignment: center;
+ 
+                 Text {
+-                    text: status-text;
++                    text: Messages.pairing-instruction(pairing-wait-secs);
+                     color: Theme.fg;
+                     font-size: Theme.font-size-body;
+                     wrap: word-wrap;

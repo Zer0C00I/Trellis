@@ -1,0 +1,271 @@
+diff --git a/kiosk-gui/src/language.rs b/kiosk-gui/src/language.rs
+new file mode 100644
+index 0000000..4970a0d
+--- /dev/null
++++ b/kiosk-gui/src/language.rs
+@@ -0,0 +1,169 @@
++//! Which language the kiosk speaks, decided once at start-up.
++
++use std::path::Path;
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Language {
++    Ru,
++    En,
++}
++
++impl Language {
++    /// The folder name under `translations/` and what
++    /// `slint::select_bundled_translation` expects.
++    pub fn code(self) -> &'static str {
++        match self {
++            Language::Ru => "ru",
++            Language::En => "en",
++        }
++    }
++
++    fn parse(text: &str) -> Option<Language> {
++        match text.trim().to_ascii_lowercase().as_str() {
++            "ru" => Some(Language::Ru),
++            "en" => Some(Language::En),
++            _ => None,
++        }
++    }
++}
++
++/// The configured value if it names a supported language, otherwise the
++/// prefix of `LANG` (`ru_RU.UTF-8` is `ru`), otherwise Russian, which is
++/// what every already-installed kiosk speaks.
++pub fn resolve_language(configured: Option<&str>, lang_env: Option<&str>) -> Language {
++    configured
++        .and_then(Language::parse)
++        .or_else(|| lang_env.and_then(language_from_env))
++        .unwrap_or(Language::Ru)
++}
++
++fn language_from_env(lang: &str) -> Option<Language> {
++    let prefix: String = lang
++        .chars()
++        .take_while(|c| c.is_ascii_alphabetic())
++        .collect();
++    Language::parse(&prefix)
++}
++
++/// The string `language` of a TOML file (`kiosk.toml`, `provisioning.toml`).
++/// `None` when the file is missing, is not TOML, or has no such string.
++pub fn language_setting(path: &Path) -> Option<String> {
++    let text = std::fs::read_to_string(path).ok()?;
++    let table: toml::Table = text.parse().ok()?;
++    table.get("language")?.as_str().map(str::to_string)
++}
++
++/// The language to start with. `kiosk.toml` wins; on a first boot, which has
++/// no `kiosk.toml` yet, `provisioning.toml` next to it is used.
++pub fn startup_language(config_path: &Path, lang_env: Option<&str>) -> Language {
++    let provisioning = config_path
++        .parent()
++        .map(|dir| dir.join("provisioning.toml"));
++    let configured =
++        language_setting(config_path).or_else(|| provisioning.and_then(|p| language_setting(&p)));
++    if let Some(value) = &configured {
++        if Language::parse(value).is_none() {
++            eprintln!(
++                "[kiosk-gui] unknown language {value:?} in the configuration; using the system language"
++            );
++        }
++    }
++    resolve_language(configured.as_deref(), lang_env)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn temp_dir(name: &str) -> std::path::PathBuf {
++        let dir =
++            std::env::temp_dir().join(format!("kiosk-language-{name}-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&dir);
++        std::fs::create_dir_all(&dir).unwrap();
++        dir
++    }
++
++    #[test]
++    fn the_configured_language_wins_over_the_environment() {
++        assert_eq!(
++            resolve_language(Some("en"), Some("ru_RU.UTF-8")),
++            Language::En
++        );
++        assert_eq!(
++            resolve_language(Some("ru"), Some("en_US.UTF-8")),
++            Language::Ru
++        );
++    }
++
++    #[test]
++    fn the_configured_value_is_case_and_space_insensitive() {
++        assert_eq!(resolve_language(Some(" EN "), None), Language::En);
++        assert_eq!(resolve_language(Some("Ru"), None), Language::Ru);
++    }
++
++    #[test]
++    fn an_unsupported_configured_value_falls_back_to_the_environment() {
++        assert_eq!(
++            resolve_language(Some("de"), Some("en_GB.UTF-8")),
++            Language::En
++        );
++        assert_eq!(resolve_language(Some(""), Some("en_US")), Language::En);
++    }
++
++    #[test]
++    fn the_environment_prefix_selects_the_language() {
++        assert_eq!(resolve_language(None, Some("ru_RU.UTF-8")), Language::Ru);
++        assert_eq!(resolve_language(None, Some("en_US.UTF-8")), Language::En);
++        assert_eq!(resolve_language(None, Some("en")), Language::En);
++    }
++
++    #[test]
++    fn everything_else_is_russian() {
++        assert_eq!(resolve_language(None, None), Language::Ru);
++        assert_eq!(resolve_language(None, Some("C")), Language::Ru);
++        assert_eq!(resolve_language(None, Some("POSIX")), Language::Ru);
++        assert_eq!(resolve_language(None, Some("fr_FR.UTF-8")), Language::Ru);
++        assert_eq!(resolve_language(None, Some("")), Language::Ru);
++    }
++
++    #[test]
++    fn the_code_is_the_translation_folder_name() {
++        assert_eq!(Language::Ru.code(), "ru");
++        assert_eq!(Language::En.code(), "en");
++    }
++
++    #[test]
++    fn language_setting_reads_a_string_and_ignores_everything_else() {
++        let dir = temp_dir("setting");
++        let path = dir.join("kiosk.toml");
++        std::fs::write(&path, "rpc_url = \"x\"\nlanguage = \"en\"\n").unwrap();
++        assert_eq!(language_setting(&path).as_deref(), Some("en"));
++        std::fs::write(&path, "rpc_url = \"x\"\n").unwrap();
++        assert_eq!(language_setting(&path), None);
++        std::fs::write(&path, "language = 5\n").unwrap();
++        assert_eq!(language_setting(&path), None);
++        std::fs::write(&path, "this is not toml [[[").unwrap();
++        assert_eq!(language_setting(&path), None);
++        assert_eq!(language_setting(&dir.join("missing.toml")), None);
++        std::fs::remove_dir_all(&dir).unwrap();
++    }
++
++    #[test]
++    fn kiosk_toml_beats_provisioning_toml_and_provisioning_beats_the_environment() {
++        let dir = temp_dir("startup");
++        let kiosk = dir.join("kiosk.toml");
++        std::fs::write(dir.join("provisioning.toml"), "language = \"en\"\n").unwrap();
++
++        // First boot: no kiosk.toml, so provisioning.toml decides.
++        assert_eq!(startup_language(&kiosk, Some("ru_RU.UTF-8")), Language::En);
++
++        std::fs::write(&kiosk, "language = \"ru\"\n").unwrap();
++        assert_eq!(startup_language(&kiosk, Some("en_US.UTF-8")), Language::Ru);
++
++        std::fs::remove_file(&kiosk).unwrap();
++        std::fs::remove_file(dir.join("provisioning.toml")).unwrap();
++        assert_eq!(startup_language(&kiosk, Some("en_US.UTF-8")), Language::En);
++        assert_eq!(startup_language(&kiosk, None), Language::Ru);
++        std::fs::remove_dir_all(&dir).unwrap();
++    }
++}
+diff --git a/kiosk-gui/src/lib.rs b/kiosk-gui/src/lib.rs
+index 47469eb..48dccd9 100644
+--- a/kiosk-gui/src/lib.rs
++++ b/kiosk-gui/src/lib.rs
+@@ -9,6 +9,7 @@ use slint_ui::*;
+ mod ble;
+ mod chain;
+ mod family_member;
++mod language;
+ mod pairing;
+ mod setup;
+ 
+@@ -66,8 +67,11 @@ fn apply_snapshot(app: &AppWindow, is_pool: bool, snapshot: VaultSnapshot) {
+ }
+ 
+ pub fn run() -> Result<(), slint::PlatformError> {
+-    let app = AppWindow::new()?;
+     let config_path = config_path();
++    let language =
++        language::startup_language(&config_path, std::env::var("LANG").ok().as_deref());
++    eprintln!("[kiosk-gui] language: {}", language.code());
++    let app = AppWindow::new()?;
+ 
+     let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
+ 
+@@ -88,6 +92,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
+             config_path.clone(),
+             cfg_slot,
+             skip_pairing.clone(),
++            language,
+         );
+     } else {
+         match chain::load_config(&config_path) {
+@@ -398,6 +403,7 @@ fn run_setup_flow(
+     config_path: std::path::PathBuf,
+     cfg_slot: Arc<Mutex<Option<Arc<ChainConfig>>>>,
+     skip_pairing: Arc<std::sync::atomic::AtomicBool>,
++    language: language::Language,
+ ) {
+     let app_weak_for_screen = app_weak.clone();
+     let _ = slint::invoke_from_event_loop(move || {
+@@ -519,6 +525,7 @@ fn run_setup_flow(
+             mint: provisioning.mint.to_string(),
+             personal_vault: vault.to_string(),
+             personal_beneficiary_list: beneficiary_list.to_string(),
++            language: language.code().to_string(),
+         };
+         if let Err(e) = setup::write_kiosk_config(&config_path, &values) {
+             eprintln!("[kiosk-gui] setup: failed to write kiosk.toml: {e}");
+diff --git a/kiosk-gui/src/setup.rs b/kiosk-gui/src/setup.rs
+index aaa774e..fc2059d 100644
+--- a/kiosk-gui/src/setup.rs
++++ b/kiosk-gui/src/setup.rs
+@@ -90,6 +90,9 @@ pub struct KioskConfigValues {
+     pub mint: String,
+     pub personal_vault: String,
+     pub personal_beneficiary_list: String,
++    /// `ru` or `en`: written so the language can be changed later by editing
++    /// one line.
++    pub language: String,
+ }
+ 
+ pub fn write_kiosk_config(
+@@ -104,7 +107,8 @@ pub fn write_kiosk_config(
+          personal_vault = \"{}\"\n\
+          personal_beneficiary_list = \"{}\"\n\
+          pool_vault = \"{}\"\n\
+-         pool_beneficiary_list = \"{}\"\n",
++         pool_beneficiary_list = \"{}\"\n\
++         language = \"{}\"\n",
+         values.rpc_url,
+         values.keypair_path,
+         values.program_id,
+@@ -118,6 +122,7 @@ pub fn write_kiosk_config(
+         // until then.
+         values.personal_vault,
+         values.personal_beneficiary_list,
++        values.language,
+     );
+     std::fs::write(path, text).map_err(ProvisioningError::Io)
+ }
+@@ -383,8 +388,14 @@ mint = "not-a-pubkey"
+             mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB".to_string(),
+             personal_vault: "KziPLWvcZnYnt2ZhR7ACGHocBvgx2qX8jMExuxpFTQZ".to_string(),
+             personal_beneficiary_list: "AbPLQhfRK16zi9vqUH1KutFDN8cU1bne4RXgRtKrEd3P".to_string(),
++            language: "en".to_string(),
+         };
+         write_kiosk_config(&path, &values).unwrap();
++        assert_eq!(
++            crate::language::language_setting(&path).as_deref(),
++            Some("en"),
++            "the chosen language must be written to kiosk.toml"
++        );
+ 
+         let loaded = crate::chain::load_config(&path).unwrap();
+         assert_eq!(loaded.rpc_url, values.rpc_url);

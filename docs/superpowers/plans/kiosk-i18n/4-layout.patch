@@ -1,0 +1,739 @@
+diff --git a/kiosk-gui/tests/navigation.rs b/kiosk-gui/tests/navigation.rs
+index 893dbbe..f4ee6e9 100644
+--- a/kiosk-gui/tests/navigation.rs
++++ b/kiosk-gui/tests/navigation.rs
+@@ -558,6 +558,123 @@ fn messages_are_worded_by_the_ui_in_both_languages() {
+     slint::run_event_loop().unwrap();
+ }
+ 
++/// A button's box on the 800x480 window: `(label, x, y, width, height)`.
++type ButtonBox = (String, f32, f32, f32, f32);
++
++/// The boxes of every `KioskButton` inside the screen with element id `screen`.
++fn button_boxes(app: &AppWindow, screen: &str) -> Vec<ButtonBox> {
++    let root = ElementHandle::find_by_element_id(app, screen)
++        .next()
++        .unwrap_or_else(|| panic!("no screen {screen}"));
++    root.query_descendants()
++        .match_inherits("KioskButton")
++        .find_all()
++        .iter()
++        .map(|button| {
++            let position = button.absolute_position();
++            let size = button.size();
++            (
++                button.accessible_label().unwrap_or_default().to_string(),
++                position.x,
++                position.y,
++                size.width,
++                size.height,
++            )
++        })
++        .collect()
++}
++
++fn assert_buttons_fit(context: &str, buttons: &[ButtonBox]) {
++    assert!(!buttons.is_empty(), "{context}: no buttons found");
++    for (label, x, y, width, height) in buttons {
++        assert!(
++            *width >= 60.0 && *height >= 60.0,
++            "{context}: `{label}` is {width}x{height}, under the 60px touch target"
++        );
++        assert!(
++            *x >= 0.0 && *y >= 0.0 && x + width <= 800.0 && y + height <= 480.0,
++            "{context}: `{label}` at ({x}, {y}) {width}x{height} leaves the 800x480 window"
++        );
++    }
++    for (i, a) in buttons.iter().enumerate() {
++        for b in &buttons[i + 1..] {
++            let apart = a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1 || a.2 + a.4 <= b.2 || b.2 + b.4 <= a.2;
++            assert!(apart, "{context}: `{}` overlaps `{}`", a.0, b.0);
++        }
++    }
++}
++
++fn buttons_fit_the_screen_in_both_languages_with_the_longest_names() {
++    slint::spawn_local(async move {
++        let app = AppWindow::new().unwrap();
++        // The test backend measures text narrower than the real renderer, so
++        // this checks the box rules (touch size, inside the window, no
++        // overlap, centred OK); `examples/screens.rs` shows how the text
++        // wraps inside them.
++        let widest = "W".repeat(32);
++        let names = [widest.as_str(), "Александр Константинович", "Внучка Екатерина Дм."];
++        let items = |names: &[&str]| -> slint::ModelRc<BeneficiaryItem> {
++            std::rc::Rc::new(slint::VecModel::from(
++                names
++                    .iter()
++                    .zip(1..)
++                    .map(|(name, id)| BeneficiaryItem { name: (*name).into(), id })
++                    .collect::<Vec<_>>(),
++            ))
++            .into()
++        };
++        app.set_beneficiaries(items(&names));
++        app.set_family_beneficiaries(items(&names[..2]));
++        app.set_presets(
++            std::rc::Rc::new(slint::VecModel::from(vec![
++                "10 USDC".into(),
++                "20 USDC".into(),
++                "50 USDC".into(),
++            ]))
++            .into(),
++        );
++        app.set_selected_recipient_name(widest.clone().into());
++        app.set_confirm_recipient_name(widest.clone().into());
++        app.set_confirm_amount_text("50 USDC".into());
++        app.set_result_name(widest.clone().into());
++        app.set_result_message(Message::Done);
++        app.set_setup_pairing_active(true);
++        app.set_setup_pin_text("123 456".into());
++        app.set_pairing_wait_secs(95);
++
++        for language in ["en", "ru"] {
++            slint::select_bundled_translation(language).unwrap();
++            for (screen, id, buttons) in [
++                (Screen::MyWallet, "AppWindow::wallet", 5),
++                (Screen::FamilyWallet, "AppWindow::family-wallet", 4),
++                (Screen::AmountSelect, "AppWindow::amount-select", 4),
++                (Screen::Confirm, "AppWindow::confirm", 2),
++                (Screen::Result, "AppWindow::result", 1),
++                (Screen::Setup, "AppWindow::setup", 1),
++            ] {
++                app.set_current_screen(screen);
++                let context = format!("{language} {id}");
++                let boxes = button_boxes(&app, id);
++                assert_eq!(boxes.len(), buttons, "{context}: {boxes:?}");
++                assert_buttons_fit(&context, &boxes);
++            }
++
++            // The OK button sits in the middle of the window.
++            app.set_current_screen(Screen::Result);
++            let ok = &button_boxes(&app, "AppWindow::result")[0];
++            assert!(
++                (ok.1 + ok.3 / 2.0 - 400.0).abs() <= 1.0,
++                "{language}: OK is not centred: {ok:?}"
++            );
++        }
++
++        slint::select_bundled_translation("en").unwrap();
++        slint::quit_event_loop().unwrap();
++    })
++    .unwrap();
++    slint::run_event_loop().unwrap();
++}
++
+ fn main() {
+     i_slint_backend_testing::init_integration_test_with_system_time();
+ 
+@@ -603,6 +720,9 @@ fn main() {
+     messages_are_worded_by_the_ui_in_both_languages();
+     println!("test messages_are_worded_by_the_ui_in_both_languages ... ok");
+ 
++    buttons_fit_the_screen_in_both_languages_with_the_longest_names();
++    println!("test buttons_fit_the_screen_in_both_languages_with_the_longest_names ... ok");
++
+     println!();
+-    println!("test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
++    println!("test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+ }
+diff --git a/kiosk-gui/ui/amount-select.slint b/kiosk-gui/ui/amount-select.slint
+index 7da6500..6806531 100644
+--- a/kiosk-gui/ui/amount-select.slint
++++ b/kiosk-gui/ui/amount-select.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { Messages } from "messages.slint";
+ 
+ export component AmountSelectScreen inherits Rectangle {
+@@ -17,53 +18,28 @@ export component AmountSelectScreen inherits Rectangle {
+         Text {
+             text: @tr("How much to send to {}?", Messages.recipient(recipient-name));
+             color: Theme.fg;
+-            font-size: Theme.font-size-heading;
++            font-size: Theme.font-size-question;
+             wrap: word-wrap;
+         }
+ 
+-        for amount[i] in presets: Rectangle {
+-            height: Theme.target-size;
+-            background: Theme.button-bg;
+-            border-radius: 8px;
+-            accessible-role: button;
+-            accessible-label: amount;
+-
+-            TouchArea {
+-                clicked => { amount-selected(i); }
+-            }
+-
+-            Text {
+-                text: amount;
+-                color: Theme.button-fg;
+-                font-size: Theme.font-size-body;
+-                horizontal-alignment: center;
+-                vertical-alignment: center;
+-            }
++        for amount[i] in presets: KioskButton {
++            text: amount;
++            clicked => { amount-selected(i); }
+         }
+-    }
+ 
+-    Rectangle {
+-        x: Theme.spacing;
+-        y: parent.height - self.height - Theme.spacing;
+-        width: 140px;
+-        height: Theme.target-size;
+-        background: Theme.secondary-button-bg;
+-        border-color: Theme.secondary-button-border;
+-        border-width: 2px;
+-        border-radius: 8px;
+-        accessible-role: button;
+-        accessible-label: @tr("Back");
+-
+-        TouchArea {
+-            clicked => { back-requested(); }
++        Rectangle {
++            vertical-stretch: 1;
+         }
+ 
+-        Text {
+-            text: @tr("Back");
+-            color: Theme.secondary-button-fg;
+-            font-size: Theme.font-size-body;
+-            horizontal-alignment: center;
+-            vertical-alignment: center;
++        HorizontalLayout {
++            alignment: start;
++
++            KioskButton {
++                text: @tr("Back");
++                primary: false;
++                min-width: 140px;
++                clicked => { back-requested(); }
++            }
+         }
+     }
+ }
+diff --git a/kiosk-gui/ui/button.slint b/kiosk-gui/ui/button.slint
+new file mode 100644
+index 0000000..ed853c7
+--- /dev/null
++++ b/kiosk-gui/ui/button.slint
+@@ -0,0 +1,42 @@
++import { Theme } from "theme.slint";
++
++// The one button of the kiosk. The label wraps and the button grows with it,
++// so a long translation never spills out; the height never drops below the
++// touch target.
++export component KioskButton inherits Rectangle {
++    in property <string> text;
++    in property <bool> primary: true;
++    in property <length> font-size: Theme.font-size-body;
++
++    callback clicked();
++
++    min-height: Theme.target-size;
++    background: primary ? Theme.button-bg : Theme.secondary-button-bg;
++    border-color: Theme.secondary-button-border;
++    border-width: primary ? 0px : 2px;
++    border-radius: 8px;
++    accessible-role: button;
++    accessible-label: text;
++
++    TouchArea {
++        clicked => { root.clicked(); }
++    }
++
++    VerticalLayout {
++        padding-left: 12px;
++        padding-right: 12px;
++        padding-top: 8px;
++        padding-bottom: 8px;
++        alignment: center;
++
++        Text {
++            text: root.text;
++            color: primary ? Theme.button-fg : Theme.secondary-button-fg;
++            font-size: root.font-size;
++            // A name without a space must wrap rather than widen the button.
++            min-width: 0px;
++            horizontal-alignment: center;
++            wrap: word-wrap;
++        }
++    }
++}
+diff --git a/kiosk-gui/ui/confirm.slint b/kiosk-gui/ui/confirm.slint
+index 9d850ae..ea050ba 100644
+--- a/kiosk-gui/ui/confirm.slint
++++ b/kiosk-gui/ui/confirm.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { Messages } from "messages.slint";
+ 
+ export component ConfirmScreen inherits Rectangle {
+@@ -17,53 +18,22 @@ export component ConfirmScreen inherits Rectangle {
+         Text {
+             text: @tr("Send {} → {}?", amount-text, Messages.recipient(recipient-name));
+             color: Theme.fg;
+-            font-size: Theme.font-size-heading;
++            font-size: Theme.font-size-question;
+             wrap: word-wrap;
+         }
+ 
+         HorizontalLayout {
+             spacing: Theme.spacing;
+ 
+-            Rectangle {
+-                height: Theme.target-size;
+-                background: Theme.button-bg;
+-                border-radius: 8px;
+-                accessible-role: button;
+-                accessible-label: @tr("Send");
+-
+-                TouchArea {
+-                    clicked => { send-confirmed(); }
+-                }
+-
+-                Text {
+-                    text: @tr("Send");
+-                    color: Theme.button-fg;
+-                    font-size: Theme.font-size-body;
+-                    horizontal-alignment: center;
+-                    vertical-alignment: center;
+-                }
++            KioskButton {
++                text: @tr("Send");
++                clicked => { send-confirmed(); }
+             }
+ 
+-            Rectangle {
+-                height: Theme.target-size;
+-                background: Theme.secondary-button-bg;
+-                border-color: Theme.secondary-button-border;
+-                border-width: 2px;
+-                border-radius: 8px;
+-                accessible-role: button;
+-                accessible-label: @tr("Cancel");
+-
+-                TouchArea {
+-                    clicked => { send-cancelled(); }
+-                }
+-
+-                Text {
+-                    text: @tr("Cancel");
+-                    color: Theme.secondary-button-fg;
+-                    font-size: Theme.font-size-body;
+-                    horizontal-alignment: center;
+-                    vertical-alignment: center;
+-                }
++            KioskButton {
++                text: @tr("Cancel");
++                primary: false;
++                clicked => { send-cancelled(); }
+             }
+         }
+     }
+diff --git a/kiosk-gui/ui/family-wallet.slint b/kiosk-gui/ui/family-wallet.slint
+index 3fae11d..a57446f 100644
+--- a/kiosk-gui/ui/family-wallet.slint
++++ b/kiosk-gui/ui/family-wallet.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { BeneficiaryItem } from "my-wallet.slint";
+ import { Message, Messages } from "messages.slint";
+ 
+@@ -13,93 +14,68 @@ export component FamilyWalletScreen inherits Rectangle {
+ 
+     background: Theme.bg;
+ 
+-    VerticalLayout {
++    HorizontalLayout {
+         padding: Theme.spacing;
+         spacing: Theme.spacing;
+ 
+-        Text {
+-            text: @tr("Family wallet");
+-            color: Theme.fg;
+-            font-size: Theme.font-size-heading;
+-        }
++        VerticalLayout {
++            horizontal-stretch: 1;
++            min-width: 0px;
++            spacing: Theme.spacing;
+ 
+-        Text {
+-            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+-            color: Theme.fg;
+-            font-size: Theme.font-size-heading;
+-        }
++            Text {
++                text: @tr("Family wallet");
++                color: Theme.fg;
++                font-size: Theme.font-size-heading;
++            }
+ 
+-        for b in beneficiaries: Rectangle {
+-            height: Theme.target-size;
+-            background: Theme.button-bg;
+-            border-radius: 8px;
+-            accessible-role: button;
+-            accessible-label: b.name;
++            Text {
++                text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
++                color: Theme.fg;
++                font-size: Theme.font-size-heading;
++                wrap: word-wrap;
++            }
+ 
+-            TouchArea {
++            for b in beneficiaries: KioskButton {
++                text: b.name;
+                 clicked => { beneficiary-selected(b.id); }
+             }
+ 
+-            Text {
+-                text: b.name;
+-                color: Theme.button-fg;
+-                font-size: Theme.font-size-body;
+-                horizontal-alignment: center;
+-                vertical-alignment: center;
++            Rectangle {
++                vertical-stretch: 1;
+             }
+         }
+-    }
+-
+-    Rectangle {
+-        // Same fixed position as MyWalletScreen's "Семейный кошелёк"
+-        // button — spec: consistent navigation (WCAG 3.2.3/3.2.4).
+-        x: parent.width - self.width - Theme.spacing;
+-        y: Theme.spacing;
+-        width: 180px;
+-        height: Theme.target-size;
+-        background: Theme.secondary-button-bg;
+-        border-color: Theme.secondary-button-border;
+-        border-width: 2px;
+-        border-radius: 8px;
+-        accessible-role: button;
+-        accessible-label: @tr("Back to my wallet");
+ 
+-        TouchArea {
+-            clicked => { back-to-my-wallet-requested(); }
+-        }
++        // The right column holds the controls that are the same on every
++        // screen, so the beneficiary list never runs under them.
++        VerticalLayout {
++            width: 200px;
++            spacing: Theme.spacing;
+ 
+-        Text {
+-            text: @tr("Back to my wallet");
+-            color: Theme.secondary-button-fg;
+-            font-size: 20px;
+-            horizontal-alignment: center;
+-            vertical-alignment: center;
+-            wrap: word-wrap;
+-        }
+-    }
++            // In the same place as the "Family wallet" button of the other screen.
++            KioskButton {
++                text: @tr("Back to my wallet");
++                primary: false;
++                font-size: 24px;
++                clicked => { back-to-my-wallet-requested(); }
++            }
+ 
+-    Rectangle {
+-        x: parent.width - self.width - Theme.spacing;
+-        y: parent.height - self.height - Theme.spacing;
+-        width: Theme.target-size;
+-        height: Theme.target-size;
+-        background: Theme.secondary-button-bg;
+-        border-color: Theme.secondary-button-border;
+-        border-width: 2px;
+-        border-radius: 8px;
+-        accessible-role: button;
+-        accessible-label: @tr("Help");
++            Rectangle {
++                vertical-stretch: 1;
++            }
+ 
+-        TouchArea {
+-            clicked => { help-requested(); }
+-        }
++            HorizontalLayout {
++                alignment: end;
+ 
+-        Text {
+-            text: "?";
+-            color: Theme.secondary-button-fg;
+-            font-size: Theme.font-size-heading;
+-            horizontal-alignment: center;
+-            vertical-alignment: center;
++                KioskButton {
++                    text: "?";
++                    primary: false;
++                    font-size: Theme.font-size-heading;
++                    min-width: Theme.target-size;
++                    accessible-label: @tr("Help");
++                    clicked => { help-requested(); }
++                }
++            }
+         }
+     }
+ }
+diff --git a/kiosk-gui/ui/my-wallet.slint b/kiosk-gui/ui/my-wallet.slint
+index 13ff04d..1c4ff1c 100644
+--- a/kiosk-gui/ui/my-wallet.slint
++++ b/kiosk-gui/ui/my-wallet.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { Message, Messages } from "messages.slint";
+ 
+ export struct BeneficiaryItem {
+@@ -18,95 +19,68 @@ export component MyWalletScreen inherits Rectangle {
+ 
+     background: Theme.bg;
+ 
+-    VerticalLayout {
++    HorizontalLayout {
+         padding: Theme.spacing;
+         spacing: Theme.spacing;
+ 
+-        Text {
+-            text: @tr("My wallet");
+-            color: Theme.fg;
+-            font-size: Theme.font-size-heading;
+-        }
+-
+-        Text {
+-            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+-            color: Theme.fg;
+-            font-size: Theme.font-size-heading;
+-        }
++        VerticalLayout {
++            horizontal-stretch: 1;
++            min-width: 0px;
++            spacing: Theme.spacing;
+ 
+-        for b in beneficiaries: Rectangle {
+-            height: Theme.target-size;
+-            background: Theme.button-bg;
+-            border-radius: 8px;
+-            accessible-role: button;
+-            accessible-label: b.name;
+-
+-            TouchArea {
+-                clicked => { beneficiary-selected(b.id); }
++            Text {
++                text: @tr("My wallet");
++                color: Theme.fg;
++                font-size: Theme.font-size-heading;
+             }
+ 
+             Text {
+-                text: b.name;
+-                color: Theme.button-fg;
+-                font-size: Theme.font-size-body;
+-                horizontal-alignment: center;
+-                vertical-alignment: center;
++                text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
++                color: Theme.fg;
++                font-size: Theme.font-size-heading;
++                wrap: word-wrap;
+             }
+-        }
+-    }
+-
+-    Rectangle {
+-        // Family wallet button — top area, visually distinct from the
+-        // beneficiary list (spec: not the same visual weight as sending
+-        // money, since it navigates rather than moves funds).
+-        x: parent.width - self.width - Theme.spacing;
+-        y: Theme.spacing;
+-        width: 180px;
+-        height: Theme.target-size;
+-        background: Theme.secondary-button-bg;
+-        border-color: Theme.secondary-button-border;
+-        border-width: 2px;
+-        border-radius: 8px;
+-        accessible-role: button;
+-        accessible-label: @tr("Family wallet");
+ 
+-        TouchArea {
+-            clicked => { family-wallet-requested(); }
+-        }
++            for b in beneficiaries: KioskButton {
++                text: b.name;
++                clicked => { beneficiary-selected(b.id); }
++            }
+ 
+-        Text {
+-            text: @tr("Family wallet");
+-            color: Theme.secondary-button-fg;
+-            font-size: 20px;
+-            horizontal-alignment: center;
+-            vertical-alignment: center;
+-            wrap: word-wrap;
++            Rectangle {
++                vertical-stretch: 1;
++            }
+         }
+-    }
+ 
+-    Rectangle {
+-        // Help button — fixed bottom-right on every screen (spec: 3.2.6).
+-        x: parent.width - self.width - Theme.spacing;
+-        y: parent.height - self.height - Theme.spacing;
+-        width: Theme.target-size;
+-        height: Theme.target-size;
+-        background: Theme.secondary-button-bg;
+-        border-color: Theme.secondary-button-border;
+-        border-width: 2px;
+-        border-radius: 8px;
+-        accessible-role: button;
+-        accessible-label: @tr("Help");
++        // The right column holds the controls that are the same on every
++        // screen, so the beneficiary list never runs under them.
++        VerticalLayout {
++            width: 200px;
++            spacing: Theme.spacing;
++
++            // Distinct from the beneficiary list: it navigates, it moves no funds.
++            KioskButton {
++                text: @tr("Family wallet");
++                primary: false;
++                font-size: 24px;
++                clicked => { family-wallet-requested(); }
++            }
+ 
+-        TouchArea {
+-            clicked => { help-requested(); }
+-        }
++            Rectangle {
++                vertical-stretch: 1;
++            }
+ 
+-        Text {
+-            text: "?";
+-            color: Theme.secondary-button-fg;
+-            font-size: Theme.font-size-heading;
+-            horizontal-alignment: center;
+-            vertical-alignment: center;
++            HorizontalLayout {
++                alignment: end;
++
++                KioskButton {
++                    text: "?";
++                    primary: false;
++                    font-size: Theme.font-size-heading;
++                    min-width: Theme.target-size;
++                    accessible-label: @tr("Help");
++                    clicked => { help-requested(); }
++                }
++            }
+         }
+     }
+ }
+diff --git a/kiosk-gui/ui/result.slint b/kiosk-gui/ui/result.slint
+index c375226..24e1490 100644
+--- a/kiosk-gui/ui/result.slint
++++ b/kiosk-gui/ui/result.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { Message, Messages } from "messages.slint";
+ 
+ export component ResultScreen inherits Rectangle {
+@@ -31,24 +32,13 @@ export component ResultScreen inherits Rectangle {
+             wrap: word-wrap;
+         }
+ 
+-        Rectangle {
+-            height: Theme.target-size;
+-            width: 200px;
+-            background: Theme.button-bg;
+-            border-radius: 8px;
+-            accessible-role: button;
+-            accessible-label: @tr("OK");
++        HorizontalLayout {
++            alignment: center;
+ 
+-            TouchArea {
+-                clicked => { ok-pressed(); }
+-            }
+-
+-            Text {
++            KioskButton {
+                 text: @tr("OK");
+-                color: Theme.button-fg;
+-                font-size: Theme.font-size-body;
+-                horizontal-alignment: center;
+-                vertical-alignment: center;
++                min-width: 200px;
++                clicked => { ok-pressed(); }
+             }
+         }
+     }
+diff --git a/kiosk-gui/ui/setup.slint b/kiosk-gui/ui/setup.slint
+index 7c732aa..bea715f 100644
+--- a/kiosk-gui/ui/setup.slint
++++ b/kiosk-gui/ui/setup.slint
+@@ -1,4 +1,5 @@
+ import { Theme } from "theme.slint";
++import { KioskButton } from "button.slint";
+ import { Message, Messages } from "messages.slint";
+ 
+ export component SetupScreen inherits Rectangle {
+@@ -79,26 +80,10 @@ export component SetupScreen inherits Rectangle {
+                     font-weight: 700;
+                 }
+ 
+-                Rectangle {
+-                    height: Theme.target-size;
+-                    background: Theme.secondary-button-bg;
+-                    border-color: Theme.secondary-button-border;
+-                    border-width: 2px;
+-                    border-radius: 8px;
+-                    accessible-role: button;
+-                    accessible-label: @tr("Skip");
+-
+-                    TouchArea {
+-                        clicked => { skip-pairing-requested(); }
+-                    }
+-
+-                    Text {
+-                        text: @tr("Skip");
+-                        color: Theme.secondary-button-fg;
+-                        font-size: Theme.font-size-body;
+-                        horizontal-alignment: center;
+-                        vertical-alignment: center;
+-                    }
++                KioskButton {
++                    text: @tr("Skip");
++                    primary: false;
++                    clicked => { skip-pairing-requested(); }
+                 }
+             }
+         }
+diff --git a/kiosk-gui/ui/theme.slint b/kiosk-gui/ui/theme.slint
+index 654c5b0..f6ec7fb 100644
+--- a/kiosk-gui/ui/theme.slint
++++ b/kiosk-gui/ui/theme.slint
+@@ -22,6 +22,11 @@ export global Theme {
+     out property <length> font-size-heading: 40px;
+     out property <length> font-size-body: 28px;
+ 
++    // Questions that carry a recipient name of up to 32 characters: smaller
++    // than a heading, so that three lines of them still leave room for the
++    // buttons below.
++    out property <length> font-size-question: 32px;
++
+     // The fallback pairing code must be read and typed correctly, so it
+     // gets the largest type on its screen.
+     out property <length> font-size-code: 64px;
