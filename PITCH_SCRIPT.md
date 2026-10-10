@@ -1,16 +1,16 @@
-# Trellis Pitch Script
-## 0:00 - 0:30 | The Hook
-"Hi, I'm Mehmet, co-founder of Trellis. Traditional trust and estate planning is broken. It requires expensive lawyers, centralized banks, and forces you to give up custody of your wealth. We built Trellis to fix this. Trellis is a self-custodial inheritance and spending limit protocol built natively on Solana. No intermediaries. Just pure, mathematically enforced on-chain consensus."
+# Trellis Pitch Outline (Do not read word-for-word)
 
-## 0:30 - 2:30 | The Live Demo (Screen Share)
-[ ACTION: Connect Phantom Wallet & Click Deploy ]
-"Let me show you how it works. I'm connecting my Phantom wallet to deploy a custom Vault PDA. Because we handle account aliasing seamlessly in the background, this initialization takes seconds. Once deployed, I maintain absolute custody."
+## 0:00 - 0:20 | The Hook (Face in corner)
+- "Hi, I'm Mehmet, co-founder of Trellis."
+- Problem: Estate planning requires expensive lawyers and giving up custody to banks.
+- One-Liner: "Trellis is secure crypto inheritance without middlemen."
 
-[ ACTION: Navigate to Beneficiaries ]
-"First, I'll program my inheritance. I'm adding my family member's address as a beneficiary with a time-lock."
+## 0:20 - 1:50 | The Product (Screen Share Demo)
+- [Action: Connect Phantom & Deploy] "I connect Phantom and deploy my vault. I never give up custody."
+- [Action: Point to Beneficiaries] "I add my family here. The contract automatically time-locks it for 48 hours."
+- [Action: Point to Limits] "This is the best part: a 100 USDC daily limit. If a hacker drains my hot wallet, the contract blocks them. Anything over 100 requires a Guardian multi-sig."
 
-[ ACTION: Navigate to Limits ]
-"Next, to protect against compromised hot wallets, I'm setting a strict daily withdrawal limit of 100 USDC. If an attacker drains my primary key, the contract mathematically rejects anything over this limit. For high-value transactions, Trellis routes the request through a multi-sig Guardian network, requiring secondary approvals."
-
-## 2:30 - 3:00 | The Team & Close
-"Our protocol leverages Solana's speed and low state rent to make this accessible to anyone. My co-founder Alexander manages our Rust backend architecture, and I drive the frontend and regional integration here in Türkiye. We are Trellis, and we are securing generational wealth on-chain. Thank you."
+## 1:50 - 2:20 | The Team & Close (Face in corner)
+- "Built on Solana for low state rent."
+- "Alexander handles our Rust architecture, and I drive the frontend."
+- "We are Trellis. Thank you."

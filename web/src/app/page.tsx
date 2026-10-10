@@ -54,9 +54,7 @@ export default function Home() {
           </div>
 
           <h1 className="text-6xl md:text-8xl font-bold tracking-tight text-white mb-6 leading-tight">
-            Generational wealth.
-            <br />
-            Nothing else.
+            Secure crypto inheritance without middlemen.
           </h1>
 
           <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
