@@ -110,10 +110,8 @@ pub fn pool_already_open(pool: &Pubkey, owned: &[Pubkey]) -> bool {
 }
 
 /// Only one state-changing command (money, pairing, checking the pending
-/// record) may run at a time. The pending record is written before the
-/// network is touched (core's before-send hook), but a second command
-/// starting in the same instant would still race with the first one's
-/// reads; this guard serialises them, and a double tap cannot pay twice.
+/// record) may run at a time: a second one starting in the same instant
+/// would race with the first one's reads, and a double tap could pay twice.
 pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
     BusyGuard::acquire(&state.busy)
         .ok_or_else(|| ErrorDto::new("blocked", "Подождите: предыдущая операция ещё выполняется."))
@@ -163,11 +161,10 @@ pub fn record_failed_dto(reason: String) -> ErrorDto {
     .with_details(reason)
 }
 
-/// Runs one money operation with the "record before sending" rule: the
-/// pending record is written by the core's before-send hook, i.e. after
-/// signing and before the network is touched, so a crash or close during
-/// the confirm wait cannot lose it. Afterwards the record is cleared unless
-/// the outcome is still unknown (`Unconfirmed`).
+/// Runs one money operation with the "record before sending" rule: core's
+/// before-send hook writes the pending record after signing and before the
+/// network is touched, so a crash during the confirm wait cannot lose it.
+/// Afterwards the record is cleared unless the outcome is `Unconfirmed`.
 pub fn run_money<T>(
     state: &AppState,
     what: &str,

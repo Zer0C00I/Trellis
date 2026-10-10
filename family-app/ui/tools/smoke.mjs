@@ -103,7 +103,6 @@ try {
     await until("document.getElementById('app').innerText.length > 20", `${scenario} to render`);
   };
   const text = () => evaluate('document.body.innerText');
-  // Waits for the element and throws if it never shows up.
   const click = async (label) => {
     const expr = `(() => { const e = [...document.querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(label)}); if (!e) return false; e.click(); return true; })()`;
     await until(expr, `a button or link "${label}" to click`);
