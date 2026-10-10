@@ -88,7 +88,7 @@ const handlers = {
   load_vault: ({ vault }) => {
     const v = vaults.find((x) => x.address === vault);
     if (!v) throw err('rejected', 'Не получилось. Ничего не списано.');
-    return v;
+    return structuredClone(v); // like the real IPC: a snapshot, not a live object
   },
   load_history: () => history(),
   pending_status: () => pendingTx,

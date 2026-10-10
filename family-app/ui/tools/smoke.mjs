@@ -321,12 +321,16 @@ try {
   test('a slow older response never overwrites a newer one', async () => {
     await open('owner');
     assert.match(await text(), /250\.5 USDC/);
-    await evaluate("globalThis.__mockDelay = { load_vault: 800 }; __mockBump(); void __ctx.refresh({ background: true });");
-    await sleep(450); // the slow call has read 251.5 by now
-    await evaluate("__mockBump(); void __ctx.refresh();");
+    // Slow call: its load_vault answer is computed now-ish (251.5) but held back
+    // 1500 ms. The mock deletes the hook entry the moment it has computed it.
+    await evaluate("globalThis.__mockDelay = { load_vault: 1500 }; __mockBump(); void __ctx.refresh({ background: true });");
+    await until('!globalThis.__mockDelay.load_vault', 'the slow call to have read its (older) balance');
+    // Fast call: reads the newer 252.5 and lands long before the slow one.
+    await evaluate('__mockBump(); void __ctx.refresh();');
     await until("document.body.innerText.includes('252.5 USDC')", 'newer balance');
-    await sleep(1800); // the slow one lands
+    await sleep(2200); // the slow call (1500 ms hold + history) has landed by now
     assert.match(await text(), /252\.5 USDC/);
+    assert.doesNotMatch(await text(), /251\.5 USDC/);
   });
 
   test('a newer call skipped because of typing does not lose an older result', async () => {

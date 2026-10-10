@@ -45,6 +45,8 @@ const ctx = {
     noticeTimer = setTimeout(() => {
       store.notice = null;
       document.getElementById('notice')?.remove(); // no re-render: nobody's typing is interrupted
+      const live = document.getElementById('live');
+      if (live) live.textContent = ''; // no stale announcement
     }, NOTICE_MS);
     // Never re-render the screen for this: half-typed fields must survive.
     const fresh = noticeBanner();
