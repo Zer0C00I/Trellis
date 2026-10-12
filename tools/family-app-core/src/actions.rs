@@ -1,11 +1,6 @@
-//! Everyday bank-style actions, each a thin sign-and-send wrapper around one
-//! of `family_vault_client::builders`' instruction builders. Same commands as
-//! `admin-cli` minus owner rotation, but returning `Result` instead of
-//! printing and exiting.
-//!
-//! Amounts are always in the token's base units (`u64`). A UI reads
-//! `decimals` from `vault_view::VaultView` and converts what the user typed
-//! with `family_vault_client::parse_decimal_amount`.
+//! Everyday actions, each a thin sign-and-send wrapper around one `family_vault_client::builders`
+//! instruction builder. Amounts are in the token's base units (`u64`); a UI converts typed text with
+//! `family_vault_client::parse_decimal_amount` using `VaultView::decimals`.
 
 use crate::error::map_client_error;
 pub use crate::error::ActionError;
@@ -60,18 +55,14 @@ fn require_nonzero(amount_base_units: u64) -> Result<(), ActionError> {
     Ok(())
 }
 
-/// How long `send_instructions` polls for a verdict before giving up with
-/// `Unconfirmed`. This is only how long the call blocks; it says nothing
-/// about when a retry becomes safe (that is decided by block height, see
-/// [`confirm_signature`]).
+/// How long `send_instructions` polls before giving up with `Unconfirmed`. Only how long the call blocks:
+/// when a retry is safe is decided by block height, see [`confirm_signature`].
 const CONFIRM_DEADLINE: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// How many consecutive failed status lookups `send_instructions` rides out
-/// before giving up. The 4th failure in a row ends the wait.
+/// Consecutive failed status lookups `send_instructions` rides out; the 4th in a row ends the wait.
 const MAX_CONSECUTIVE_POLL_ERRORS: u32 = 3;
 
-/// What one look at a signature's status means.
 #[derive(Debug, PartialEq, Eq)]
 enum Poll {
     /// Not seen yet, or only `processed` (could still be dropped).
@@ -226,11 +217,8 @@ pub fn send_instructions(
     }
 }
 
-/// The node's block height at the `confirmed` commitment level, regardless
-/// of the client's own commitment. `confirmed` can only trail the leader's
-/// tip, never run ahead of it, so "confirmed height is past the last valid
-/// height" really means the blockhash can no longer be accepted; it also
-/// does not lag as far behind as `finalized` (the default client level).
+/// Block height at `confirmed` commitment. It cannot run ahead of the leader, so a height past the last valid
+/// height really means the blockhash is dead, and it lags less than `finalized`.
 fn current_block_height(rpc: &RpcClient) -> Result<u64, solana_client::client_error::ClientError> {
     rpc.get_block_height_with_commitment(CommitmentConfig::confirmed())
 }
@@ -447,11 +435,8 @@ pub fn add_beneficiary_urgent(
     send_instructions(rpc, approver_one, &[ix], &[approver_two], before_send)
 }
 
-/// `existing_approver` is required (must co-sign) when adding a
-/// second-or-later approver to a *personal* vault; a pool vault, and the
-/// very first approver ever added, need only the owner. Passing `None`
-/// when one is actually required surfaces as a normal `ActionError::
-/// Rejected` from the program, not a panic.
+/// `existing_approver` must co-sign when adding a second-or-later approver to a *personal* vault; a pool vault
+/// and the first approver need only the owner. Omitting it when required is a normal `Rejected`, not a panic.
 pub fn add_trusted_approver(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -505,20 +490,14 @@ pub fn approve_withdrawal(
     send_instructions(rpc, signer, &[ix], &[], before_send)
 }
 
-/// Requests an over-limit withdrawal of `amount_base_units` from a pool
-/// vault, to be later confirmed with `approve_withdrawal`. Zero is
-/// `Rejected` before any RPC.
+/// Requests an over-limit withdrawal from a pool vault, to be confirmed with `approve_withdrawal`.
+/// Zero is `Rejected` before any RPC.
 ///
-/// The caller picks `nonce`: take it from `VaultView::next_free_nonce` (or
-/// `vault_view::next_free_nonce`), and STORE it before calling. On
-/// `ActionError::Unconfirmed`, resolve with [`confirm_signature`] and, when
-/// a retry is safe, retry with the SAME nonce, never a fresh one. The
-/// request account is created with `init` at a PDA derived from the nonce,
-/// so a second attempt with the same nonce can succeed only once (a
-/// duplicate fails with "account already in use"). A new nonce would create
-/// a second, identical pending request, and two approvals could then each
-/// move the amount. If another device took the nonce first, the program
-/// rejects this request and no funds move.
+/// The caller picks `nonce` (`VaultView::next_free_nonce`) and STORES it before calling. On `Unconfirmed`,
+/// resolve with [`confirm_signature`] and retry with the SAME nonce: the request PDA is derived from it, so a
+/// duplicate fails with "account already in use", while a fresh nonce would create a second pending request
+/// and two approvals could move the amount twice. If another device took the nonce, the program rejects this
+/// request and no funds move.
 #[allow(clippy::too_many_arguments)]
 pub fn request_withdrawal(
     rpc: &RpcClient,

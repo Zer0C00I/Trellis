@@ -1,18 +1,11 @@
-//! Finds every vault a pubkey participates in (as a payee or as a trusted
-//! approver) by reading the `family-vault` program's list accounts directly
-//! — no separate index or backend.
+//! Finds every vault a pubkey participates in (payee or trusted approver) by reading the program's list
+//! accounts directly, with no index or backend.
 //!
-//! Why two requests and a client-side check, not one filtered request per
-//! slot: `getProgramAccounts` filters are ANDed, so "is my key in any of the
-//! 10 payee slots" cannot be one filtered call, and 15 filtered calls (one
-//! per slot) exceed the public Devnet node's limit of 10 `getProgramAccounts`
-//! per 10 seconds, which turns a launch into a 10+ second wait on HTTP 429
-//! retries. Asking for every list of one kind (filtered by exact account
-//! size and the account discriminator) takes 2 requests and moves the
-//! "is it me" test to the client.
-//! That is the right trade at MVP scale (each list is 851 or 201 bytes, so
-//! even a thousand vaults is about a megabyte); a large deployment should put
-//! an indexer or a provider-side filter in front of this.
+//! Two requests plus a client-side check, not one filtered request per slot: `getProgramAccounts` filters are
+//! ANDed, so "my key in any of 10 slots" cannot be one call, and 15 per-slot calls exceed the public Devnet
+//! limit of 10 per 10 seconds (10+ seconds of HTTP 429 retries). Fetching every list of one kind, filtered by
+//! exact size and discriminator, takes 2 requests. That is fine at MVP scale (lists are 851 or 201 bytes, so a
+//! thousand vaults is about a megabyte); a larger deployment needs an indexer.
 
 use std::collections::BTreeSet;
 
@@ -26,9 +19,7 @@ use solana_pubkey::Pubkey;
 
 use crate::error::{map_client_error, ActionError};
 
-/// The filters for one list kind: exactly `data_size` bytes AND starting
-/// with the account `discriminator` (filters are ANDed by the node), so a
-/// future account type of the same size is never returned.
+/// Filters for one list kind: exactly `data_size` bytes AND the account `discriminator` (filters are ANDed).
 fn list_filters(data_size: u64, discriminator: &[u8]) -> Vec<RpcFilterType> {
     vec![
         RpcFilterType::DataSize(data_size),
@@ -154,11 +145,8 @@ pub fn discover_owned_vaults(
     )
 }
 
-/// Which of the two `candidates` are vaults: those whose account exists and
-/// is owned by `program_id`. `owners[i]` is the owner of `candidates[i]`'s
-/// account, or `None` if it does not exist (taking owners rather than whole
-/// accounts keeps this free of the `solana_account` crate, which this crate
-/// does not depend on). Order of `candidates` is kept.
+/// Which of the two `candidates` are vaults: those whose account exists and is owned by `program_id`.
+/// `owners[i]` is the owner of `candidates[i]`, or `None` if missing. Order is kept.
 fn owned_vaults_from(
     candidates: [Pubkey; 2],
     owners: Vec<Option<Pubkey>>,

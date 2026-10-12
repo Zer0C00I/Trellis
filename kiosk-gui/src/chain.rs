@@ -95,10 +95,8 @@ pub fn parse_amount_to_base_units(whole_units: u64, decimals: u32) -> Result<u64
         .map_err(ChainError::ProgramRejected)
 }
 
-/// Reads decimals live from the Mint account rather than assuming a fixed
-/// value — different SPL tokens (real USDC, wrapped SOL, a custom demo
-/// token) declare different decimals, and hardcoding one would silently
-/// send the wrong amount for any mint that doesn't match.
+/// Reads decimals live from the Mint: tokens differ (USDC, wrapped SOL, a demo token) and a hardcoded value
+/// would send the wrong amount.
 fn fetch_mint_decimals(
     rpc: &solana_client::rpc_client::RpcClient,
     mint: &solana_pubkey::Pubkey,
@@ -265,16 +263,9 @@ fn map_client_error(err: solana_client::client_error::ClientError) -> ChainError
     }
 }
 
-/// Pure decode step, separated from `fetch_vault_snapshot` so it's testable
-/// without a live RPC endpoint. `whole_unit_balance` is the vault's token
-/// account balance already converted to whole units by the caller (see
-/// `fetch_vault_snapshot`, which reads it via a separate RPC call).
-/// `now` (unix seconds) filters out any beneficiary whose 48h cooldown
-/// (`active_after`) hasn't elapsed yet — see `hides_a_beneficiary_whose_
-/// cooldown_has_not_elapsed_yet` for why: showing a payee grandma can't
-/// actually send to yet would need a "cooldown" explanation, which breaks
-/// this project's plain-language rule. It reappears on its own once the
-/// cooldown passes and the next periodic refresh re-decodes.
+/// Pure decode step, testable without RPC. `whole_unit_balance` is already in whole units. `now` (unix seconds)
+/// hides beneficiaries whose 48h cooldown (`active_after`) has not elapsed: a payee that cannot be paid yet
+/// would need a "cooldown" explanation. It reappears on the next refresh after the cooldown.
 fn decode_snapshot(
     vault_bytes: &[u8],
     beneficiary_list_bytes: &[u8],
@@ -293,18 +284,13 @@ fn decode_snapshot(
             if b.active_after > now {
                 return None;
             }
-            // Keep the real on-chain index (`i + 1`) as the id even when
-            // earlier entries were filtered out — `fetch_beneficiary_
-            // addresses` (lib.rs) resolves a tapped id back to an address
-            // by this same index, so it must never be renumbered.
+            // Keep the real on-chain index (`i + 1`) as the id even when earlier entries are filtered out:
+            // `fetch_beneficiary_addresses` resolves taps by it, so it must never be renumbered.
             Some(((i + 1) as u8, decode_beneficiary_name(&b.name, b.name_len)))
         })
         .collect();
 
-    // `vault_bytes` isn't read for balance (the token balance comes from a
-    // separate token-account RPC call in `fetch_vault_snapshot`), but it's
-    // still deserialized here so a corrupt/wrong-shaped Vault account fails
-    // loudly instead of silently producing a snapshot from a bogus account.
+    // The Vault bytes are not read for the balance, but are still deserialized so a wrong-shaped account fails loudly.
     use family_vault::state::Vault;
     Vault::try_deserialize(&mut &vault_bytes[..])
         .map_err(|e| ChainError::ProgramRejected(e.to_string()))?;
@@ -380,9 +366,7 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         assert_eq!(parse_amount_to_base_units(1, 6).unwrap(), 1_000_000);
         assert_eq!(parse_amount_to_base_units(10, 6).unwrap(), 10_000_000);
         assert_eq!(parse_amount_to_base_units(0, 6).unwrap(), 0);
-        // A different mint's decimals must actually change the result —
-        // this is the whole point of taking decimals as a parameter
-        // instead of a hardcoded constant.
+        // A different mint's decimals must change the result.
         assert_eq!(parse_amount_to_base_units(1, 9).unwrap(), 1_000_000_000);
         assert_eq!(parse_amount_to_base_units(5, 0).unwrap(), 5);
     }
@@ -450,14 +434,8 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         assert_eq!(snapshot.beneficiaries, vec![(1u8, "Внук Саша".to_string())]);
     }
 
-    /// A beneficiary added within the last 48h isn't payable yet (the
-    /// program's cooldown, `add_beneficiary.rs`'s `active_after`), so it
-    /// must not appear on the send screen at all — showing a payee grandma
-    /// then can't send to, right after a new family member pairs with the
-    /// kiosk, would need a "cooldown" explanation that breaks the
-    /// plain-language, no-jargon rule this project follows everywhere else.
-    /// It reappears automatically once `active_after` passes (the existing
-    /// 30s refresh re-fetches and re-decodes).
+    /// A beneficiary added within the last 48h is not payable yet (`active_after`), so it must not appear on the
+    /// send screen. It reappears after the next 30s refresh once `active_after` passes.
     #[test]
     fn hides_a_beneficiary_whose_cooldown_has_not_elapsed_yet() {
         use anchor_lang::AccountSerialize;
@@ -510,9 +488,7 @@ pool_beneficiary_list = \"11111111111111111111111111111111\"";
         list.try_serialize(&mut list_bytes).unwrap();
 
         let snapshot = decode_snapshot(&vault_bytes, &list_bytes, 0, 1_000).unwrap();
-        // Only the elapsed-cooldown payee shows, and it keeps its real
-        // on-chain index (1) rather than being renumbered to close the gap
-        // — `fetch_beneficiary_addresses` resolves taps by that same index.
+        // Only the elapsed-cooldown payee shows, and it keeps its on-chain index (1), not a renumbered one.
         assert_eq!(
             snapshot.beneficiaries,
             vec![(1u8, "Дочка Маша".to_string())]

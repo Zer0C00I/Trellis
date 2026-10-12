@@ -1,13 +1,9 @@
-//! Read-only transaction history for a vault: what happened, in plain
-//! terms, without exposing raw instruction bytes to a caller. Uses
-//! `getSignaturesForAddress` then `getTransaction` per signature, since
-//! history lives in the ledger, not in any account's current state.
+//! Read-only transaction history for a vault, in plain terms, without exposing raw instruction bytes. Uses
+//! `getSignaturesForAddress`, then `getTransaction` per signature.
 //!
-//! A confirmed transaction never changes, so [`fetch_history_cached`] keeps
-//! the decoded entries of each signature in a caller-owned, bounded
-//! [`HistoryCache`] and only calls `getTransaction` for signatures it has
-//! not seen; `getSignaturesForAddress` still runs every time. Transactions
-//! that could not be fetched are never cached.
+//! A confirmed transaction never changes, so [`fetch_history_cached`] keeps decoded entries per signature in a
+//! caller-owned, bounded [`HistoryCache`] and only fetches unseen signatures. Transactions that could not be
+//! fetched are never cached.
 
 use crate::error::{map_client_error, ActionError};
 use anchor_lang::{AnchorDeserialize, InstructionData};
@@ -159,7 +155,6 @@ pub struct HistoryCache {
 }
 
 impl HistoryCache {
-    /// A cache holding at most `capacity` transactions (0 caches nothing).
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -195,11 +190,9 @@ impl HistoryCache {
     }
 }
 
-/// Fetches up to `limit` recent signatures touching `vault` and returns the
-/// recognized instructions of `program_id` as plain `HistoryEntry` values
-/// (`Unknown` and foreign-program instructions are skipped). A transaction
-/// that errored on-chain never changed vault state and is skipped entirely.
-/// Every call refetches every transaction; see [`fetch_history_cached`].
+/// Fetches up to `limit` recent signatures touching `vault` and returns the recognized instructions of
+/// `program_id` as `HistoryEntry` values. Unknown and foreign instructions and transactions that errored on-chain
+/// are skipped. Refetches every transaction; see [`fetch_history_cached`].
 pub fn fetch_history(
     rpc: &RpcClient,
     program_id: &Pubkey,

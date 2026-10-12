@@ -1,9 +1,6 @@
-//! BLE pairing from the family member's side (the GATT central). The kiosk,
-//! in first-run setup, advertises one pairing service with one writable
-//! characteristic (see `kiosk-gui/src/ble.rs`); this module scans for it,
-//! connects, and writes the shared frame (`family_vault_client::pairing`)
-//! WITH response, so a wrong or expired code comes back as an error rather
-//! than silently vanishing.
+//! BLE pairing from the family member's side (GATT central). The kiosk advertises one pairing service with one
+//! writable characteristic (`kiosk-gui/src/ble.rs`); this module scans, connects and writes the shared frame
+//! (`family_vault_client::pairing`) WITH response, so a wrong or expired code comes back as an error.
 
 use std::fmt;
 use std::future::Future;
@@ -21,7 +18,6 @@ use uuid::Uuid;
 const SERVICE_UUID: Uuid = Uuid::from_u128(SERVICE_UUID_U128);
 const PAIRING_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(PAIRING_CHARACTERISTIC_UUID_U128);
 
-/// How long to look for the kiosk before giving up.
 const SCAN_TIMEOUT: Duration = Duration::from_secs(15);
 const SCAN_POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// Bound for every other single BLE step (stack start-up, connect, service
@@ -30,19 +26,14 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PairingError {
-    /// The scanned QR text is not a kiosk pairing code. No Bluetooth
-    /// activity happened.
+    /// The scanned QR text is not a kiosk pairing code; no Bluetooth activity happened.
     BadQrText,
-    /// The fallback code is not exactly six digits.
     BadPin,
-    /// The name cannot be encoded (empty, too long, control characters).
     BadName(String),
-    /// No Bluetooth adapter on this machine.
     NoAdapter,
     /// No peripheral advertising the pairing service appeared within the
     /// scan timeout.
     KioskNotFound,
-    /// Connecting to the kiosk, or discovering its services, failed.
     ConnectFailed(String),
     /// The kiosk refused the write (wrong or expired code, malformed
     /// frame) or the write did not complete.
@@ -83,7 +74,6 @@ fn ble(e: impl fmt::Display) -> PairingError {
     PairingError::Ble(e.to_string())
 }
 
-/// Runs `fut` for at most `STEP_TIMEOUT`; a timeout becomes `on_timeout`.
 async fn step<T, E: fmt::Display>(
     fut: impl Future<Output = Result<T, E>>,
     on_error: impl FnOnce(String) -> PairingError,
@@ -95,22 +85,13 @@ async fn step<T, E: fmt::Display>(
     }
 }
 
-/// Pairs this app's identity with a kiosk in first-run setup. Blocks the
-/// calling thread for up to roughly a minute; safe to call from any thread,
-/// including one that is inside an async runtime (the work runs on its own
-/// short-lived thread and runtime). A UI must call it from a worker thread
-/// (for example Tauri's `spawn_blocking`), never from its event loop.
+/// Pairs this app's identity with a kiosk in first-run setup. Blocks for up to about a minute: call it from a
+/// worker thread (e.g. Tauri's `spawn_blocking`), never from an event loop. A bad `qr_text` is reported before
+/// any Bluetooth activity.
 ///
-/// Security note: the kiosk is recognised by its advertised service UUID
-/// only, and the frame (one-time secret, public key, name) is written in the
-/// clear to the first device that answers. Anyone in radio range during
-/// pairing who advertises that UUID could receive it. That is acceptable
-/// because pairing happens physically next to the kiosk, the secret is
-/// single-use, and the kiosk verifies it and rotates it after failed
-/// attempts.
-///
-/// `qr_text` is the text scanned from the kiosk's QR code. A bad code is
-/// reported before any Bluetooth activity.
+/// Security: the kiosk is recognised by its advertised service UUID only, and the frame (one-time secret, public
+/// key, name) is written in the clear to the first device that answers. That is acceptable because pairing happens
+/// next to the kiosk, the secret is single-use, and the kiosk rotates it after failed attempts.
 pub fn pair_with_kiosk(qr_text: &str, name: &str, my_pubkey: Pubkey) -> Result<(), PairingError> {
     let auth = decode_qr_payload(qr_text).ok_or(PairingError::BadQrText)?;
     pair_with_auth(auth, name, my_pubkey)
@@ -131,7 +112,6 @@ fn pin_auth(pin: &str) -> Result<AuthField, PairingError> {
     auth_from_pin(pin.trim()).map_err(|_| PairingError::BadPin)
 }
 
-/// The frame the kiosk expects, for any kind of credential.
 fn build_frame(auth: AuthField, name: &str, my_pubkey: Pubkey) -> Result<Vec<u8>, PairingError> {
     encode_frame(&PairingRequest {
         auth,
@@ -183,7 +163,6 @@ async fn run(frame: &[u8]) -> Result<(), PairingError> {
     )
     .await?;
     let found = find_kiosks(&adapter).await;
-    // Best effort: a failure to stop scanning must not mask the outcome.
     let _ = tokio::time::timeout(STEP_TIMEOUT, adapter.stop_scan()).await;
 
     // BlueZ also reports devices it has cached, which may be out of range, so
@@ -213,7 +192,6 @@ async fn find_kiosks(
     loop {
         let mut found = Vec::new();
         for peripheral in step(adapter.peripherals(), PairingError::Ble).await? {
-            // Never let the per-device lookups run past the scan deadline.
             let budget = deadline
                 .saturating_duration_since(tokio::time::Instant::now())
                 .min(STEP_TIMEOUT);

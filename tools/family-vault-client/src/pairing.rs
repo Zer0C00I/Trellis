@@ -1,6 +1,5 @@
-//! Wire format for first-run family-member pairing over BLE, shared by the
-//! kiosk (BLE peripheral) and family-app (BLE central) so both sides use
-//! the same encoder/decoder.
+//! Wire format for first-run family-member pairing over BLE, shared by the kiosk (peripheral) and family app
+//! (central).
 //!
 //! One writable characteristic carries a single frame:
 //!
@@ -11,13 +10,9 @@
 //! [ N bytes: UTF-8 name ]
 //! ```
 //!
-//! The auth field is either the 16-byte secret carried by the QR code the
-//! kiosk shows ([`encode_qr_payload`]) or the kiosk's 6-digit fallback code
-//! zero-padded to 16 bytes ([`auth_from_pin`]); the kiosk accepts either.
-//!
-//! A central may deliver the frame in one write or several (an ATT payload
-//! can be as small as 20 bytes), so the receiving side reassembles with
-//! [`FrameAssembler`].
+//! The auth field is the 16-byte QR secret ([`encode_qr_payload`]) or the 6-digit fallback code zero-padded to 16
+//! bytes ([`auth_from_pin`]). A central may split the frame over several writes (an ATT payload can be 20 bytes),
+//! so the receiver reassembles with [`FrameAssembler`].
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -69,7 +64,6 @@ impl fmt::Debug for PairingRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameError {
-    /// The fallback code is not exactly six ASCII digits.
     BadPin,
     NameEmpty,
     /// Blank after trimming, or contains a control character (newline,
@@ -77,11 +71,9 @@ pub enum FrameError {
     NameInvalid,
     NameTooLong,
     NameNotUtf8,
-    /// More bytes arrived than the declared name length allows.
     TooLong,
 }
 
-/// The fallback code as an auth field: the six ASCII digits, zero-padded.
 pub fn auth_from_pin(pin: &str) -> Result<AuthField, FrameError> {
     if pin.len() != PIN_LEN || !pin.bytes().all(|b| b.is_ascii_digit()) {
         return Err(FrameError::BadPin);
@@ -135,7 +127,6 @@ pub fn encode_frame(request: &PairingRequest) -> Result<Vec<u8>, FrameError> {
     Ok(frame)
 }
 
-/// Reassembles a frame from however many writes the central used.
 #[derive(Debug, Default)]
 pub struct FrameAssembler {
     buf: Vec<u8>,

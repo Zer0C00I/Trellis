@@ -1,11 +1,7 @@
-//! BLE peripheral side of first-run family-member pairing (Linux/BlueZ only,
-//! via `bluer`). While `wait_for_pairing` runs, the kiosk advertises one
-//! GATT service with one writable characteristic; a family member's app
-//! writes a frame (see `family_vault_client::pairing`) and the kiosk accepts
-//! it only if it carries the QR secret or fallback code currently shown on
-//! screen. All the decision-making lives in
-//! `crate::pairing::PairingSession`; this module only adapts it to BlueZ and
-//! maps outcomes to ATT errors.
+//! BLE peripheral side of first-run pairing (Linux/BlueZ, via `bluer`). While `wait_for_pairing` runs, the kiosk
+//! advertises one GATT service with one writable characteristic; a family app writes a frame and the kiosk accepts
+//! it only with the QR secret or fallback code currently on screen. Decisions live in `crate::pairing::PairingSession`;
+//! this module adapts it to BlueZ and maps outcomes to ATT errors.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,10 +23,8 @@ use crate::pairing::{generate_credentials, PairingCredentials, PairingSession, W
 const SERVICE_UUID: Uuid = Uuid::from_u128(SERVICE_UUID_U128);
 const PAIRING_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(PAIRING_CHARACTERISTIC_UUID_U128);
 
-/// Called (from the BLE runtime thread) with the new credentials whenever
-/// the kiosk rotates them after too many wrong attempts, so the UI can
-/// redraw the QR and code. The `Duration` is the cooldown during which the
-/// new credentials are not yet accepted.
+/// Called from the BLE runtime thread with new credentials after too many wrong attempts, so the UI can redraw.
+/// The `Duration` is the cooldown during which they are not yet accepted.
 pub type CredentialsRotated = Arc<dyn Fn(&PairingCredentials, Duration) + Send + Sync>;
 
 /// Bluetooth is not usable (no adapter, `bluetoothd` not running, ...).
@@ -50,10 +44,8 @@ fn unavailable(e: bluer::Error) -> BleError {
     BleError(e.to_string())
 }
 
-/// Blocks the calling thread while advertising, until either a request
-/// carrying valid credentials arrives (`Ok(Some(request))`) or `cancel` is
-/// set (`Ok(None)`). The advertisement and GATT application are removed
-/// before this returns.
+/// Blocks while advertising until a request with valid credentials arrives (`Ok(Some(request))`) or `cancel` is
+/// set (`Ok(None)`). The advertisement and GATT application are removed before returning.
 pub fn wait_for_pairing(
     credentials: PairingCredentials,
     on_rotated: CredentialsRotated,
@@ -141,9 +133,8 @@ async fn run(
     Ok(outcome)
 }
 
-/// Maps one BLE write to an ATT response. Wrong credentials and malformed
-/// frames get a real ATT error so the central can tell the user what went
-/// wrong. Never logs the secret or the code.
+/// Maps one BLE write to an ATT response. Wrong credentials and malformed frames get a real ATT error. Never logs
+/// the secret or the code.
 fn handle_write(
     session: &Mutex<PairingSession>,
     accepted: &mpsc::Sender<PairingRequest>,
