@@ -9,6 +9,7 @@ use slint_ui::*;
 mod ble;
 mod chain;
 mod family_member;
+mod language;
 mod pairing;
 mod setup;
 
@@ -66,8 +67,11 @@ fn apply_snapshot(app: &AppWindow, is_pool: bool, snapshot: VaultSnapshot) {
 }
 
 pub fn run() -> Result<(), slint::PlatformError> {
-    let app = AppWindow::new()?;
     let config_path = config_path();
+    let language =
+        language::startup_language(&config_path, std::env::var("LANG").ok().as_deref());
+    eprintln!("[kiosk-gui] language: {}", language.code());
+    let app = AppWindow::new()?;
 
     let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
 
@@ -88,6 +92,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
             config_path.clone(),
             cfg_slot,
             skip_pairing.clone(),
+            language,
         );
     } else {
         match chain::load_config(&config_path) {
@@ -398,6 +403,7 @@ fn run_setup_flow(
     config_path: std::path::PathBuf,
     cfg_slot: Arc<Mutex<Option<Arc<ChainConfig>>>>,
     skip_pairing: Arc<std::sync::atomic::AtomicBool>,
+    language: language::Language,
 ) {
     let app_weak_for_screen = app_weak.clone();
     let _ = slint::invoke_from_event_loop(move || {
@@ -519,6 +525,7 @@ fn run_setup_flow(
             mint: provisioning.mint.to_string(),
             personal_vault: vault.to_string(),
             personal_beneficiary_list: beneficiary_list.to_string(),
+            language: language.code().to_string(),
         };
         if let Err(e) = setup::write_kiosk_config(&config_path, &values) {
             eprintln!("[kiosk-gui] setup: failed to write kiosk.toml: {e}");

@@ -90,6 +90,9 @@ pub struct KioskConfigValues {
     pub mint: String,
     pub personal_vault: String,
     pub personal_beneficiary_list: String,
+    /// `ru` or `en`: written so the language can be changed later by editing
+    /// one line.
+    pub language: String,
 }
 
 pub fn write_kiosk_config(
@@ -104,7 +107,8 @@ pub fn write_kiosk_config(
          personal_vault = \"{}\"\n\
          personal_beneficiary_list = \"{}\"\n\
          pool_vault = \"{}\"\n\
-         pool_beneficiary_list = \"{}\"\n",
+         pool_beneficiary_list = \"{}\"\n\
+         language = \"{}\"\n",
         values.rpc_url,
         values.keypair_path,
         values.program_id,
@@ -118,6 +122,7 @@ pub fn write_kiosk_config(
         // until then.
         values.personal_vault,
         values.personal_beneficiary_list,
+        values.language,
     );
     std::fs::write(path, text).map_err(ProvisioningError::Io)
 }
@@ -383,8 +388,14 @@ mint = "not-a-pubkey"
             mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB".to_string(),
             personal_vault: "KziPLWvcZnYnt2ZhR7ACGHocBvgx2qX8jMExuxpFTQZ".to_string(),
             personal_beneficiary_list: "AbPLQhfRK16zi9vqUH1KutFDN8cU1bne4RXgRtKrEd3P".to_string(),
+            language: "en".to_string(),
         };
         write_kiosk_config(&path, &values).unwrap();
+        assert_eq!(
+            crate::language::language_setting(&path).as_deref(),
+            Some("en"),
+            "the chosen language must be written to kiosk.toml"
+        );
 
         let loaded = crate::chain::load_config(&path).unwrap();
         assert_eq!(loaded.rpc_url, values.rpc_url);
