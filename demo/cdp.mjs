@@ -50,10 +50,12 @@ export async function launch({ width, height, scale = 1 }) {
   let id = 0;
   const pending = new Map();
   const loaders = [];
+  const listeners = new Map();
   ws.onmessage = ({ data }) => {
     const m = JSON.parse(data);
     if (m.id && pending.has(m.id)) pending.get(m.id)(m);
     if (m.method === 'Page.loadEventFired') loaders.splice(0).forEach((r) => r());
+    if (m.method) listeners.get(m.method)?.(m.params);
   };
   const send = (method, params = {}) => new Promise((r) => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await send('Page.enable');
@@ -90,10 +92,11 @@ export async function launch({ width, height, scale = 1 }) {
     const r = await send('Page.captureScreenshot', { format: 'png' });
     await writeFile(path, Buffer.from(r.result.data, 'base64'));
   };
+  const on = (method, fn) => listeners.set(method, fn);
   const close = async () => {
     ws.close();
     chrome.kill();
     await rm(profile, { recursive: true, force: true }).catch(() => {});
   };
-  return { evaluate, until, navigate, click, fill, select, screenshot, sleep, close };
+  return { evaluate, until, navigate, click, fill, select, screenshot, sleep, send, on, close };
 }

@@ -14,7 +14,17 @@ test('scene ids are unique and every scene has a caption and a positive length',
 });
 
 test('every kiosk screen exists in the screens example', () => {
-  for (const s of scenes.filter((x) => x.kiosk)) assert.ok(KIOSK_SCREENS.includes(s.kiosk.screen), `${s.id}: ${s.kiosk.screen}`);
+  for (const s of scenes) {
+    assert.ok(s.kiosk.length > 0 && s.kiosk[0].at === 0 && s.kiosk[0].screen, `${s.id}: starts with a screen at 0`);
+    let last = -1;
+    for (const b of s.kiosk) {
+      assert.ok(b.at > last || b.at === 0, `${s.id}: beats are in time order`);
+      assert.ok(b.at < s.seconds, `${s.id}: beat inside the scene`);
+      if (b.screen) assert.ok(KIOSK_SCREENS.includes(b.screen), `${s.id}: ${b.screen}`);
+      if (b.tap) assert.ok(b.tap.x >= 0 && b.tap.x <= 1 && b.tap.y >= 0 && b.tap.y <= 1, `${s.id}: tap inside the screen`);
+      last = b.at;
+    }
+  }
 });
 
 test('every catalog key an app step uses exists in the English catalog', () => {
