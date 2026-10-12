@@ -4,6 +4,7 @@ import { normalizeError } from '../errors.js';
 import { classifyPairingInput } from '../input.js';
 import { formatTime } from '../format.js';
 import { parseRoute, ROUTES } from '../router.js';
+import { setLocale } from '../i18n.js';
 
 test('an ErrorDto from Rust passes through unchanged', () => {
   const dto = { kind: 'rejected', message: 'Не получилось.', details: 'x' };
@@ -35,7 +36,8 @@ test('pairing input: six digits is a code, fvpair1 text is a QR, the rest is not
 const NOW = Date.UTC(2026, 9, 9, 15, 0, 0); // 9 Oct 2026, 15:00 UTC
 const at = (y, mo, d, h, mi) => Date.UTC(y, mo - 1, d, h, mi) / 1000;
 
-test('time: today, earlier this year, other year, unknown', () => {
+test('time in Russian: today, earlier this year, other year, unknown', () => {
+  setLocale('ru', { persist: false });
   assert.equal(formatTime(at(2026, 10, 9, 14, 32), NOW, 'UTC'), 'сегодня, 14:32');
   assert.equal(formatTime(at(2026, 10, 5, 9, 5), NOW, 'UTC'), '5 окт., 09:05');
   assert.equal(formatTime(at(2025, 12, 31, 23, 59), NOW, 'UTC'), '31 дек. 2025, 23:59');
@@ -43,8 +45,16 @@ test('time: today, earlier this year, other year, unknown', () => {
   assert.equal(formatTime(undefined, NOW, 'UTC'), '');
 });
 
+test('time in English: today, earlier this year, other year', () => {
+  setLocale('en', { persist: false });
+  assert.equal(formatTime(at(2026, 10, 9, 14, 32), NOW, 'UTC'), 'today, 14:32');
+  assert.equal(formatTime(at(2026, 10, 5, 9, 5), NOW, 'UTC'), 'Oct 5, 09:05');
+  assert.equal(formatTime(at(2025, 12, 31, 23, 59), NOW, 'UTC'), 'Dec 31, 2025, 23:59');
+});
+
 test('time: midnight is 00:00, not 24:00', () => {
-  assert.equal(formatTime(at(2026, 10, 9, 0, 0), NOW, 'UTC'), 'сегодня, 00:00');
+  setLocale('en', { persist: false });
+  assert.equal(formatTime(at(2026, 10, 9, 0, 0), NOW, 'UTC'), 'today, 00:00');
 });
 
 test('routes: known names pass, anything else is home', () => {

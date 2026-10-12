@@ -1,5 +1,5 @@
 // Dates only. Money is formatted by Rust; JavaScript never does money math.
-const MONTHS = ['янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
+import { currentLocale, t } from './i18n.js';
 
 function parts(ms, timeZone) {
   const f = new Intl.DateTimeFormat('en-GB', {
@@ -16,19 +16,22 @@ function parts(ms, timeZone) {
   return out;
 }
 
-// "сегодня, 14:32", "5 окт., 09:05", "5 окт. 2025, 09:05"; '' if unknown.
-export function formatTime(unixSeconds, nowMs = Date.now(), timeZone = undefined) {
+// "today, 14:32", "Oct 5, 09:05", "Dec 31, 2025, 23:59" (the month and the
+// order follow the current language); '' if unknown.
+export function formatTime(unixSeconds, nowMs = Date.now(), timeZone = undefined, locale = currentLocale()) {
   if (typeof unixSeconds !== 'number' || !Number.isFinite(unixSeconds) || Math.abs(unixSeconds) >= 1e11) {
     return '';
   }
   if (typeof nowMs !== 'number' || !Number.isFinite(nowMs)) nowMs = Date.now();
   try {
-    const t = parts(unixSeconds * 1000, timeZone);
+    const t0 = parts(unixSeconds * 1000, timeZone);
     const n = parts(nowMs, timeZone);
-    const clock = `${t.hour}:${t.minute}`;
-    if (t.year === n.year && t.month === n.month && t.day === n.day) return `сегодня, ${clock}`;
-    const date = `${Number(t.day)} ${MONTHS[Number(t.month) - 1]}`;
-    return t.year === n.year ? `${date}, ${clock}` : `${date} ${t.year}, ${clock}`;
+    const clock = `${t0.hour}:${t0.minute}`;
+    if (t0.year === n.year && t0.month === n.month && t0.day === n.day) return t('time.today', { time: clock });
+    const date = new Intl.DateTimeFormat(locale, { timeZone, day: 'numeric', month: 'short' }).format(unixSeconds * 1000);
+    return t0.year === n.year
+      ? t('time.this_year', { date, time: clock })
+      : t('time.other_year', { date, year: t0.year, time: clock });
   } catch {
     return '';
   }
