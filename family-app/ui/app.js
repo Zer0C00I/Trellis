@@ -173,7 +173,7 @@ function header() {
           store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, t(v.mine ? 'vault.mine' : 'vault.other', { address: v.address_short }))),
         )
       : null;
-  return h('header', { class: 'top' }, h('strong', {}, 'Trellis'), isMock ? h('span', { class: 'tag' }, t('header.demo')) : null, picker);
+  return h('header', { class: 'top' }, h('span', { class: 'logo', role: 'img', 'aria-label': 'Trellis' }), isMock ? h('span', { class: 'tag' }, t('header.demo')) : null, picker);
 }
 
 function pendingBanner() {
