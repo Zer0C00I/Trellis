@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if language == "ru" {
         ["Внук Саша", "Дочка Маша", "Сосед Пётр"]
     } else {
-        ["Grandson Sasha", "Daughter Masha", "Neighbour Peter"]
+        ["Granddaughter Anna", "Neighbour Peter", "Grandson Sasha"]
     };
     let shown = custom_name.as_deref().unwrap_or(names[0]);
     let amount = custom_amount.as_deref().unwrap_or("20 USDC");

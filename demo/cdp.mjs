@@ -80,7 +80,7 @@ export async function launch({ width, height, scale = 1 }) {
     send('Page.navigate', { url });
   });
   const click = (label) => until(
-    `(() => { const e = [...document.querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(label)}); if (!e) return false; e.click(); return true; })()`,
+    `(() => { const e = [...document.querySelectorAll('button,a')].find(e => e.textContent.trim().replace(/\\d+$/, '').trim() === ${JSON.stringify(label)}); if (!e) return false; e.click(); return true; })()`,
     `a button or link "${label}"`);
   const fill = (selector, value) => evaluate(
     `(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.focus(); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', {bubbles:true})); })()`);
