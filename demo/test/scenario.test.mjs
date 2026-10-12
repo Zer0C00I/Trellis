@@ -41,3 +41,13 @@ test('the video is between 60 and 120 seconds', () => {
 test('the pairing and the approval are labelled as simulated', () => {
   for (const id of ['pairing', 'approve']) assert.match(scenes.find((s) => s.id === id).caption, /simulated/);
 });
+
+test('every link names its channel, a direction and says what travels', () => {
+  for (const s of scenes) {
+    if (s.link === null) continue;
+    assert.ok(['Bluetooth LE', 'Solana devnet'].includes(s.link.via), s.id);
+    assert.ok(['right', 'left', 'both'].includes(s.link.dir), s.id);
+    assert.ok(s.link.label.length > 15, s.id);
+  }
+  assert.ok(scenes.every((s) => 'link' in s), 'every scene declares link (null when nothing is connected)');
+});
