@@ -1,5 +1,6 @@
 // The shell: loads state, shows a screen, keeps it fresh.
 import { call, isMock } from './api.js';
+import { initLocale, setLocale, t, tMsg } from './i18n.js';
 import { waitingDelayMs } from './poll.js';
 import { banner, button, errorBanner } from './components.js';
 import { clear, h } from './dom.js';
@@ -14,16 +15,24 @@ import * as send from './screens/send.js';
 
 const SCREENS = { home, send, people, approvals, me };
 const TABS = [
-  ['home', 'Счёт'],
-  ['send', 'Отправить'],
-  ['people', 'Люди'],
-  ['approvals', 'Одобрения'],
-  ['me', 'Я'],
+  ['home', 'tabs.home'],
+  ['send', 'tabs.send'],
+  ['people', 'tabs.people'],
+  ['approvals', 'tabs.approvals'],
+  ['me', 'tabs.me'],
 ];
 const REFRESH_MS = 60_000;
 const NOTICE_MS = 10_000;
 const KINDS = ['ok', 'info', 'warn'];
 const SELECTED_KEY = 'trellis.selectedVault';
+
+// The language: the saved choice, else the system's. A demo page may force one
+// with "?lang=ru" (never inside the real app, like "?mock").
+initLocale();
+if (isMock) {
+  const forced = new URLSearchParams(globalThis.location?.search ?? '').get('lang');
+  if (forced) setLocale(forced, { persist: false });
+}
 
 const root = document.getElementById('app');
 let leaveHooks = [];
@@ -37,9 +46,10 @@ const ctx = {
   },
   onLeave: (fn) => leaveHooks.push(fn),
   setWaiting: (waiting) => update({ waiting, pairHint: !waiting && store.waiting }),
-  // A success message that outlives the re-render that fresh data causes.
-  notify: (text, kind = 'ok') => {
-    store.notice = text;
+  // A success message ({ key, params }, as Rust sends it) that outlives the
+  // re-render that fresh data causes; it is worded again if the language changes.
+  notify: (message, kind = 'ok') => {
+    store.notice = message;
     store.noticeKind = KINDS.includes(kind) ? kind : 'info';
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => {
@@ -55,7 +65,7 @@ const ctx = {
     if (existing) existing.replaceWith(fresh);
     else if (main) main.prepend(fresh);
     else render();
-    announce(text);
+    announce(tMsg(message));
   },
 };
 if (isMock) globalThis.__ctx = ctx; // test hook, never in the real app
@@ -151,24 +161,24 @@ function header() {
       ? h(
           'select',
           {
-            'aria-label': 'Выбрать счёт',
+            'aria-label': t('header.pick_vault'),
             onchange: (ev) => loadAll({ select: ev.target.value }),
           },
-          store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, `${v.mine ? 'Мой счёт' : 'Счёт родственника'} ${v.address_short}`)),
+          store.vaults.map((v) => h('option', { value: v.address, selected: v.address === store.selected }, t(v.mine ? 'vault.mine' : 'vault.other', { address: v.address_short }))),
         )
       : null;
-  return h('header', { class: 'top' }, h('strong', {}, 'Trellis'), isMock ? h('span', { class: 'tag' }, 'демо') : null, picker);
+  return h('header', { class: 'top' }, h('strong', {}, 'Trellis'), isMock ? h('span', { class: 'tag' }, t('header.demo')) : null, picker);
 }
 
 function pendingBanner() {
   if (!store.pending) return null;
   const out = h('div', { 'aria-live': 'polite' });
-  const check = button('Проверить', async () => {
+  const check = button(t('pending.check'), async () => {
     check.disabled = true;
     try {
       const r = await call('check_pending');
       // survives the re-render below; a check that did not go through is not a success
-      ctx.notify(r.message, { confirmed: 'ok', waiting: 'warn' }[r.status] ?? 'info');
+      ctx.notify(r, { confirmed: 'ok', waiting: 'warn' }[r.status] ?? 'info');
       await loadPending();
       if (r.status !== 'waiting') await loadAll();
     } catch (e) {
@@ -177,12 +187,12 @@ function pendingBanner() {
       check.disabled = false;
     }
   });
-  return banner('warn', `Не закончена операция: «${store.pending.what}». Пока мы не узнаем, чем она кончилась, другие переводы недоступны, чтобы не заплатить дважды.`, check, out);
+  return banner('warn', t('pending.banner', { what: store.pending.what }), check, out);
 }
 
 function noticeBanner() {
   if (!store.notice) return null;
-  const el = banner(store.noticeKind, store.notice);
+  const el = banner(store.noticeKind, tMsg(store.notice));
   el.id = 'notice';
   return el;
 }
@@ -191,9 +201,9 @@ function nav(current) {
   const waiting = store.vault?.permissions.approve ? store.vault.pending.length : 0;
   return h(
     'nav',
-    { class: 'tabs', 'aria-label': 'Разделы' },
-    TABS.map(([name, label]) =>
-      h('a', { href: `#/${name}`, class: name === current ? 'tab current' : 'tab', 'aria-current': name === current ? 'page' : null }, label, name === 'approvals' && waiting ? h('span', { class: 'count' }, waiting) : null),
+    { class: 'tabs', 'aria-label': t('nav.label') },
+    TABS.map(([name, labelKey]) =>
+      h('a', { href: `#/${name}`, class: name === current ? 'tab current' : 'tab', 'aria-current': name === current ? 'page' : null }, t(labelKey), name === 'approvals' && waiting ? h('span', { class: 'count' }, waiting) : null),
     ),
   );
 }
@@ -202,11 +212,11 @@ function render() {
   for (const fn of leaveHooks) fn();
   leaveHooks = [];
   clear(root);
-  if (!store.loaded) return root.append(h('p', { class: 'center' }, 'Загрузка…'));
+  if (!store.loaded) return root.append(h('p', { class: 'center' }, t('common.loading')));
 
   if (!store.vault && store.loadError && !store.everLoaded) {
     // Never offer "open a new account" because of a network error.
-    root.append(h('main', { class: 'content' }, h('h1', {}, 'Не удалось загрузить'), errorBanner(store.loadError), button('Повторить', retry)));
+    root.append(h('main', { class: 'content' }, h('h1', {}, t('common.load_failed')), errorBanner(store.loadError), button(t('common.retry'), retry)));
     return;
   }
   if (!store.vault) {

@@ -1,28 +1,40 @@
-//! What crosses the IPC boundary. Plain, serializable, already phrased in
-//! the app's language: the JavaScript side only displays these and never
-//! does money math (u64 amounts do not fit a JS number, so they travel as
-//! strings that Rust formatted).
+//! What crosses the IPC boundary. Plain, serializable. Sentences travel as
+//! catalog keys with parameters (`Msg`), worded by the JavaScript side in the
+//! person's language; that side never does money math (u64 amounts do not
+//! fit a JS number, so they travel as strings that Rust formatted).
 
 use serde::Serialize;
+
+use crate::msg::Msg;
 
 /// A failed command. `kind` is one of `no_connection`, `rejected`,
 /// `unconfirmed`, `blocked`, `invalid`, `internal`.
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct ErrorDto {
     pub kind: &'static str,
-    /// Plain-language text for the screen.
-    pub message: String,
+    /// The plain-language sentence for the screen (`key`, `params`).
+    #[serde(flatten)]
+    pub message: Msg,
     /// Technical text for a "details" fold-out; never the only explanation.
     pub details: Option<String>,
 }
 
 impl ErrorDto {
-    pub fn new(kind: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(kind: &'static str, key: &str) -> Self {
+        Self::from_msg(kind, Msg::new(key))
+    }
+
+    pub fn from_msg(kind: &'static str, message: Msg) -> Self {
         Self {
             kind,
-            message: message.into(),
+            message,
             details: None,
         }
+    }
+
+    pub fn with_msg_param(mut self, name: &str, message: &Msg) -> Self {
+        self.message = self.message.with_msg(name, message);
+        self
     }
 
     pub fn with_details(mut self, details: impl Into<String>) -> Self {
@@ -60,8 +72,8 @@ pub struct PayeeDto {
     pub address: String,
     pub address_short: String,
     pub active: bool,
-    /// "Можно отправлять" or "Можно будет через 5 часов".
-    pub status: String,
+    /// `payee.ready`, `payee.wait_under_hour` or `payee.wait_hours` (`n`).
+    pub status: Msg,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -95,8 +107,6 @@ pub struct PermissionsDto {
 pub struct VaultDto {
     pub address: String,
     pub address_short: String,
-    /// "Семейный счёт" or "Личный счёт".
-    pub title: String,
     pub is_pool: bool,
     pub is_owner: bool,
     pub is_guardian: bool,
@@ -114,7 +124,9 @@ pub struct VaultDto {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct HistoryLineDto {
     pub signature: String,
-    pub text: String,
+    /// What happened (`history.*`).
+    #[serde(flatten)]
+    pub text: Msg,
     /// Unix seconds, `None` if the node does not know the block time.
     pub time: Option<i64>,
 }
@@ -122,13 +134,15 @@ pub struct HistoryLineDto {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct ActionOkDto {
     pub signature: String,
-    /// What happened, in words ("Деньги отправлены", "Запрос отправлен ...").
-    pub message: String,
+    /// What happened (`notice.*`).
+    #[serde(flatten)]
+    pub message: Msg,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct PendingTxDto {
-    pub what: String,
+    /// What the person was doing (`op.*`).
+    pub what: Msg,
     pub signature: String,
 }
 
@@ -136,5 +150,7 @@ pub struct PendingTxDto {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct ResolutionDto {
     pub status: &'static str,
-    pub message: String,
+    /// `resolution.*`
+    #[serde(flatten)]
+    pub message: Msg,
 }

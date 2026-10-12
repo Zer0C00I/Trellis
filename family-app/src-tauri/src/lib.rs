@@ -6,6 +6,7 @@
 mod commands;
 mod config;
 mod dto;
+mod msg;
 mod pending;
 mod state;
 mod text;

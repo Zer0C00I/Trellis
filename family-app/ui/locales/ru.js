@@ -126,7 +126,6 @@ export default {
   "me.about_title": "О приложении",
   "me.about": "Сеть: {network}. Это учебный прототип без аудита: используйте только тестовые деньги.",
   "me.network_devnet": "тестовая (Devnet)",
-  "me.language": "Язык",
 
   // Errors (returned by Rust)
   "error.no_connection": "Нет связи. Проверьте интернет и попробуйте ещё раз.",

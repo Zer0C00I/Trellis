@@ -1,14 +1,15 @@
 // A scripted stand-in for the Rust commands: same names, same shapes as
-// src-tauri/src/dto.rs. Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
+// src-tauri/src/dto.rs (sentences are catalog keys with params, as from Rust). Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
 const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 const ME = '7Hn3mQe1dKq9vXw2YfPz8LbT5aRcUoJs4NgBxVyE6AtM';
 const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+const msg = (key, params = {}) => ({ key, params });
 
 const payees = [
-  { name: 'Внучка Анна', address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: 'Можно отправлять' },
-  { name: 'Сосед Пётр', address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: 'Можно будет через 31 час' },
+  { name: 'Внучка Анна', address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: msg('payee.ready') },
+  { name: 'Сосед Пётр', address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: msg('payee.wait_hours', { n: 31 }) },
 ].map((p) => ({ ...p, address_short: short(p.address) }));
 
 const guardians = [
@@ -18,7 +19,6 @@ const guardians = [
 
 let pool = {
   address: '4kTzLp9QwXy2VbN7mRcEa1JdUhGs6oFiMt3BnYvKe8Ax',
-  title: 'Семейный счёт',
   is_pool: true,
   is_owner: true,
   is_guardian: false,
@@ -35,7 +35,6 @@ pool.address_short = short(pool.address);
 
 const grandma = {
   address: 'Cw5RnE8yMq2KdLtV7XbZa3JhUp9GfoSi1TmBvNeY4AkD',
-  title: 'Личный счёт',
   is_pool: false,
   is_owner: false,
   is_guardian: true,
@@ -52,15 +51,15 @@ grandma.address_short = short(grandma.address);
 
 const now = () => Math.floor(Date.now() / 1000);
 const history = () => [
-  { signature: 's1', text: 'Пополнение на 50 USDC', time: now() - 3600 },
-  { signature: 's2', text: 'Отправлено 12.5 USDC', time: now() - 86400 * 2 },
-  { signature: 's3', text: 'Добавлен получатель «Внучка Анна»', time: now() - 86400 * 9 },
-  { signature: 's4', text: 'Счёт открыт', time: now() - 86400 * 40 },
+  { signature: 's1', ...msg('history.deposit', { amount: '50 USDC' }), time: now() - 3600 },
+  { signature: 's2', ...msg('history.withdraw', { amount: '12.5 USDC' }), time: now() - 86400 * 2 },
+  { signature: 's3', ...msg('history.payee_added', { name: 'Внучка Анна' }), time: now() - 86400 * 9 },
+  { signature: 's4', ...msg('history.opened'), time: now() - 86400 * 40 },
 ];
 
 let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], 'unconfirmed-waiting': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
 let solGot = false;
-let pendingTx = scenario.startsWith('unconfirmed') ? { what: 'Отправка 5 USDC', signature: 'sig123' } : null;
+let pendingTx = scenario.startsWith('unconfirmed') ? { what: msg('op.send', { amount: '5 USDC' }), signature: 'sig123' } : null;
 let waitingPolls = 0;
 let moved = 0; // every deposit/send changes the balance, as on a real chain
 const setBalance = () => {
@@ -73,12 +72,12 @@ globalThis.__mockBump = () => {
   setBalance();
 };
 
-const err = (kind, message, details) => ({ kind, message, details: details ?? null });
+const err = (kind, key, details, params = {}) => ({ kind, key, params, details: details ?? null });
 
 const handlers = {
   app_info: () => ({ address: ME, address_short: short(ME), network: 'devnet' }),
   wallet: () => {
-    if (scenario === 'offline') throw err('network', 'Нет связи с сетью. Ничего не списано.');
+    if (scenario === 'offline') throw err('no_connection', 'error.no_connection');
     return !solGot && ['lowsol', 'empty', 'waiting', 'stuck'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
   },
   list_vaults: () => {
@@ -87,41 +86,41 @@ const handlers = {
   },
   load_vault: ({ vault }) => {
     const v = vaults.find((x) => x.address === vault);
-    if (!v) throw err('rejected', 'Не получилось. Ничего не списано.');
+    if (!v) throw err('rejected', 'error.rejected_generic');
     return structuredClone(v); // like the real IPC: a snapshot, not a live object
   },
   load_history: () => history(),
   pending_status: () => pendingTx,
   check_pending: () => {
-    if (!pendingTx) return { status: 'none', message: 'Ничего не ожидает проверки.' };
-    if (scenario === 'unconfirmed-waiting') return { status: 'waiting', message: 'Пока неизвестно, дошла ли операция. Проверьте ещё раз через минуту.' };
+    if (!pendingTx) return { status: 'none', ...msg('resolution.none') };
+    if (scenario === 'unconfirmed-waiting') return { status: 'waiting', ...msg('resolution.waiting') };
     pendingTx = null;
-    if (scenario === 'unconfirmed-failed') return { status: 'failed', message: 'Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз.' };
-    return { status: 'confirmed', message: 'Операция прошла.' };
+    if (scenario === 'unconfirmed-failed') return { status: 'failed', ...msg('resolution.failed') };
+    return { status: 'confirmed', ...msg('resolution.confirmed') };
   },
   deposit: () => {
     moved += 10;
     setBalance();
-    return { signature: 'sigD', message: 'Деньги отправлены на счёт.' };
+    return { signature: 'sigD', ...msg('notice.deposit') };
   },
   send_money: ({ amount }) => {
     if (scenario === 'send-unconfirmed') {
-      pendingTx = { what: `Отправка ${amount} USDC`, signature: 'sigU' };
-      throw err('unconfirmed', 'Не знаем, дошёл ли перевод. Пока не проверите, деньги не повторяйте.');
+      pendingTx = { what: msg('op.send', { amount: `${amount} USDC` }), signature: 'sigU' };
+      throw err('unconfirmed', 'error.unconfirmed');
     }
     if (Number(amount) > 70) {
-      return { signature: 'sigR', message: 'Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.' };
+      return { signature: 'sigR', ...msg('notice.request_filed') };
     }
     moved -= Number(amount);
     setBalance();
-    return { signature: 'sigS', message: 'Деньги отправлены.' };
+    return { signature: 'sigS', ...msg('notice.sent') };
   },
-  add_payee: () => ({ signature: 'sigP', message: 'Получатель добавлен. Пользоваться им можно будет через 48 часов.' }),
-  add_guardian: () => ({ signature: 'sigG', message: 'Доверенное лицо добавлено.' }),
+  add_payee: () => ({ signature: 'sigP', ...msg('notice.payee_added') }),
+  add_guardian: () => ({ signature: 'sigG', ...msg('notice.guardian_added') }),
   approve_request: () => {
     grandma.pending = [];
     grandma.permissions.approve = false;
-    return { signature: 'sigA', message: 'Перевод одобрен.' };
+    return { signature: 'sigA', ...msg('notice.approved') };
   },
   open_family_account: () => {
     vaults = [pool];
@@ -133,11 +132,11 @@ const handlers = {
   },
   // Tauri 2 passes JavaScript arguments in camelCase (Rust: qr_text -> qrText).
   pair_with_qr: ({ qrText }) => {
-    if (!String(qrText).startsWith('fvpair1:')) throw err('invalid', 'Это не похоже на код с экрана устройства. Наведите камеру на QR-код ещё раз.');
+    if (!String(qrText).startsWith('fvpair1:')) throw err('invalid', 'error.pairing.bad_qr');
     return null;
   },
   pair_with_pin: ({ pin }) => {
-    if (pin === '000000') throw err('rejected', 'Устройство не приняло код. Проверьте код: на экране мог появиться новый.', 'att 0x0e');
+    if (pin === '000000') throw err('rejected', 'error.pairing.write_rejected', 'att 0x0e');
     return null;
   },
 };
@@ -146,7 +145,7 @@ export default {
   async invoke(command, args) {
     await delay();
     const handler = handlers[command];
-    if (!handler) throw err('internal', `Неизвестная команда ${command}`);
+    if (!handler) throw err('internal', 'error.internal', `unknown command ${command}`);
     const result = handler(args ?? {});
     // Test hook: hold back ONE answer (computed now) to make it arrive late.
     const extra = globalThis.__mockDelay?.[command];

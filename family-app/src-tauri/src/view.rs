@@ -65,11 +65,6 @@ pub fn vault_dto(view: &VaultView, me: &Pubkey, now: i64) -> VaultDto {
     VaultDto {
         address: view.vault.to_string(),
         address_short: short_address(&view.vault),
-        title: if view.is_pool {
-            "Семейный счёт".to_string()
-        } else {
-            "Личный счёт".to_string()
-        },
         is_pool: view.is_pool,
         is_owner: is_owner(view, me),
         is_guardian: is_guardian(view, me),
@@ -115,6 +110,7 @@ pub fn vault_dto(view: &VaultView, me: &Pubkey, now: i64) -> VaultDto {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::msg::Msg;
     use family_app_core::vault_view::{Payee, PendingRequest};
 
     const NOW: i64 = 1_000_000;
@@ -261,29 +257,32 @@ mod tests {
     }
 
     #[test]
-    fn the_screen_model_uses_plain_words_and_formatted_money() {
+    fn the_screen_model_uses_keys_and_formatted_money() {
         let mut v = view(1, true);
         v.pending.push(request());
         let dto = vault_dto(&v, &key(1), NOW);
-        assert_eq!(dto.title, "Семейный счёт");
+        assert!(dto.is_pool);
         assert_eq!(dto.balance, "250.5 USDC");
         assert_eq!(dto.daily_limit.as_deref(), Some("100 USDC"));
         assert_eq!(dto.remaining_today.as_deref(), Some("70 USDC"));
         assert!(dto.is_owner && !dto.is_guardian);
         assert_eq!(dto.payees.len(), 2);
         assert!(dto.payees[0].active);
-        assert_eq!(dto.payees[0].status, "Можно отправлять");
+        assert_eq!(dto.payees[0].status, Msg::new("payee.ready"));
         assert!(!dto.payees[1].active);
-        assert_eq!(dto.payees[1].status, "Можно будет через 1 час");
+        assert_eq!(
+            dto.payees[1].status,
+            Msg::new("payee.wait_hours").with("n", 1)
+        );
         assert_eq!(dto.pending[0].amount, "5 USDC");
         assert_eq!(dto.pending[0].nonce, 3);
         assert!(dto.guardians[0].address_short.contains('…'));
     }
 
     #[test]
-    fn a_personal_vault_has_no_limit_and_is_titled_personal() {
+    fn a_personal_vault_has_no_limit_and_is_not_a_pool() {
         let dto = vault_dto(&view(1, false), &key(1), NOW);
-        assert_eq!(dto.title, "Личный счёт");
+        assert!(!dto.is_pool);
         assert_eq!(dto.daily_limit, None);
         assert_eq!(dto.remaining_today, None);
     }

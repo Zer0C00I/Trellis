@@ -5,9 +5,9 @@ export const store = {
   vaults: [], // [{ address, address_short, mine }]
   selected: null, // address of the vault on screen
   vault: null, // VaultDto
-  history: [], // [{ signature, text, time }]
-  pending: null, // { what, signature } while an operation's outcome is unknown
-  notice: null, // text of a message still on screen
+  history: [], // [{ signature, key, params, time }]
+  pending: null, // { what: { key, params }, signature } while an operation's outcome is unknown
+  notice: null, // { key, params } of a message still on screen
   noticeKind: 'ok', // 'ok' | 'info' | 'warn'
   pairHint: false, // the person came back from a waiting that never ended
   loaded: false,

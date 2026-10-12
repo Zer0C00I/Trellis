@@ -5,6 +5,7 @@
 import { call, isMock } from '../api.js';
 import { button, card, errorBanner, field, banner, lockHint, moneyButton, withFeedback } from '../components.js';
 import { h } from '../dom.js';
+import { t } from '../i18n.js';
 import { classifyPairingInput } from '../input.js';
 
 export function render(ctx) {
@@ -12,9 +13,9 @@ export function render(ctx) {
   const root = h('div', { class: 'stack' });
   function draw() {
     root.replaceChildren(
-      isMock ? h('span', { class: 'tag' }, 'демо') : null,
-      h('h1', {}, 'Добро пожаловать'),
-      h('p', { class: 'lead' }, 'Это приложение для близких: оно помогает следить за счётом родственника и одобрять переводы.'),
+      isMock ? h('span', { class: 'tag' }, t('header.demo')) : null,
+      h('h1', {}, t('first.title')),
+      h('p', { class: 'lead' }, t('first.lead')),
       store.waiting ? waitingCard() : pairCard(),
       openCard(),
       addressCard(),
@@ -22,14 +23,14 @@ export function render(ctx) {
   }
 
   function pairCard() {
-    const name = h('input', { type: 'text', maxlength: 24, autocomplete: 'name', placeholder: 'Например: Внук Саша' });
-    const code = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', placeholder: 'fvpair1:… или 6 цифр' });
+    const name = h('input', { type: 'text', maxlength: 24, autocomplete: 'name', placeholder: t('pair.name_placeholder') });
+    const code = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', placeholder: t('pair.code_placeholder') });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = button('Передать устройству', async () => {
+    const go = button(t('pair.submit'), async () => {
       const input = classifyPairingInput(code.value);
-      if (!name.value.trim()) return out.replaceChildren(errorBanner({ kind: 'invalid', message: 'Напишите своё имя: так вас увидит родственник на экране.' }));
+      if (!name.value.trim()) return out.replaceChildren(errorBanner({ kind: 'invalid', key: 'pair.need_name', params: {} }));
       if (input.kind === 'empty' || input.kind === 'unknown') {
-        return out.replaceChildren(errorBanner({ kind: 'invalid', message: 'Введите текст QR-кода с экрана устройства или 6 цифр под ним.' }));
+        return out.replaceChildren(errorBanner({ kind: 'invalid', key: 'pair.need_code', params: {} }));
       }
       const r = await withFeedback(go, out, () =>
         input.kind === 'pin'
@@ -43,11 +44,11 @@ export function render(ctx) {
       ctx.setWaiting(true);
     });
     return card(
-      'Меня добавляет родственник',
-      h('p', {}, 'Попросите включить настройку на устройстве родственника. На его экране появится QR-код и 6 цифр. Станьте рядом, включите Bluetooth.'),
-      store.pairHint ? h('p', { class: 'hint' }, 'Если устройство уже показало, что вас добавили, а здесь ничего нет, попробуйте ещё раз.') : null,
-      field('Ваше имя', name, 'Родственник увидит его на экране устройства.'),
-      field('Код с экрана', code, 'Текст QR-кода или 6 цифр под ним.'),
+      t('pair.title'),
+      h('p', {}, t('pair.text')),
+      store.pairHint ? h('p', { class: 'hint' }, t('pair.hint')) : null,
+      field(t('pair.name_label'), name, t('pair.name_hint')),
+      field(t('pair.code_label'), code, t('pair.code_hint')),
       go,
       out,
     );
@@ -55,26 +56,26 @@ export function render(ctx) {
 
   function waitingCard() {
     return card(
-      'Ждём, пока вас добавят',
-      banner('info', 'Устройство приняло ваш код. Оно записывает вас в список, это занимает около минуты. Экран обновится сам. Если за несколько минут ничего не изменилось, нажмите «Ввести код заново».'),
+      t('waiting.title'),
+      banner('info', t('waiting.text')),
       h('div', { class: 'btn-group' },
-        button('Проверить сейчас', () => ctx.refresh(), { secondary: true }),
-        button('Ввести код заново', () => ctx.setWaiting(false), { secondary: true }),
+        button(t('waiting.check'), () => ctx.refresh(), { secondary: true }),
+        button(t('waiting.retry'), () => ctx.setWaiting(false), { secondary: true }),
       ),
     );
   }
 
   function openCard() {
-    const limit = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'Например: 100' });
+    const limit = h('input', { type: 'text', inputmode: 'decimal', placeholder: t('open.limit_placeholder') });
     const out = h('div', { 'aria-live': 'polite' });
-    const go = moneyButton('Открыть семейный счёт', async () => {
+    const go = moneyButton(t('open.submit'), async () => {
       const r = await withFeedback(go, out, () => call('open_family_account', { dailyLimit: limit.value }));
       if (r.ok) await ctx.refresh();
     });
     return card(
-      'Или открыть свой семейный счёт',
-      h('p', {}, 'Общий счёт семьи в долларах (USDC). Чтобы тратить с него, нужны получатели и доверенные лица.'),
-      field('Сколько можно отправить за день без одобрения (USDC)', limit),
+      t('open.title'),
+      h('p', {}, t('open.text')),
+      field(t('open.limit_label'), limit),
       go,
       lockHint(),
       out,
@@ -86,22 +87,22 @@ export function render(ctx) {
   function addressCard() {
     const out = h('div', { 'aria-live': 'polite' });
     const faucet = button(
-      'Получить тестовые SOL',
+      t('faucet.button'),
       async () => {
         const r = await withFeedback(faucet, out, () => call('get_test_sol'));
         if (r.ok) {
-          ctx.notify('Готово: SOL пришли на ваш адрес.');
+          ctx.notify({ key: 'faucet.done' });
           await ctx.refresh();
         }
       },
       { secondary: true },
     );
     return card(
-      'Ваш адрес и комиссии',
-      h('p', {}, 'Каждое действие стоит совсем немного SOL. Родственнику этот адрес нужен, чтобы вас добавить.'),
+      t('address.title'),
+      h('p', {}, t('address.text')),
       h('code', { class: 'address' }, store.info?.address ?? ''),
-      h('p', {}, `На адресе: ${store.wallet?.sol ?? '…'} SOL`),
-      store.wallet?.low_sol ? banner('warn', 'SOL почти нет. Получите тестовые SOL, иначе счёт не открыть.') : null,
+      h('p', {}, t('address.on_address', { sol: store.wallet?.sol ?? '…' })),
+      store.wallet?.low_sol ? banner('warn', t('address.low_sol')) : null,
       faucet,
       out,
     );

@@ -7,15 +7,26 @@ import { parseRoute, ROUTES } from '../router.js';
 import { setLocale } from '../i18n.js';
 
 test('an ErrorDto from Rust passes through unchanged', () => {
-  const dto = { kind: 'rejected', message: 'Не получилось.', details: 'x' };
-  assert.equal(normalizeError(dto), dto);
+  const dto = { kind: 'rejected', key: 'error.rejected_generic', params: {}, details: 'x' };
+  assert.deepEqual(normalizeError(dto), dto);
+});
+
+test('an ErrorDto without params gets empty ones', () => {
+  assert.deepEqual(normalizeError({ kind: 'blocked', key: 'error.busy' }).params, {});
+  assert.equal(normalizeError({ kind: 'blocked', key: 'error.busy', params: [1] }).params.length, undefined);
+});
+
+test('an old-shaped error (a ready sentence, no key) is not trusted as a catalog key', () => {
+  const e = normalizeError({ kind: 'rejected', message: 'Не получилось.' });
+  assert.equal(e.kind, 'internal');
+  assert.equal(e.key, 'error.generic');
 });
 
 test('anything else becomes an internal error with the original text as details', () => {
   const e = normalizeError(new Error('boom'));
   assert.equal(e.kind, 'internal');
   assert.equal(e.details, 'boom');
-  assert.ok(e.message.length > 0);
+  assert.equal(e.key, 'error.generic');
   assert.equal(normalizeError('plain').details, 'plain');
   assert.equal(normalizeError(undefined).kind, 'internal');
 });

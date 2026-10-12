@@ -1,4 +1,5 @@
 import { h } from './dom.js';
+import { t, tMsg, tParts } from './i18n.js';
 import { store } from './state.js';
 
 export function banner(kind, text, ...extra) {
@@ -10,8 +11,16 @@ export function errorBanner(e) {
   if (!e) return null;
   return banner(
     e.kind === 'unconfirmed' ? 'warn' : 'error',
-    e.message,
-    e.details ? h('details', {}, h('summary', {}, 'Подробности'), h('code', {}, e.details)) : null,
+    tMsg(e),
+    e.details ? h('details', {}, h('summary', {}, t('common.details')), h('code', {}, e.details)) : null,
+  );
+}
+
+// A translated sentence whose parameters named in `keepTogether` never break
+// across lines (amounts: "70 USDC").
+export function rich(key, params, keepTogether = []) {
+  return tParts(key, params).map((part) =>
+    keepTogether.includes(part.param) ? h('span', { class: 'nowrap' }, part.text) : part.text,
   );
 }
 
@@ -26,7 +35,7 @@ export function moneyButton(label, onclick, opts = {}) {
 }
 
 export function lockHint() {
-  return store.pending ? h('p', { class: 'hint' }, 'Сначала проверьте прошлую операцию: кнопка наверху.') : null;
+  return store.pending ? h('p', { class: 'hint' }, t('pending.lock_hint')) : null;
 }
 
 export function field(label, input, hint) {

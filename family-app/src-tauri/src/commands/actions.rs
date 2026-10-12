@@ -17,6 +17,7 @@ use super::{
 };
 use crate::config::{usdc_mint, AIRDROP_LAMPORTS};
 use crate::dto::{ActionOkDto, ErrorDto, VaultRefDto};
+use crate::msg::Msg;
 use crate::state::AppState;
 use crate::text::{money, short_address};
 use crate::view::{permissions, plan_send, SendPlan};
@@ -33,7 +34,7 @@ pub async fn deposit(
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         let amount = parse_amount(&amount, view.decimals)?;
-        let what = format!("Пополнение на {}", money(amount, view.decimals));
+        let what = Msg::new("op.deposit").with("amount", money(amount, view.decimals));
         let result = run_money(&st, &what, |hook| {
             core::deposit(
                 &st.rpc,
@@ -44,7 +45,7 @@ pub async fn deposit(
                 hook,
             )
         });
-        finish(result, "Деньги отправлены на счёт.")
+        finish(result, "notice.deposit")
     })
     .await
 }
@@ -65,28 +66,22 @@ pub async fn send_money(
         let view = load_view(&st, &vault)?;
         let now = super::now_unix();
         if !permissions(&view, &st.me(), now).send {
-            return Err(not_allowed(
-                "Отправлять деньги с этого счёта может только его владелец, и нужен получатель, которого уже можно использовать.",
-            ));
+            return Err(not_allowed("error.send_not_allowed"));
         }
-        let recipient = parse_pubkey(&recipient, "Получатель")?;
+        let recipient = parse_pubkey(&recipient, "field.recipient")?;
         let payee_ok = view
             .payees
             .iter()
             .any(|p| p.address == recipient && p.is_active(now));
         if !payee_ok {
-            return Err(ErrorDto::new(
-                "invalid",
-                "Выберите получателя из списка. Нового получателя можно использовать через 48 часов после добавления.",
-            ));
+            return Err(ErrorDto::new("invalid", "error.payee_not_usable"));
         }
         let amount = parse_amount(&amount, view.decimals)?;
-        let what = format!("Отправка {}", money(amount, view.decimals));
+        let what = Msg::new("op.send").with("amount", money(amount, view.decimals));
         match plan_send(&view, amount) {
-            SendPlan::InsufficientFunds => Err(ErrorDto::new(
-                "invalid",
-                "На счёте не хватает денег для этой суммы.",
-            )),
+            SendPlan::InsufficientFunds => {
+                Err(ErrorDto::new("invalid", "error.insufficient_funds"))
+            }
             SendPlan::Direct => {
                 let result = run_money(&st, &what, |hook| {
                     core::send(
@@ -99,7 +94,7 @@ pub async fn send_money(
                         hook,
                     )
                 });
-                finish(result, "Деньги отправлены.")
+                finish(result, "notice.sent")
             }
             SendPlan::Request => {
                 let result = run_money(&st, &what, |hook| {
@@ -114,10 +109,7 @@ pub async fn send_money(
                         hook,
                     )
                 });
-                finish(
-                    result,
-                    "Это больше суммы, доступной за день. Запрос отправлен: деньги уйдут, когда доверенное лицо его одобрит.",
-                )
+                finish(result, "notice.request_filed")
             }
         }
     })
@@ -137,19 +129,14 @@ pub async fn add_payee(
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).add_payee {
-            return Err(not_allowed(
-                "Добавлять получателей может только владелец счёта.",
-            ));
+            return Err(not_allowed("error.add_payee_not_allowed"));
         }
         let name = name.trim().to_string();
         if name.is_empty() || name.len() > 32 {
-            return Err(ErrorDto::new(
-                "invalid",
-                "Имя должно быть непустым и не длиннее 32 байт (около 16 русских букв).",
-            ));
+            return Err(ErrorDto::new("invalid", "error.name_length"));
         }
-        let address = parse_pubkey(&address, "Получатель")?;
-        let what = format!("Добавление получателя «{name}»");
+        let address = parse_pubkey(&address, "field.recipient")?;
+        let what = Msg::new("op.add_payee").with("name", name.clone());
         let result = run_money(&st, &what, |hook| {
             core::add_beneficiary(
                 &st.rpc,
@@ -161,10 +148,7 @@ pub async fn add_payee(
                 hook,
             )
         });
-        finish(
-            result,
-            "Получатель добавлен. Пользоваться им можно будет через 48 часов.",
-        )
+        finish(result, "notice.payee_added")
     })
     .await
 }
@@ -181,12 +165,10 @@ pub async fn add_guardian(
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).add_guardian {
-            return Err(not_allowed(
-                "Добавить доверенное лицо с этого устройства нельзя: для этого нужна подпись владельца счёта.",
-            ));
+            return Err(not_allowed("error.add_guardian_not_allowed"));
         }
-        let address = parse_pubkey(&address, "Доверенное лицо")?;
-        let result = run_money(&st, "Добавление доверенного лица", |hook| {
+        let address = parse_pubkey(&address, "field.guardian")?;
+        let result = run_money(&st, &Msg::new("op.add_guardian"), |hook| {
             core::add_trusted_approver(
                 &st.rpc,
                 &st.program_id,
@@ -197,10 +179,7 @@ pub async fn add_guardian(
                 hook,
             )
         });
-        finish(
-            result,
-            "Доверенное лицо добавлено.",
-        )
+        finish(result, "notice.guardian_added")
     })
     .await
 }
@@ -217,19 +196,14 @@ pub async fn approve_request(
         ensure_no_pending(&st)?;
         let view = load_view(&st, &vault)?;
         if !permissions(&view, &st.me(), super::now_unix()).approve {
-            return Err(not_allowed(
-                "Одобрять переводы могут только доверенные лица.",
-            ));
+            return Err(not_allowed("error.approve_not_allowed"));
         }
         let request = view
             .pending
             .iter()
             .find(|r| r.nonce == nonce)
-            .ok_or_else(|| ErrorDto::new("invalid", "Этого запроса уже нет в списке."))?;
-        let what = format!(
-            "Одобрение перевода на {}",
-            money(request.amount, view.decimals)
-        );
+            .ok_or_else(|| ErrorDto::new("invalid", "error.request_gone"))?;
+        let what = Msg::new("op.approve").with("amount", money(request.amount, view.decimals));
         let result = run_money(&st, &what, |hook| {
             core::approve_withdrawal(
                 &st.rpc,
@@ -240,7 +214,7 @@ pub async fn approve_request(
                 hook,
             )
         });
-        finish(result, "Перевод одобрен.")
+        finish(result, "notice.approved")
     })
     .await
 }
@@ -259,19 +233,14 @@ pub async fn open_family_account(
         let owned: Vec<_> = discover_owned_vaults(&st.rpc, &st.program_id, &me)?;
         let [pool, _personal] = owned_vault_addresses(&st.program_id, &me);
         if pool_already_open(&pool, &owned) {
-            return Err(ErrorDto::new(
-                "invalid",
-                "Семейный счёт уже открыт. Выберите его в списке счетов вверху экрана.",
-            ));
+            return Err(ErrorDto::new("invalid", "error.pool_exists"));
         }
         let mint = usdc_mint();
         let decimals = mint_decimals(&st.rpc, &mint)?;
         let limit = parse_amount(&daily_limit, decimals)?;
-        let vault = run_money(
-            &st,
-            "Открытие семейного счёта",
-            |hook| core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit, hook),
-        )?;
+        let vault = run_money(&st, &Msg::new("op.open_family"), |hook| {
+            core::open_pool_vault(&st.rpc, &st.program_id, &st.identity, &mint, limit, hook)
+        })?;
         Ok(VaultRefDto {
             address: vault.to_string(),
             address_short: short_address(&vault),
@@ -289,9 +258,7 @@ pub async fn get_test_sol(state: State<'_, AppState>) -> Result<(), ErrorDto> {
         request_devnet_airdrop(&st.rpc, &st.me(), AIRDROP_LAMPORTS).map_err(|error| {
             let mut dto = ErrorDto::from(error);
             if dto.kind == "rejected" {
-                dto.message = "Бесплатные тестовые SOL сейчас недоступны (у раздачи есть лимит). \
-                               Попробуйте позже или пополните адрес вручную."
-                    .to_string();
+                dto.message = Msg::new("error.faucet_unavailable");
             }
             dto
         })

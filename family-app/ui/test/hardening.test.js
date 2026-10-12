@@ -32,11 +32,11 @@ test('normalizeError never throws on hostile values', () => {
   assert.equal(normalizeError(badStr).details, 'unknown error');
 });
 
-test('normalizeError: empty message is wrapped, details coerced to string', () => {
-  const e = normalizeError({ kind: 'rejected', message: '', details: 'd' });
+test('normalizeError: empty key is wrapped, details coerced to string', () => {
+  const e = normalizeError({ kind: 'rejected', key: '', details: 'd' });
   assert.equal(e.kind, 'internal');
-  assert.ok(e.message.length > 0);
-  const c = normalizeError({ kind: 'rejected', message: 'm', details: 42 });
+  assert.equal(e.key, 'error.generic');
+  const c = normalizeError({ kind: 'rejected', key: 'error.busy', details: 42 });
   assert.equal(c.kind, 'rejected');
   assert.equal(c.details, '42');
 });
@@ -57,15 +57,15 @@ test('normalizeError never throws, even on throwing getters and proxies', () => 
   const trap = () => { throw new Error('trap'); };
   const proxy = new Proxy({}, { get: trap, has: trap, getPrototypeOf: trap, ownKeys: trap, getOwnPropertyDescriptor: trap });
   const cases = [
-    { kind: 'k', message: 'm', get details() { throw 1; } },
-    { get kind() { throw 1; }, message: 'm' },
-    { kind: 'k', get message() { throw 1; } },
+    { kind: 'k', key: 'error.busy', get details() { throw 1; } },
+    { get kind() { throw 1; }, key: 'error.busy' },
+    { kind: 'k', get key() { throw 1; } },
     proxy,
   ];
   for (const c of cases) {
     const e = normalizeError(c);
     assert.equal(e.kind, 'internal');
     assert.equal(e.details, 'unknown error');
-    assert.ok(e.message.length > 0);
+    assert.equal(e.key, 'error.generic');
   }
 });

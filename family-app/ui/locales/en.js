@@ -126,7 +126,6 @@ export default {
   "me.about_title": "About the app",
   "me.about": "Network: {network}. This is a learning prototype without an audit: use test money only.",
   "me.network_devnet": "test (Devnet)",
-  "me.language": "Language",
 
   // Errors (returned by Rust)
   "error.no_connection": "No connection. Check the internet and try again.",

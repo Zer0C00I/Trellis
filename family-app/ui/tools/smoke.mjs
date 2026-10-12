@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { setLocale, t } from '../i18n.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
@@ -69,7 +70,7 @@ try {
     if (m.id && pending.has(m.id)) pending.get(m.id)(m);
     if (m.method === 'Page.loadEventFired') loadWaiters.splice(0).forEach((r) => r());
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.text + ' ' + (m.params.exceptionDetails.exception?.description ?? ''));
-    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
+    if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || (m.params.type === 'warning' && String(m.params.args[0]?.value).startsWith('[i18n]')))) errors.push(m.params.args.map((a) => a.value ?? a.description).join(' '));
   };
   const send = (method, params = {}) => new Promise((r) => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
   await send('Runtime.enable');
@@ -99,7 +100,7 @@ try {
   let visit = 0;
   const open = async (scenario, route = 'home') => {
     await navigate('about:blank');
-    await navigate(`${base}?mock=${scenario}&t=${++visit}#/${route}`);
+    await navigate(`${base}?mock=${scenario}&lang=${lang}&t=${++visit}#/${route}`);
     await until("document.getElementById('app').innerText.length > 20", `${scenario} to render`);
   };
   const text = () => evaluate('document.body.innerText');
@@ -110,150 +111,158 @@ try {
   const fill = (selector, value) => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.focus(); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event('input', {bubbles:true})); })()`);
   const buttonDisabled = (label) => evaluate(`[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(label)})?.disabled`);
 
+  let lang = 'ru';
   const tests = [];
-  const test = (name, fn) => tests.push([name, fn]);
+  const test = (name, fn) => tests.push([`[${lang}] ${name}`, fn]);
+  // What the page shows, from the same catalogs the page uses.
+  const has = (text) => `document.body.innerText.includes(${JSON.stringify(text)})`;
+  const sendOp = { key: 'op.send', params: { amount: '5 USDC' } };
+  const unfinished = () => t('pending.banner', { what: sendOp });
 
+  function define() {
   test('owner: balance, limit and role are shown', async () => {
     await open('owner');
-    const t = await text();
-    assert.match(t, /250\.5 USDC/);
-    assert.match(t, /ещё 70 USDC из 100 USDC/);
-    assert.match(t, /Вы владелец счёта/);
+    const page = await text();
+    assert.match(page, /250\.5 USDC/);
+    assert.ok(page.includes(t('home.left_today_of', { left: '70 USDC', limit: '100 USDC' })), page);
+    assert.ok(page.includes(t('home.role_owner')));
   });
 
   test('owner: a small send goes through, a big one becomes a request', async () => {
     await open('owner', 'send');
     await until("document.querySelector('input[name=payee]')", 'payee list');
     await fill("input[type=text]", '25');
-    await click('Отправить');
-    await until("document.body.innerText.includes('Деньги отправлены.')", 'send ok');
+    await click(t('send.submit'));
+    await until(has(t('notice.sent')), 'send ok');
     // The refresh that follows changes the balance and rebuilds the screen: the
     // success message must still be there afterwards.
     await until("import('./state.js').then(({store}) => store.vault.balance === '225.5 USDC')", 'new balance loaded');
-    assert.match(await text(), /Деньги отправлены\./);
+    assert.ok((await text()).includes(t('notice.sent')));
     await fill("input[type=text]", '80');
-    await click('Отправить');
-    await until("document.body.innerText.includes('Запрос отправлен')", 'request filed');
+    await click(t('send.submit'));
+    await until(has(t('notice.request_filed')), 'request filed');
   });
 
   test('owner: a payee still in the 48h wait is not offered', async () => {
     await open('owner', 'send');
     await until("document.querySelector('input[name=payee]')", 'payee list');
     assert.equal(await evaluate("document.querySelectorAll('input[name=payee]').length"), 1);
-    assert.match(await text(), /Сосед Пётр/); // listed as "not yet usable"
+    const page = await text();
+    assert.match(page, /Сосед Пётр/); // listed as "not yet usable", with the wait in this language
+    assert.ok(page.toLocaleLowerCase(lang).includes(t('payee.wait_hours', { n: 31 }).toLocaleLowerCase(lang)), page);
   });
 
   test('guardian: sees the pending request and approves it', async () => {
     await open('guardian', 'approvals');
-    await until("document.body.innerText.includes('Перевод 150 USDC')", 'request card');
-    await click('Одобрить');
-    await until("document.body.innerText.includes('Перевод одобрен.')", 'approved');
+    await until(has(t('approvals.transfer', { amount: '150 USDC' })), 'request card');
+    await click(t('approvals.approve'));
+    await until(has(t('notice.approved')), 'approved');
     await until("!document.querySelector('.count')", 'badge gone');
   });
 
   test('guardian: cannot send, and is told why', async () => {
     await open('guardian', 'send');
-    assert.match(await text(), /только его владелец/);
+    assert.ok((await text()).includes(t('send.why_not_owner')));
   });
 
   test('first launch shows the demo tag in mock mode', async () => {
     await open('empty');
-    await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');
-    assert.match(await text(), /демо/);
+    await until(has(t('pair.title')), 'first screen');
+    assert.ok((await text()).includes(t('header.demo')));
   });
 
   test('first launch: bad text is refused, good text waits for the chain', async () => {
     await open('empty');
-    await until("document.body.innerText.includes('Меня добавляет родственник')", 'first screen');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Напишите своё имя')", 'name required');
+    await until(has(t('pair.title')), 'first screen');
+    await click(t('pair.submit'));
+    await until(has(t('pair.need_name')), 'name required');
     await fill('input[autocomplete=name]', 'Внук Саша');
     await fill('input[placeholder^="fvpair1"]', 'hello');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Введите текст QR-кода')", 'bad code refused');
+    await click(t('pair.submit'));
+    await until(has(t('pair.need_code')), 'bad code refused');
     await fill('input[placeholder^="fvpair1"]', 'fvpair1:00112233445566778899aabbccddeeff');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
+    await click(t('pair.submit'));
+    await until(has(t('waiting.title')), 'waiting');
   });
 
   test('first launch: waiting survives a re-render, then the vault takes over', async () => {
     await open('waiting');
     await fill('input[autocomplete=name]', 'Внук Саша');
     await fill('input[placeholder^="fvpair1"]', '123456');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
+    await click(t('pair.submit'));
+    await until(has(t('waiting.title')), 'waiting');
     // Any re-render (here: the faucet's notice and balance refresh) must not
     // bring the pairing form back or stop the polling.
-    await click('Получить тестовые SOL');
-    await until("document.body.innerText.includes('SOL пришли на ваш адрес')", 'faucet ok');
+    await click(t('faucet.button'));
+    await until(has(t('faucet.done')), 'faucet ok');
     await sleep(500);
-    let t = await text();
-    assert.match(t, /Ждём, пока вас добавят/);
-    assert.doesNotMatch(t, /Меня добавляет родственник/);
-    await until("document.body.innerText.includes('Личный счёт')", 'vault shown', 30000);
+    const page = await text();
+    assert.ok(page.includes(t('waiting.title')));
+    assert.ok(!page.includes(t('pair.title')));
+    await until(has(t('home.title_personal')), 'vault shown', 30000);
   });
 
   test('first launch: stuck waiting can be abandoned and the code entered again', async () => {
     await open('stuck');
     await fill('input[autocomplete=name]', 'Внук Саша');
     await fill('input[placeholder^="fvpair1"]', '123456');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting');
-    await click('Ввести код заново');
+    await click(t('pair.submit'));
+    await until(has(t('waiting.title')), 'waiting');
+    await click(t('waiting.retry'));
     await until("document.querySelector('input[autocomplete=name]') && document.querySelector('input[placeholder^=\"fvpair1\"]')", 'pair form back');
-    assert.doesNotMatch(await text(), /Ждём, пока вас добавят/);
+    assert.ok(!(await text()).includes(t('waiting.title')));
     await fill('input[autocomplete=name]', 'Внук Саша');
     await fill('input[placeholder^="fvpair1"]', '123456');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Ждём, пока вас добавят')", 'waiting again');
+    await click(t('pair.submit'));
+    await until(has(t('waiting.title')), 'waiting again');
   });
 
   test('first launch: a new key can reach the address and the test-SOL button before any vault exists', async () => {
     await open('empty');
-    await until("document.body.innerText.includes('Ваш адрес и комиссии')", 'address card');
-    assert.match(await text(), /На адресе: 0 SOL/);
-    await click('Получить тестовые SOL');
-    await until("document.body.innerText.includes('SOL пришли на ваш адрес')", 'faucet ok');
-    await until("document.body.innerText.includes('На адресе: 0.1 SOL')", 'balance updated');
-    assert.match(await text(), /SOL пришли на ваш адрес/); // message survived the re-render
+    await until(has(t('address.title')), 'address card');
+    assert.ok((await text()).includes(t('address.on_address', { sol: '0' })));
+    await click(t('faucet.button'));
+    await until(has(t('faucet.done')), 'faucet ok');
+    await until(has(t('address.on_address', { sol: '0.1' })), 'balance updated');
+    assert.ok((await text()).includes(t('faucet.done'))); // message survived the re-render
   });
 
   test('a failed first load shows an error and a retry, not the first-launch screen', async () => {
     await open('offline');
-    await until("document.body.innerText.includes('Повторить')", 'retry button');
-    const t = await text();
-    assert.match(t, /Нет связи/);
-    assert.doesNotMatch(t, /Меня добавляет родственник|Открыть семейный счёт/);
+    await until(has(t('common.retry')), 'retry button');
+    const page = await text();
+    assert.ok(page.includes(t('error.no_connection')));
+    assert.ok(!page.includes(t('pair.title')) && !page.includes(t('open.submit')));
   });
 
   test('a wrong fallback code shows the plain message and keeps the details folded', async () => {
     await open('empty');
     await fill('input[autocomplete=name]', 'Внук Саша');
     await fill('input[placeholder^="fvpair1"]', '000000');
-    await click('Передать устройству');
-    await until("document.body.innerText.includes('Устройство не приняло код')", 'rejection message');
+    await click(t('pair.submit'));
+    await until(has(t('error.pairing.write_rejected')), 'rejection message');
     assert.equal(await evaluate("document.querySelector('details')?.open"), false);
   });
 
   test('an unconfirmed operation shows the warning, and its result stays visible after the check', async () => {
     await open('unconfirmed');
-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
-    await click('Проверить');
-    await until("!document.body.innerText.includes('Не закончена операция')", 'warning cleared');
+    await until(has(unfinished()), 'warning');
+    await click(t('pending.check'));
+    await until(`!${has(unfinished())}`, 'warning cleared');
     await sleep(300);
-    assert.match(await text(), /Операция прошла\./);
+    assert.ok((await text()).includes(t('resolution.confirmed')));
   });
 
   test('a failed check is shown as an info notice, a confirmed one as a success notice', async () => {
     await open('unconfirmed-failed');
-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
-    await click('Проверить');
+    await until(has(unfinished()), 'warning');
+    await click(t('pending.check'));
     await until("document.getElementById('notice')", 'notice');
     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
-    assert.match(await text(), /деньги не списаны/);
+    assert.ok((await text()).includes(t('resolution.failed')));
     await open('unconfirmed');
-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
-    await click('Проверить');
+    await until(has(unfinished()), 'warning');
+    await click(t('pending.check'));
     await until("document.getElementById('notice')", 'notice');
     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
   });
@@ -261,18 +270,18 @@ try {
   test('while an operation is unconfirmed the money buttons are disabled', async () => {
     await open('unconfirmed', 'send');
     await until("document.querySelector('input[name=payee]')", 'payee list');
-    assert.equal(await buttonDisabled('Отправить'), true);
-    assert.match(await text(), /Сначала проверьте прошлую операцию/);
-    await click('Проверить');
-    await until("!document.body.innerText.includes('Не закончена операция')", 'warning cleared');
+    assert.equal(await buttonDisabled(t('send.submit')), true);
+    assert.ok((await text()).includes(t('pending.lock_hint')));
+    await click(t('pending.check'));
+    await until(`!${has(unfinished())}`, 'warning cleared');
     await until("document.querySelector('input[name=payee]')", 'send form back');
-    assert.equal(await buttonDisabled('Отправить'), false);
+    assert.equal(await buttonDisabled(t('send.submit')), false);
   });
 
   test('a background refresh is deferred while the person types, then applied', async () => {
     await open('owner');
     assert.match(await text(), /250\.5 USDC/);
-    await click('Пополнить');
+    await click(t('home.deposit'));
     await until("document.querySelector('input[type=text]')", 'amount field');
     await fill('input[type=text]', '12.5');
     await evaluate('globalThis.__mockBump()');
@@ -282,39 +291,39 @@ try {
     assert.match(await text(), /250\.5 USDC/); // the update waits
     await evaluate('document.activeElement.blur()');
     await evaluate("document.dispatchEvent(new Event('visibilitychange'))");
-    await until("document.body.innerText.includes('251.5 USDC')", 'deferred balance applied');
+    await until(has('251.5 USDC'), 'deferred balance applied');
   });
 
   test('an unknown notice kind falls back to the info banner', async () => {
     await open('owner');
-    await evaluate("__ctx.notify('Что-то', 'bogus'); __ctx.notify('Ещё', null);");
+    await evaluate("__ctx.notify({ key: 'notice.sent' }, 'bogus'); __ctx.notify({ key: 'notice.deposit' }, null);");
     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-info');
-    await evaluate("__ctx.notify('Хорошо')");
+    await evaluate("__ctx.notify({ key: 'notice.sent' })");
     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-ok');
   });
 
   test('a check that is still undecided shows a warn notice and keeps the warning', async () => {
     await open('unconfirmed-waiting');
-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
-    await click('Проверить');
+    await until(has(unfinished()), 'warning');
+    await click(t('pending.check'));
     await until("document.getElementById('notice')", 'notice');
     assert.equal(await evaluate("document.getElementById('notice').className"), 'banner banner-warn');
     await sleep(500);
-    assert.match(await text(), /Не закончена операция/);
+    assert.ok((await text()).includes(unfinished()));
   });
 
   test('notify keeps half-typed fields, renders no second notice and is announced', async () => {
     await open('owner', 'people');
     await until("document.querySelector('input[type=text]')", 'name field');
     await fill('input[type=text]', 'Баба Нюра');
-    await evaluate("__ctx.notify('Готово')");
+    await evaluate("__ctx.notify({ key: 'notice.sent' })");
     assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
     assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
-    assert.match(await text(), /Готово/);
-    await evaluate("__ctx.notify('Готово 2')");
+    assert.ok((await text()).includes(t('notice.sent')));
+    await evaluate("__ctx.notify({ key: 'notice.deposit' })");
     assert.equal(await evaluate("document.querySelectorAll('#notice').length"), 1);
     assert.equal(await evaluate("document.querySelector('input[type=text]').value"), 'Баба Нюра');
-    await until("document.getElementById('live').textContent === 'Готово 2'", 'live region text');
+    await until(`document.getElementById('live').textContent === ${JSON.stringify(t('notice.deposit'))}`, 'live region text');
   });
 
   test('a slow older response never overwrites a newer one', async () => {
@@ -326,7 +335,7 @@ try {
     await until('!globalThis.__mockDelay.load_vault', 'the slow call to have read its (older) balance');
     // Fast call: reads the newer 252.5 and lands long before the slow one.
     await evaluate('__mockBump(); void __ctx.refresh();');
-    await until("document.body.innerText.includes('252.5 USDC')", 'newer balance');
+    await until(has('252.5 USDC'), 'newer balance');
     await sleep(2200); // the slow call (1500 ms hold + history) has landed by now
     assert.match(await text(), /252\.5 USDC/);
     assert.doesNotMatch(await text(), /251\.5 USDC/);
@@ -334,14 +343,14 @@ try {
 
   test('a newer call skipped because of typing does not lose an older result', async () => {
     await open('owner');
-    await click('Пополнить');
+    await click(t('home.deposit'));
     await until("document.querySelector('input[type=text]')", 'amount field');
     await fill('input[type=text]', '5');
     await evaluate("globalThis.__mockDelay = { load_vault: 800 }; __mockBump(); void __ctx.refresh({ background: true }); void __ctx.refresh({ background: true });");
     await sleep(1000); // the fast call finished while typing and was skipped
     assert.match(await text(), /250\.5 USDC/);
     await evaluate('document.activeElement.blur()');
-    await until("document.body.innerText.includes('251.5 USDC')", 'older result still applied');
+    await until(has('251.5 USDC'), 'older result still applied');
   });
 
   test('an unconfirmed error leaves the button disabled the whole time', async () => {
@@ -349,33 +358,40 @@ try {
     await until("document.querySelector('input[name=payee]')", 'payee list');
     await fill('input[type=text]', '5');
     await evaluate(`(() => {
-      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === 'Отправить');
+      const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === ${JSON.stringify(t('send.submit'))});
       window.__log = [];
       new MutationObserver((rs) => rs.forEach((r) => window.__log.push(r.oldValue === null ? 'disabled' : 'enabled')))
         .observe(b, { attributes: true, attributeFilter: ['disabled'], attributeOldValue: true });
     })()`);
-    await click('Отправить');
-    await until("document.body.innerText.includes('Не закончена операция')", 'warning');
+    await click(t('send.submit'));
+    await until(has(unfinished()), 'warning');
     await sleep(300);
-    assert.equal(await buttonDisabled('Отправить'), true);
+    assert.equal(await buttonDisabled(t('send.submit')), true);
     assert.deepEqual(await evaluate('window.__log'), ['disabled']);
   });
 
   test('names from the chain are shown as text, never as HTML', async () => {
     await open('owner', 'people');
-    await until("document.body.innerText.includes('Внучка Анна')", 'people list');
+    await until(has('Внучка Анна'), 'people list');
     await evaluate(`import('./dom.js').then(({h}) => { document.body.append(h('div', {id:'x'}, '<img src=x onerror=window.__pwned=1>')); })`);
     await sleep(200);
     assert.equal(await evaluate('window.__pwned === undefined && !document.querySelector("#x img")'), true);
   });
+  }
 
-  for (const [name, fn] of tests) {
-    try {
-      await fn();
-      console.log(`ok   ${name}`);
-    } catch (e) {
-      failed++;
-      console.log(`FAIL ${name}\n     ${String(e.message).split('\n').join('\n     ')}`);
+  for (const language of ['ru', 'en']) {
+    lang = language;
+    setLocale(language, { persist: false });
+    tests.length = 0;
+    define();
+    for (const [name, fn] of tests) {
+      try {
+        await fn();
+        console.log(`ok   ${name}`);
+      } catch (e) {
+        failed++;
+        console.log(`FAIL ${name}\n     ${String(e.message).split('\n').join('\n     ')}`);
+      }
     }
   }
   if (errors.length) {

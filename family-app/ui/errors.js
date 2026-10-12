@@ -1,7 +1,8 @@
 // Every failed command rejects with an ErrorDto from Rust:
-// { kind, message, details? }. Anything else is wrapped so screens can rely
-// on that shape.
-const DEFAULT_MESSAGE = 'Что-то пошло не так. Попробуйте ещё раз.';
+// { kind, key, params, details? }, where `key` and `params` name a catalog
+// sentence (see i18n.js). Anything else is wrapped so screens can rely on
+// that shape.
+const GENERIC = 'error.generic';
 
 function safeString(v) {
   try {
@@ -11,13 +12,15 @@ function safeString(v) {
   }
 }
 
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
 function normalize(e) {
-  if (
-    e && typeof e === 'object' &&
-    typeof e.kind === 'string' && typeof e.message === 'string' && e.message !== ''
-  ) {
-    if (e.details == null || typeof e.details === 'string') return e;
-    return { kind: e.kind, message: e.message, details: safeString(e.details) };
+  if (isPlainObject(e) && typeof e.kind === 'string' && typeof e.key === 'string' && e.key !== '') {
+    const params = isPlainObject(e.params) ? e.params : {};
+    if (e.details == null || typeof e.details === 'string') return { ...e, params };
+    return { kind: e.kind, key: e.key, params, details: safeString(e.details) };
   }
   let details;
   try {
@@ -25,13 +28,13 @@ function normalize(e) {
   } catch {
     details = 'unknown error';
   }
-  return { kind: 'internal', message: DEFAULT_MESSAGE, details };
+  return { kind: 'internal', key: GENERIC, params: {}, details };
 }
 
 export function normalizeError(e) {
   try {
     return normalize(e);
   } catch {
-    return { kind: 'internal', message: DEFAULT_MESSAGE, details: 'unknown error' };
+    return { kind: 'internal', key: GENERIC, params: {}, details: 'unknown error' };
   }
 }

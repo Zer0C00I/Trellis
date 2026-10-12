@@ -10,13 +10,48 @@ use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+use crate::msg::Msg;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PendingTx {
     pub signature: String,
     pub last_valid_block_height: u64,
-    /// What the user was doing, in words ("Отправка 5 USDC").
+    /// What the user was doing, as a catalog key (`op.send`) ...
+    #[serde(default)]
+    pub what_key: Option<String>,
+    /// ... and its parameters (`{"amount": "5 USDC"}`).
+    #[serde(default)]
+    pub what_params: Map<String, Value>,
+    /// A sentence written by an earlier version of the app, which stored the
+    /// words themselves. Read as a fallback and written empty, so an older
+    /// app can still read a record this version made.
+    #[serde(default)]
     pub what: String,
+}
+
+impl PendingTx {
+    pub fn new(signature: String, last_valid_block_height: u64, what: &Msg) -> Self {
+        Self {
+            signature,
+            last_valid_block_height,
+            what_key: Some(what.key.clone()),
+            what_params: what.params.clone(),
+            what: String::new(),
+        }
+    }
+
+    /// What the screen shows: the key if there is one, else the old sentence.
+    pub fn what_msg(&self) -> Msg {
+        match &self.what_key {
+            Some(key) => Msg {
+                key: key.clone(),
+                params: self.what_params.clone(),
+            },
+            None => Msg::new("op.legacy").with("text", self.what.clone()),
+        }
+    }
 }
 
 /// Why the record could not be read. A corrupt file is told apart from an
@@ -103,11 +138,33 @@ mod tests {
     }
 
     fn sample() -> PendingTx {
-        PendingTx {
-            signature: "5j7s".to_string(),
-            last_valid_block_height: 123_456,
-            what: "Отправка 5 USDC".to_string(),
-        }
+        PendingTx::new(
+            "5j7s".to_string(),
+            123_456,
+            &Msg::new("op.send").with("amount", "5 USDC"),
+        )
+    }
+
+    #[test]
+    fn a_record_from_an_earlier_version_keeps_its_sentence() {
+        let old = r#"{"signature":"5j7s","last_valid_block_height":9,"what":"Отправка 5 USDC"}"#;
+        let record: PendingTx = serde_json::from_str(old).unwrap();
+        assert_eq!(
+            record.what_msg(),
+            Msg::new("op.legacy").with("text", "Отправка 5 USDC")
+        );
+    }
+
+    #[test]
+    fn a_new_record_names_what_it_was_and_stays_readable_by_the_old_format() {
+        let record = sample();
+        assert_eq!(
+            record.what_msg(),
+            Msg::new("op.send").with("amount", "5 USDC")
+        );
+        let json: Value = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["what"], "");
+        assert_eq!(json["what_key"], "op.send");
     }
 
     #[test]

@@ -14,6 +14,7 @@ use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 
 use crate::dto::{ActionOkDto, ErrorDto};
+use crate::msg::Msg;
 use crate::pending::{self, PendingTx};
 use crate::state::{AppState, BusyGuard};
 use crate::text::error_dto;
@@ -32,10 +33,7 @@ where
 {
     tauri::async_runtime::spawn_blocking(work)
         .await
-        .map_err(|e| {
-            ErrorDto::new("internal", "Что-то пошло не так внутри приложения.")
-                .with_details(e.to_string())
-        })?
+        .map_err(|e| ErrorDto::new("internal", "error.internal").with_details(e.to_string()))?
 }
 
 pub fn now_unix() -> i64 {
@@ -45,28 +43,21 @@ pub fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-pub fn parse_pubkey(text: &str, what: &str) -> Result<Pubkey, ErrorDto> {
+/// `field` is the catalog key naming what was typed (`field.vault`).
+pub fn parse_pubkey(text: &str, field: &str) -> Result<Pubkey, ErrorDto> {
     text.trim().parse().map_err(|_| {
-        ErrorDto::new(
-            "invalid",
-            format!("{what}: это не похоже на адрес. Проверьте, что он скопирован целиком."),
-        )
+        ErrorDto::new("invalid", "error.bad_address").with_msg_param("what", &Msg::new(field))
     })
 }
 
 /// Exact decimal parse; `text` is what the person typed ("25", "2.50").
 pub fn parse_amount(text: &str, decimals: u32) -> Result<u64, ErrorDto> {
-    family_vault_client::parse_decimal_amount(text, decimals).map_err(|e| {
-        ErrorDto::new(
-            "invalid",
-            "Введите сумму числом, например 25 или 2.50 (не больше знаков после точки, чем у денег на счёте).",
-        )
-        .with_details(e)
-    })
+    family_vault_client::parse_decimal_amount(text, decimals)
+        .map_err(|e| ErrorDto::new("invalid", "error.bad_amount").with_details(e))
 }
 
 pub fn load_view(state: &AppState, vault: &str) -> Result<VaultView, ErrorDto> {
-    let vault = parse_pubkey(vault, "Счёт")?;
+    let vault = parse_pubkey(vault, "field.vault")?;
     Ok(fetch_vault_view(&state.rpc, &state.program_id, &vault)?)
 }
 
@@ -76,11 +67,9 @@ pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
     let path = state.pending_path();
     match pending::load(&path) {
         Ok(record) => Ok(record),
-        Err(pending::LoadError::Io(e)) => Err(ErrorDto::new(
-            "internal",
-            "Не удалось прочитать записи приложения.",
-        )
-        .with_details(e)),
+        Err(pending::LoadError::Io(e)) => {
+            Err(ErrorDto::new("internal", "error.cannot_read_records").with_details(e))
+        }
         Err(pending::LoadError::Corrupt(why)) => Err(quarantine_error(state, &why)),
     }
 }
@@ -89,12 +78,9 @@ pub fn load_pending(state: &AppState) -> Result<Option<PendingTx>, ErrorDto> {
 /// one error the person sees about it.
 pub fn quarantine_error(state: &AppState, why: &str) -> ErrorDto {
     match pending::quarantine(&state.pending_path()) {
-        Ok(moved) => ErrorDto::new(
-            "blocked",
-            "Запись о прошлой операции оказалась повреждена, и мы не можем узнать, чем она кончилась. Проверьте историю счёта и свой кошелёк, прежде чем повторять перевод. Запись сохранена отдельно, приложение снова работает.",
-        )
-        .with_details(moved.display().to_string()),
-        Err(e) => ErrorDto::new("internal", "Не удалось прочитать записи приложения.")
+        Ok(moved) => ErrorDto::new("blocked", "error.record_corrupt")
+            .with_details(moved.display().to_string()),
+        Err(e) => ErrorDto::new("internal", "error.cannot_read_records")
             .with_details(format!("{why}; {e}")),
     }
 }
@@ -113,21 +99,17 @@ pub fn pool_already_open(pool: &Pubkey, owned: &[Pubkey]) -> bool {
 /// record) may run at a time: a second one starting in the same instant
 /// would race with the first one's reads, and a double tap could pay twice.
 pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
-    BusyGuard::acquire(&state.busy)
-        .ok_or_else(|| ErrorDto::new("blocked", "Подождите: предыдущая операция ещё выполняется."))
+    BusyGuard::acquire(&state.busy).ok_or_else(|| ErrorDto::new("blocked", "error.busy"))
 }
 
 /// While an operation's outcome is unknown nothing else may move money.
 pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
     match load_pending(state)? {
         None => Ok(()),
-        Some(p) => Err(ErrorDto::new(
-            "blocked",
-            format!(
-                "Сначала нужно узнать, чем закончилась прошлая операция («{}»). Нажмите «Проверить».",
-                p.what
-            ),
-        )),
+        Some(p) => {
+            Err(ErrorDto::new("blocked", "error.pending_blocks")
+                .with_msg_param("what", &p.what_msg()))
+        }
     }
 }
 
@@ -140,25 +122,17 @@ pub fn should_clear<T>(result: &Result<T, ActionError>) -> bool {
 
 /// Builds the record the hook writes before anything is sent.
 pub fn pending_record(
-    what: &str,
+    what: &Msg,
     signature: &Signature,
     last_valid_block_height: u64,
 ) -> PendingTx {
-    PendingTx {
-        signature: signature.to_string(),
-        last_valid_block_height,
-        what: what.to_string(),
-    }
+    PendingTx::new(signature.to_string(), last_valid_block_height, what)
 }
 
 /// What the person sees when the record could not be written (so nothing
 /// was sent).
 pub fn record_failed_dto(reason: String) -> ErrorDto {
-    ErrorDto::new(
-        "internal",
-        "Не удалось записать операцию на этом устройстве, поэтому ничего не было отправлено. Попробуйте ещё раз.",
-    )
-    .with_details(reason)
+    ErrorDto::new("internal", "error.record_not_saved").with_details(reason)
 }
 
 /// Runs one money operation with the "record before sending" rule: core's
@@ -167,7 +141,7 @@ pub fn record_failed_dto(reason: String) -> ErrorDto {
 /// Afterwards the record is cleared unless the outcome is `Unconfirmed`.
 pub fn run_money<T>(
     state: &AppState,
-    what: &str,
+    what: &Msg,
     op: impl FnOnce(BeforeSend) -> Result<T, ActionError>,
 ) -> Result<T, ErrorDto> {
     let path = state.pending_path();
@@ -186,7 +160,7 @@ pub fn run_money<T>(
     }
     if should_clear(&result) {
         // If this fails the record stays and blocks money commands until
-        // "Проверить" settles it: the safe side.
+        // "Check" settles it: the safe side.
         let _ = pending::clear(&path);
     }
     result.map_err(ErrorDto::from)
@@ -199,12 +173,12 @@ pub fn finish(
 ) -> Result<ActionOkDto, ErrorDto> {
     result.map(|signature| ActionOkDto {
         signature: signature.to_string(),
-        message: ok_message.to_string(),
+        message: Msg::new(ok_message),
     })
 }
 
-pub fn not_allowed(text: &str) -> ErrorDto {
-    ErrorDto::new("blocked", text)
+pub fn not_allowed(key: &str) -> ErrorDto {
+    ErrorDto::new("blocked", key)
 }
 
 #[cfg(test)]
@@ -217,7 +191,7 @@ mod tests {
 
     #[test]
     fn a_record_with_a_bad_signature_is_recognised() {
-        let mut r = pending_record("x", &sig(), 1);
+        let mut r = pending_record(&Msg::new("op.add_guardian"), &sig(), 1);
         assert_eq!(parse_record_signature(&r), Some(sig()));
         r.signature = "not a signature".to_string();
         assert_eq!(parse_record_signature(&r), None);
@@ -234,8 +208,9 @@ mod tests {
 
     #[test]
     fn the_record_carries_what_signature_and_height() {
-        let r = pending_record("Отправка 5 USDC", &sig(), 77);
-        assert_eq!(r.what, "Отправка 5 USDC");
+        let what = Msg::new("op.send").with("amount", "5 USDC");
+        let r = pending_record(&what, &sig(), 77);
+        assert_eq!(r.what_msg(), what);
         assert_eq!(r.signature, sig().to_string());
         assert_eq!(r.last_valid_block_height, 77);
     }
@@ -249,10 +224,14 @@ mod tests {
                 .unwrap()
                 .subsec_nanos()
         ));
-        let record = pending_record("x", &sig(), 5);
+        let record = pending_record(&Msg::new("op.add_guardian"), &sig(), 5);
         pending::save(&path, &record).unwrap();
         assert_eq!(pending::load(&path).unwrap(), Some(record.clone()));
-        assert!(pending::save(&path, &pending_record("y", &sig(), 6)).is_err());
+        assert!(pending::save(
+            &path,
+            &pending_record(&Msg::new("op.open_family"), &sig(), 6)
+        )
+        .is_err());
         pending::clear(&path).unwrap();
     }
 
@@ -271,8 +250,25 @@ mod tests {
     fn a_failed_record_save_says_nothing_was_sent_and_to_retry() {
         let dto = record_failed_dto("disk full".to_string());
         assert_eq!(dto.kind, "internal");
-        assert!(dto.message.contains("ничего не было отправлено"));
-        assert!(dto.message.contains("Попробуйте ещё раз"));
+        assert_eq!(dto.message.key, "error.record_not_saved");
         assert_eq!(dto.details.as_deref(), Some("disk full"));
+    }
+
+    #[test]
+    fn a_blocked_command_names_the_unfinished_operation() {
+        let what = Msg::new("op.send").with("amount", "5 USDC");
+        let dto = ErrorDto::new("blocked", "error.pending_blocks").with_msg_param("what", &what);
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["kind"], "blocked");
+        assert_eq!(json["key"], "error.pending_blocks");
+        assert_eq!(json["params"]["what"]["key"], "op.send");
+    }
+
+    #[test]
+    fn a_bad_address_names_the_field_by_key() {
+        let err = parse_pubkey("nope", "field.recipient").unwrap_err();
+        assert_eq!(err.kind, "invalid");
+        assert_eq!(err.message.key, "error.bad_address");
+        assert_eq!(err.message.params["what"]["key"], "field.recipient");
     }
 }

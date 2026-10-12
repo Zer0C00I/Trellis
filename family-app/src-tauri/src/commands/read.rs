@@ -17,6 +17,7 @@ use crate::dto::{
     AppInfoDto, ErrorDto, HistoryLineDto, PendingTxDto, ResolutionDto, VaultDto, VaultRefDto,
     WalletDto,
 };
+use crate::msg::Msg;
 use crate::pending;
 use crate::state::AppState;
 use crate::text::{history_line, resolution_for, short_address};
@@ -93,7 +94,7 @@ pub async fn load_history(
 ) -> Result<Vec<HistoryLineDto>, ErrorDto> {
     let st = state.inner().clone();
     blocking(move || {
-        let vault = parse_pubkey(&vault, "Счёт")?;
+        let vault = parse_pubkey(&vault, "field.vault")?;
         // A poisoned lock only means an earlier call panicked mid-update;
         // the cache is still a valid map, so keep using it.
         let mut cache = st
@@ -120,7 +121,7 @@ pub async fn load_history(
 pub fn pending_status(state: State<'_, AppState>) -> Result<Option<PendingTxDto>, ErrorDto> {
     let record = load_pending(&state)?;
     Ok(record.map(|p| PendingTxDto {
-        what: p.what,
+        what: p.what_msg(),
         signature: p.signature,
     }))
 }
@@ -138,7 +139,7 @@ pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto, 
         let Some(record) = record else {
             return Ok(ResolutionDto {
                 status: "none",
-                message: "Ничего не ожидает проверки.".to_string(),
+                message: Msg::new("resolution.none"),
             });
         };
         let Some(signature) = parse_record_signature(&record) else {
@@ -150,7 +151,7 @@ pub async fn check_pending(state: State<'_, AppState>) -> Result<ResolutionDto, 
         let outcome = confirm_signature(&st.rpc, &signature, record.last_valid_block_height)?;
         if outcome != SignatureOutcome::StillPossible {
             pending::clear(&st.pending_path()).map_err(|e| {
-                ErrorDto::new("internal", "Не удалось обновить записи приложения.").with_details(e)
+                ErrorDto::new("internal", "error.cannot_update_records").with_details(e)
             })?;
         }
         Ok(resolution_for(&outcome))

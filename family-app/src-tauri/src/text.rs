@@ -1,5 +1,6 @@
-//! Every sentence the app shows, and the pure functions that turn core
-//! values into them. Plain bank language: no "vault", "PDA", "mint" or
+//! What the app says, as catalog keys with parameters (`Msg`), and the pure
+//! functions that turn core values into them. The sentences themselves live in
+//! `ui/locales/*.js`, in plain bank language: no "vault", "PDA", "mint" or
 //! "approver" anywhere a person reads it.
 
 use family_app_core::history::HistoryEntryKind;
@@ -13,62 +14,52 @@ use solana_pubkey::Pubkey;
 use family_app_core::actions::SignatureOutcome;
 
 use crate::dto::{ErrorDto, ResolutionDto};
+use crate::msg::Msg;
 
 pub fn short_address(address: &Pubkey) -> String {
     let full = address.to_string();
     format!("{}…{}", &full[..4], &full[full.len() - 4..])
 }
 
-/// "1 час", "2 часа", "5 часов", "11 часов", "21 час".
-pub fn plural_ru(n: u64, one: &str, few: &str, many: &str) -> String {
-    let word = match (n % 100, n % 10) {
-        (11..=14, _) => many,
-        (_, 1) => one,
-        (_, 2..=4) => few,
-        _ => many,
-    };
-    format!("{n} {word}")
-}
-
 pub fn money(amount: u64, decimals: u32) -> String {
     format!("{} USDC", format_base_units(amount, decimals))
 }
 
-pub fn payee_status(active_after: i64, now: i64) -> String {
+pub fn payee_status(active_after: i64, now: i64) -> Msg {
     if now >= active_after {
-        return "Можно отправлять".to_string();
+        return Msg::new("payee.ready");
     }
     let secs = active_after.saturating_sub(now) as u64;
     if secs < 3600 {
-        return "Можно будет меньше чем через час".to_string();
+        return Msg::new("payee.wait_under_hour");
     }
-    let hours = secs.div_ceil(3600);
-    format!(
-        "Можно будет через {}",
-        plural_ru(hours, "час", "часа", "часов")
-    )
+    Msg::new("payee.wait_hours").with("n", secs.div_ceil(3600))
 }
 
-pub fn history_line(kind: &HistoryEntryKind, decimals: u32) -> String {
+pub fn history_line(kind: &HistoryEntryKind, decimals: u32) -> Msg {
     // Names in history come straight from the chain: clean them first.
-    let quote = |name: &str| format!("«{}»", sanitize_text(name));
+    let name = |name: &str| sanitize_text(name);
     match kind {
         HistoryEntryKind::Deposit { amount } => {
-            format!("Пополнение на {}", money(*amount, decimals))
+            Msg::new("history.deposit").with("amount", money(*amount, decimals))
         }
-        HistoryEntryKind::Withdraw { amount } => format!("Отправлено {}", money(*amount, decimals)),
-        HistoryEntryKind::AddBeneficiary { name } => format!("Добавлен получатель {}", quote(name)),
-        HistoryEntryKind::AddBeneficiaryUrgent { name } => {
-            format!("Срочно добавлен получатель {}", quote(name))
+        HistoryEntryKind::Withdraw { amount } => {
+            Msg::new("history.withdraw").with("amount", money(*amount, decimals))
         }
-        HistoryEntryKind::AddTrustedApprover => "Добавлено доверенное лицо".to_string(),
+        HistoryEntryKind::AddBeneficiary { name: who } => {
+            Msg::new("history.payee_added").with("name", name(who))
+        }
+        HistoryEntryKind::AddBeneficiaryUrgent { name: who } => {
+            Msg::new("history.payee_added_urgent").with("name", name(who))
+        }
+        HistoryEntryKind::AddTrustedApprover => Msg::new("history.guardian_added"),
         HistoryEntryKind::RequestWithdrawal { amount, .. } => {
-            format!("Запрос на перевод {}", money(*amount, decimals))
+            Msg::new("history.request").with("amount", money(*amount, decimals))
         }
-        HistoryEntryKind::ApproveWithdrawal => "Перевод одобрен".to_string(),
-        HistoryEntryKind::InitializeVault => "Счёт открыт".to_string(),
-        HistoryEntryKind::InitializeApprovers => "Включены доверенные лица".to_string(),
-        HistoryEntryKind::Unknown => "Операция".to_string(),
+        HistoryEntryKind::ApproveWithdrawal => Msg::new("history.approved"),
+        HistoryEntryKind::InitializeVault => Msg::new("history.opened"),
+        HistoryEntryKind::InitializeApprovers => Msg::new("history.guardians_enabled"),
+        HistoryEntryKind::Unknown => Msg::new("history.unknown"),
     }
 }
 
@@ -84,38 +75,38 @@ fn custom_error_code(text: &str) -> Option<u32> {
     u32::from_str_radix(&hex, 16).ok()
 }
 
-/// A sentence for a rejection we can explain, or `None`.
+/// The catalog key of a rejection we can explain, or `None`.
 pub fn friendly_rejection(text: &str) -> Option<&'static str> {
     let code = custom_error_code(text)?;
     let is = |e: VaultError| code == u32::from(e);
     Some(if is(VaultError::BeneficiaryCooldownActive) {
-        "Этого получателя ещё нельзя использовать: после добавления нужно подождать 48 часов."
+        "error.vault.beneficiary_cooldown_active"
     } else if is(VaultError::UnknownBeneficiary) {
-        "Этого человека нет в списке получателей."
+        "error.vault.unknown_beneficiary"
     } else if is(VaultError::DailyLimitExceeded) {
-        "Это больше, чем можно отправить за день. Нужен запрос на перевод."
+        "error.vault.daily_limit_exceeded"
     } else if is(VaultError::AmountDoesNotExceedDailyLimit) {
-        "Эту сумму можно отправить сразу, без запроса."
+        "error.vault.amount_does_not_exceed_daily_limit"
     } else if is(VaultError::NotVaultOwner) {
-        "Это может сделать только владелец счёта."
+        "error.vault.not_vault_owner"
     } else if is(VaultError::NotTrustedApprover) {
-        "Одобрять переводы могут только доверенные лица."
+        "error.vault.not_trusted_approver"
     } else if is(VaultError::BeneficiaryListFull) {
-        "В списке получателей больше нет места."
+        "error.vault.beneficiary_list_full"
     } else if is(VaultError::BeneficiaryAlreadyExists) {
-        "Этот получатель уже есть в списке."
+        "error.vault.beneficiary_already_exists"
     } else if is(VaultError::ApproverListFull) {
-        "В списке доверенных лиц больше нет места."
+        "error.vault.approver_list_full"
     } else if is(VaultError::ApproverAlreadyExists) {
-        "Это доверенное лицо уже добавлено."
+        "error.vault.approver_already_exists"
     } else if is(VaultError::CannotApproveOwnWithdrawals) {
-        "Владелец счёта не может быть своим же доверенным лицом."
+        "error.vault.cannot_approve_own_withdrawals"
     } else if is(VaultError::ExistingApproverRequired) {
-        "Чтобы добавить ещё одно доверенное лицо, нужна подпись уже добавленного."
+        "error.vault.existing_approver_required"
     } else if is(VaultError::RequestAlreadyExecuted) {
-        "Этот запрос уже выполнен."
+        "error.vault.request_already_executed"
     } else if is(VaultError::ZeroAmount) {
-        "Сумма должна быть больше нуля."
+        "error.vault.zero_amount"
     } else {
         return None;
     })
@@ -123,20 +114,14 @@ pub fn friendly_rejection(text: &str) -> Option<&'static str> {
 
 pub fn error_dto(error: &ActionError) -> ErrorDto {
     match error {
-        ActionError::NoConnection => ErrorDto::new(
-            "no_connection",
-            "Нет связи. Проверьте интернет и попробуйте ещё раз.",
-        ),
+        ActionError::NoConnection => ErrorDto::new("no_connection", "error.no_connection"),
         ActionError::Rejected(text) => {
-            let message = friendly_rejection(text).unwrap_or("Не получилось. Ничего не списано.");
-            ErrorDto::new("rejected", message).with_details(text.clone())
+            let key = friendly_rejection(text).unwrap_or("error.rejected_generic");
+            ErrorDto::new("rejected", key).with_details(text.clone())
         }
-        ActionError::Unconfirmed { signature, .. } => ErrorDto::new(
-            "unconfirmed",
-            "Операция отправлена, но мы пока не знаем, дошла ли она. \
-             Не повторяйте её: нажмите «Проверить».",
-        )
-        .with_details(signature.to_string()),
+        ActionError::Unconfirmed { signature, .. } => {
+            ErrorDto::new("unconfirmed", "error.unconfirmed").with_details(signature.to_string())
+        }
     }
 }
 
@@ -144,57 +129,28 @@ pub fn error_dto(error: &ActionError) -> ErrorDto {
 /// `Confirmed`, `Failed` and `Expired` settle it (the record may be deleted);
 /// `StillPossible` does not.
 pub fn resolution_for(outcome: &SignatureOutcome) -> ResolutionDto {
-    match outcome {
-        SignatureOutcome::Confirmed => ResolutionDto {
-            status: "confirmed",
-            message: "Операция прошла.".to_string(),
-        },
-        SignatureOutcome::Failed(_) => ResolutionDto {
-            status: "failed",
-            message: "Операция не выполнилась, деньги не списаны. Можно попробовать ещё раз."
-                .to_string(),
-        },
-        SignatureOutcome::Expired => ResolutionDto {
-            status: "expired",
-            message: "Операция так и не дошла, деньги не списаны. Можно попробовать ещё раз."
-                .to_string(),
-        },
-        SignatureOutcome::StillPossible => ResolutionDto {
-            status: "waiting",
-            message: "Пока неизвестно, дошла ли операция. Подождите минуту и проверьте ещё раз."
-                .to_string(),
-        },
+    let (status, key) = match outcome {
+        SignatureOutcome::Confirmed => ("confirmed", "resolution.confirmed"),
+        SignatureOutcome::Failed(_) => ("failed", "resolution.failed"),
+        SignatureOutcome::Expired => ("expired", "resolution.expired"),
+        SignatureOutcome::StillPossible => ("waiting", "resolution.waiting"),
+    };
+    ResolutionDto {
+        status,
+        message: Msg::new(key),
     }
 }
 
 pub fn pairing_error_dto(error: &PairingError) -> ErrorDto {
-    let (kind, message): (&'static str, &str) = match error {
-        PairingError::BadQrText => (
-            "invalid",
-            "Это не похоже на код с экрана устройства. Наведите камеру на QR-код ещё раз.",
-        ),
-        PairingError::BadPin => ("invalid", "Код состоит ровно из 6 цифр."),
-        PairingError::BadName(_) => (
-            "invalid",
-            "Имя нужно написать короче и без служебных символов.",
-        ),
-        PairingError::NoAdapter => (
-            "rejected",
-            "Не найден Bluetooth. Включите Bluetooth и попробуйте ещё раз.",
-        ),
-        PairingError::KioskNotFound => (
-            "rejected",
-            "Устройство не найдено. Подойдите к нему ближе и убедитесь, что на экране показан QR-код.",
-        ),
-        PairingError::ConnectFailed(_) => (
-            "rejected",
-            "Не удалось соединиться с устройством. Подойдите ближе и попробуйте ещё раз.",
-        ),
-        PairingError::WriteRejected(_) => (
-            "rejected",
-            "Устройство не приняло код. Проверьте код: на экране мог появиться новый.",
-        ),
-        PairingError::Ble(_) => ("rejected", "Ошибка Bluetooth. Попробуйте ещё раз."),
+    let (kind, key): (&'static str, &str) = match error {
+        PairingError::BadQrText => ("invalid", "error.pairing.bad_qr"),
+        PairingError::BadPin => ("invalid", "error.pairing.bad_pin"),
+        PairingError::BadName(_) => ("invalid", "error.pairing.bad_name"),
+        PairingError::NoAdapter => ("rejected", "error.pairing.no_adapter"),
+        PairingError::KioskNotFound => ("rejected", "error.pairing.kiosk_not_found"),
+        PairingError::ConnectFailed(_) => ("rejected", "error.pairing.connect_failed"),
+        PairingError::WriteRejected(_) => ("rejected", "error.pairing.write_rejected"),
+        PairingError::Ble(_) => ("rejected", "error.pairing.ble"),
     };
     let details = match error {
         PairingError::BadName(d)
@@ -203,7 +159,7 @@ pub fn pairing_error_dto(error: &PairingError) -> ErrorDto {
         | PairingError::Ble(d) => Some(d.clone()),
         _ => None,
     };
-    let dto = ErrorDto::new(kind, message);
+    let dto = ErrorDto::new(kind, key);
     match details {
         Some(d) => dto.with_details(d),
         None => dto,
@@ -216,22 +172,6 @@ mod tests {
 
     fn key(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
-    }
-
-    #[test]
-    fn plural_ru_follows_the_russian_rules() {
-        let h = |n| plural_ru(n, "час", "часа", "часов");
-        assert_eq!(h(1), "1 час");
-        assert_eq!(h(2), "2 часа");
-        assert_eq!(h(4), "4 часа");
-        assert_eq!(h(5), "5 часов");
-        assert_eq!(h(11), "11 часов");
-        assert_eq!(h(12), "12 часов");
-        assert_eq!(h(14), "14 часов");
-        assert_eq!(h(21), "21 час");
-        assert_eq!(h(22), "22 часа");
-        assert_eq!(h(48), "48 часов");
-        assert_eq!(h(111), "111 часов");
     }
 
     #[test]
@@ -252,44 +192,39 @@ mod tests {
     #[test]
     fn payee_status_counts_hours_until_the_payee_can_be_used() {
         let now = 1_000_000;
-        assert_eq!(payee_status(now - 1, now), "Можно отправлять");
-        assert_eq!(payee_status(now, now), "Можно отправлять");
+        let hours = |n: u64| Msg::new("payee.wait_hours").with("n", n);
+        assert_eq!(payee_status(now - 1, now), Msg::new("payee.ready"));
+        assert_eq!(payee_status(now, now), Msg::new("payee.ready"));
         assert_eq!(
             payee_status(now + 60, now),
-            "Можно будет меньше чем через час"
+            Msg::new("payee.wait_under_hour")
         );
-        assert_eq!(payee_status(now + 3600, now), "Можно будет через 1 час");
-        assert_eq!(payee_status(now + 3601, now), "Можно будет через 2 часа");
-        assert_eq!(
-            payee_status(now + 48 * 3600, now),
-            "Можно будет через 48 часов"
-        );
+        assert_eq!(payee_status(now + 3600, now), hours(1));
+        assert_eq!(payee_status(now + 3601, now), hours(2));
+        assert_eq!(payee_status(now + 48 * 3600, now), hours(48));
     }
 
     #[test]
     fn payee_status_survives_an_absurd_clock() {
         assert_eq!(
             payee_status(i64::MAX, i64::MIN),
-            format!(
-                "Можно будет через {}",
-                plural_ru((i64::MAX as u64).div_ceil(3600), "час", "часа", "часов")
-            )
+            Msg::new("payee.wait_hours").with("n", (i64::MAX as u64).div_ceil(3600))
         );
     }
 
     #[test]
-    fn history_lines_are_plain_language_and_use_the_decimals() {
+    fn history_lines_carry_keys_and_the_formatted_amounts() {
         assert_eq!(
             history_line(&HistoryEntryKind::Deposit { amount: 12_340_000 }, 6),
-            "Пополнение на 12.34 USDC"
+            Msg::new("history.deposit").with("amount", "12.34 USDC")
         );
         assert_eq!(
             history_line(&HistoryEntryKind::Withdraw { amount: 1_000_000 }, 6),
-            "Отправлено 1 USDC"
+            Msg::new("history.withdraw").with("amount", "1 USDC")
         );
         assert_eq!(
             history_line(&HistoryEntryKind::InitializeVault, 6),
-            "Счёт открыт"
+            Msg::new("history.opened")
         );
     }
 
@@ -301,9 +236,11 @@ mod tests {
             },
             6,
         );
-        assert!(!line.contains('\n'));
-        assert!(!line.contains('\u{202E}'));
-        assert!(line.starts_with("Добавлен получатель «Саша"));
+        assert_eq!(line.key, "history.payee_added");
+        let name = line.params["name"].as_str().unwrap();
+        assert!(!name.contains('\n'));
+        assert!(!name.contains('\u{202E}'));
+        assert!(name.starts_with("Саша"));
     }
 
     #[test]
@@ -316,10 +253,13 @@ mod tests {
     }
 
     #[test]
-    fn known_program_errors_get_a_sentence_and_unknown_ones_do_not() {
+    fn known_program_errors_get_a_key_and_unknown_ones_do_not() {
         let code = u32::from(VaultError::BeneficiaryCooldownActive);
         let text = format!("custom program error: {code:#x}");
-        assert!(friendly_rejection(&text).unwrap().contains("48 часов"));
+        assert_eq!(
+            friendly_rejection(&text),
+            Some("error.vault.beneficiary_cooldown_active")
+        );
         assert_eq!(friendly_rejection("custom program error: 0x1"), None);
         assert_eq!(friendly_rejection("blockhash not found"), None);
     }
@@ -329,13 +269,14 @@ mod tests {
         assert_eq!(error_dto(&ActionError::NoConnection).kind, "no_connection");
         let rejected = error_dto(&ActionError::Rejected("boom".into()));
         assert_eq!(rejected.kind, "rejected");
+        assert_eq!(rejected.message.key, "error.rejected_generic");
         assert_eq!(rejected.details.as_deref(), Some("boom"));
         let unconfirmed = error_dto(&ActionError::Unconfirmed {
             signature: solana_signature::Signature::from([1u8; 64]),
             last_valid_block_height: 9,
         });
         assert_eq!(unconfirmed.kind, "unconfirmed");
-        assert!(unconfirmed.message.contains("Не повторяйте"));
+        assert_eq!(unconfirmed.message.key, "error.unconfirmed");
     }
 
     #[test]
@@ -345,19 +286,24 @@ mod tests {
         assert_eq!(status(SignatureOutcome::Failed("x".into())), "failed");
         assert_eq!(status(SignatureOutcome::Expired), "expired");
         assert_eq!(status(SignatureOutcome::StillPossible), "waiting");
-        assert!(resolution_for(&SignatureOutcome::Failed("x".into()))
-            .message
-            .contains("не списаны"));
+        assert_eq!(
+            resolution_for(&SignatureOutcome::Failed("x".into()))
+                .message
+                .key,
+            "resolution.failed"
+        );
     }
 
     #[test]
-    fn pairing_errors_are_explained_without_jargon() {
+    fn pairing_errors_have_their_own_keys_and_keep_technical_details() {
         assert_eq!(
-            pairing_error_dto(&PairingError::BadPin).message,
-            "Код состоит ровно из 6 цифр."
+            pairing_error_dto(&PairingError::BadPin).message.key,
+            "error.pairing.bad_pin"
         );
-        let text = pairing_error_dto(&PairingError::KioskNotFound).message;
-        assert!(text.contains("ближе"));
+        assert_eq!(
+            pairing_error_dto(&PairingError::KioskNotFound).message.key,
+            "error.pairing.kiosk_not_found"
+        );
         let rejected = pairing_error_dto(&PairingError::WriteRejected("att 0x0e".into()));
         assert_eq!(rejected.details.as_deref(), Some("att 0x0e"));
     }
