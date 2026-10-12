@@ -1,20 +1,9 @@
-//! Read-only view of one vault for the UI: balance, limits, payees,
-//! guardians (trusted approvers) and pending over-limit requests, all
-//! decoded from chain with the real `family_vault` account types.
+//! Read-only view of one vault for the UI: balance, limits, payees, guardians and pending over-limit
+//! requests, decoded with the real `family_vault` account types.
 //!
-//! The decoding and assembly are pure ([`assemble_view`]) and tested
-//! offline; only [`fetch_vault_view`] and [`next_free_nonce`] touch the
-//! network. Everything read from chain is untrusted: payee names are
-//! sanitized, counts are clamped, and the account owner and discriminator
-//! are checked before any field is believed.
-//!
-//! RPC calls made by [`fetch_vault_view`] (5 in total; they are separate
-//! reads, so the view is not an atomic snapshot):
-//! 1. `get_multiple_accounts([vault, beneficiary list, approvers])`
-//! 2. `get_account(vault token account)` (owner must be the SPL Token program)
-//! 3. `get_account(mint)` (owner must be the SPL Token program)
-//! 4. `get_multiple_accounts(request PDAs for nonces 0..100)`
-//! 5. `get_multiple_accounts(request PDAs for nonces 100..200)`
+//! Assembly is pure ([`assemble_view`]) and tested offline; only [`fetch_vault_view`] and [`next_free_nonce`]
+//! touch the network, in separate reads (not an atomic snapshot). Everything read from chain is untrusted:
+//! names are sanitized, counts clamped, owner and discriminator checked first.
 
 use crate::error::{map_client_error, ActionError};
 use anchor_lang::AccountDeserialize;
@@ -29,21 +18,14 @@ use solana_client::rpc_client::RpcClient;
 use solana_pubkey::Pubkey;
 use spl_token::solana_program::program_pack::Pack;
 
-/// How many request nonces `0..NONCE_SCAN_LIMIT` are inspected.
-///
-/// `PendingWithdrawal` does not store its nonce (it lives only in the PDA
-/// seeds) and nonces are never reused (executed requests keep their account),
-/// so finding pending requests and a free nonce means probing PDAs. A small
-/// window keeps that at two `get_multiple_accounts` calls. A vault that has
-/// used all 200 nonces reports an error instead of silently hiding older
-/// requests; lifting the limit needs a program-side index or a
-/// `getProgramAccounts` scan.
+/// Request nonces `0..NONCE_SCAN_LIMIT` that are inspected. `PendingWithdrawal` does not store its nonce
+/// (only the PDA seeds do) and nonces are never reused, so finding requests and a free nonce means probing
+/// PDAs. A vault that used all 200 reports an error rather than hiding older requests.
 pub const NONCE_SCAN_LIMIT: u64 = 200;
 
 /// `getMultipleAccounts` accepts at most 100 keys per call.
 const NONCE_CHUNK: u64 = 100;
 
-/// An approved recipient, as shown to the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Payee {
     /// Sanitized display name (see [`sanitize_name`]); never raw chain text.
@@ -65,15 +47,12 @@ impl Payee {
     }
 }
 
-/// An over-limit withdrawal request that still awaits approval.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRequest {
     /// Pass this to `actions::approve_withdrawal`.
     pub nonce: u64,
-    /// The request's PDA.
     pub address: Pubkey,
     pub to: Pubkey,
-    /// Base units.
     pub amount: u64,
     pub requested_at: i64,
 }
@@ -87,18 +66,11 @@ pub struct VaultView {
     /// (`daily_limit == u64::MAX`). The program only enforces the limit on
     /// pool vaults, so a UI should look at `is_pool` too.
     pub daily_limit: Option<u64>,
-    /// Base units spent today. The program stores a counter that is only
-    /// reset by the next withdrawal on a new UTC day, so this is the
-    /// effective value: 0 when the stored day is not today.
-    ///
-    /// Advisory only: "today" comes from the DEVICE clock
-    /// ([`fetch_vault_view`]), which may be a day off. The program uses
-    /// cluster time and is authoritative; it enforces the limit regardless
-    /// of what is shown here.
+    /// Base units spent today: the stored counter resets only on the next withdrawal of a new UTC day, so this
+    /// is 0 when the stored day is not today. Advisory: "today" is the DEVICE clock, the program uses cluster time.
     pub spent_today: u64,
     pub mint: Pubkey,
     pub decimals: u32,
-    /// Base units held by the vault's token account.
     pub balance: u64,
     pub payees: Vec<Payee>,
     /// Trusted approvers; empty when the approvers account does not exist yet.
@@ -121,14 +93,9 @@ impl VaultView {
     }
 }
 
-/// Turns untrusted on-chain name bytes into text safe to show or log.
-///
-/// Only the first `name_len` bytes are used (`name_len` is clamped to the
-/// buffer, so a hostile length cannot index out of range), decoded as UTF-8
-/// lossily. Control characters and invisible direction/format characters
-/// (which could fake line breaks or reorder text) become U+FFFD. Variation
-/// selectors are not touched, and lookalike (homoglyph) names cannot be
-/// sanitised: show the address too.
+/// Turns untrusted on-chain name bytes into text safe to show or log. `name_len` is clamped to the buffer,
+/// the bytes are decoded lossily as UTF-8, and control and invisible direction characters become U+FFFD.
+/// Homoglyph names cannot be sanitised: show the address too.
 pub fn sanitize_name(name: &[u8; BENEFICIARY_NAME_LEN], name_len: u8) -> String {
     let len = (name_len as usize).min(BENEFICIARY_NAME_LEN);
     sanitize_text(&String::from_utf8_lossy(&name[..len]))
@@ -337,11 +304,8 @@ fn fetch_request_accounts(
     Ok(slots)
 }
 
-/// The smallest request nonce with no account yet, for a new
-/// `request_withdrawal`. Looks at nonces `0..NONCE_SCAN_LIMIT`
-/// (see that constant for why) and returns
-/// `Rejected("too many withdrawal requests on this vault")` when all are taken.
-/// One `get_multiple_accounts` call, two when the first 100 are all taken.
+/// The smallest request nonce with no account yet, for a new `request_withdrawal`. Scans `0..NONCE_SCAN_LIMIT`
+/// and returns `Rejected("too many withdrawal requests on this vault")` when all are taken.
 pub fn next_free_nonce(
     rpc: &RpcClient,
     program_id: &Pubkey,
@@ -358,12 +322,8 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-/// Reads everything a UI needs to show one vault.
-///
-/// Time-dependent fields ([`VaultView::spent_today`]) use the DEVICE clock
-/// (`SystemTime::now`) and are advisory only: the program uses cluster time
-/// and is authoritative. A missing vault or payee list is an error; a
-/// missing approvers account just means no guardians yet.
+/// Reads everything a UI needs to show one vault. `spent_today` uses the DEVICE clock and is advisory.
+/// A missing vault or payee list is an error; a missing approvers account just means no guardians yet.
 pub fn fetch_vault_view(
     rpc: &RpcClient,
     program_id: &Pubkey,

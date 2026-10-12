@@ -79,10 +79,7 @@ pub fn generate_or_load_owner_keypair(path: &Path) -> Result<Keypair, Provisioni
     Ok(keypair)
 }
 
-/// Renders `data` as a black-on-white QR code raster with a quiet-zone
-/// border (required for real-world scanability, not just a visual
-/// nicety — most scanners fail without it). No anti-aliasing: QR
-/// modules must stay pure black/white to stay machine-readable.
+/// Renders `data` as a black-on-white QR raster with a quiet-zone border. No anti-aliasing: scanners need pure black and white.
 pub struct KioskConfigValues {
     pub rpc_url: String,
     pub keypair_path: String,
@@ -115,11 +112,7 @@ pub fn write_kiosk_config(
         values.mint,
         values.personal_vault,
         values.personal_beneficiary_list,
-        // Placeholder pattern (design spec, "Фандинг и самостоятельная
-        // инициализация" step 4): pool fields equal the personal
-        // vault's own addresses until a family app creates a real pool
-        // vault. Family Wallet will show the same data as My Wallet
-        // until then.
+        // Placeholder: pool fields equal the personal vault's own addresses until a family app creates a real pool vault.
         values.personal_vault,
         values.personal_beneficiary_list,
         values.language,
@@ -158,10 +151,7 @@ pub fn render_qr(data: &str) -> slint::Image {
     slint::Image::from_rgb8(buffer)
 }
 
-/// Headroom above the raw rent-exemption sum, covering transaction fees
-/// across a few submission attempts (each `initialize_vault` costs one
-/// signature-verification fee; a handful of retries stay well under
-/// this). Not rent — rent is computed live below, never guessed.
+/// Headroom above the rent-exemption sum for transaction fees across a few retries. Rent itself is computed live.
 pub const MIN_FUNDING_LAMPORTS_BUFFER: u64 = 50_000;
 
 /// Includes the `TrustedApprovers` account created during first-run family pairing.
@@ -198,13 +188,8 @@ pub fn min_funding_from_rents(
     vault_rent + list_rent + approvers_rent + ata_rent + MIN_FUNDING_LAMPORTS_BUFFER
 }
 
-/// Self-initializes the device's own personal vault, paid for and signed
-/// by the device's own owner keypair. Idempotent by existence check, not
-/// by catching an "already exists" error: this first derives the vault
-/// PDA and tries to read it; if that read succeeds, the vault already
-/// exists (a prior attempt got the transaction through before a
-/// crash/retry) and this returns immediately without sending anything —
-/// cheap and unambiguous, versus parsing a program error string.
+/// Self-initializes the device's personal vault, signed and paid by its own owner keypair. Idempotent by an
+/// existence check on the vault PDA, not by parsing an "already exists" error: if the read succeeds, nothing is sent.
 pub fn self_initialize_personal_vault(
     rpc: &solana_client::rpc_client::RpcClient,
     owner: &solana_keypair::Keypair,
@@ -356,9 +341,7 @@ mint = "not-a-pubkey"
         let _ = std::fs::remove_file(&path);
         let kp = generate_or_load_owner_keypair(&path).unwrap();
         assert!(path.exists());
-        // Loading again must return the SAME keypair, not a fresh one —
-        // this is the power-loss-mid-setup resumability the design spec
-        // requires: the already-shown QR pubkey must not change.
+        // Loading again must return the SAME keypair, so the QR pubkey already shown stays valid after a power cut.
         let kp2 = generate_or_load_owner_keypair(&path).unwrap();
         assert_eq!(kp.pubkey(), kp2.pubkey());
         std::fs::remove_file(&path).unwrap();
@@ -368,9 +351,7 @@ mint = "not-a-pubkey"
     fn renders_a_qr_image_with_a_quiet_zone_border() {
         let image = render_qr("test-pubkey-string");
         let size = image.size();
-        // Exact pixel size depends on the QR version chosen for this
-        // input length, but it must be square and non-trivially sized
-        // (a real QR code, not a 1x1 placeholder).
+        // The pixel size depends on the QR version, but it must be square and not a 1x1 placeholder.
         assert_eq!(size.width, size.height);
         assert!(size.width > 100, "expected a real QR raster, got {size:?}");
     }
@@ -400,10 +381,7 @@ mint = "not-a-pubkey"
         let loaded = crate::chain::load_config(&path).unwrap();
         assert_eq!(loaded.rpc_url, values.rpc_url);
         assert_eq!(loaded.keypair_path, values.keypair_path);
-        // Pool fields must fall back to the personal vault's own
-        // addresses (the placeholder pattern from the design spec's
-        // "Фандинг и самостоятельная инициализация" step 4) until a
-        // family app creates a real pool vault later.
+        // Pool fields fall back to the personal vault's addresses until a family app creates a real pool vault.
         assert_eq!(
             loaded.pool_vault.to_string(),
             values.personal_vault,
@@ -427,11 +405,8 @@ mint = "not-a-pubkey"
         );
         let lamports = compute_min_funding_lamports(&rpc).unwrap();
         println!("min funding lamports: {lamports}");
-        // Sanity bound: must cover at minimum {Vault + BeneficiaryList +
-        // an ATA}'s rent, which on devnet today is on the order of a few
-        // million lamports (a few thousandths of a SOL) — not zero, not
-        // absurdly large (which would indicate a units bug, e.g. reading
-        // SOL instead of lamports).
+        // Sanity bound: at least the rent of Vault + BeneficiaryList + an ATA (a few million lamports), not zero and
+        // not absurdly large (a units bug).
         assert!(lamports > 1_000_000, "suspiciously low: {lamports}");
         assert!(lamports < 100_000_000, "suspiciously high: {lamports}");
     }
@@ -459,9 +434,7 @@ mint = "not-a-pubkey"
         };
 
         let (vault1, list1) = self_initialize_personal_vault(&rpc, &owner, &cfg).unwrap();
-        // Second call must not error and must return the SAME addresses
-        // — this is the crash-mid-setup resumability the design spec
-        // requires.
+        // The second call must not error and must return the SAME addresses (resumable after a crash).
         let (vault2, list2) = self_initialize_personal_vault(&rpc, &owner, &cfg).unwrap();
         assert_eq!(vault1, vault2);
         assert_eq!(list1, list2);

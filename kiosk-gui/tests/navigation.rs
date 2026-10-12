@@ -3,16 +3,9 @@ use kiosk_gui::slint_ui::*;
 use i_slint_backend_testing::{AccessibleRole, ElementHandle};
 use slint::platform::PointerEventButton;
 
-// This binary runs with `harness = false` (see kiosk-gui/Cargo.toml): the
-// testing platform (`i_slint_backend_testing::init_integration_test_with_system_time`)
-// can only be initialized once per process, but the default `#[test]`
-// harness runs every test function on its own freshly spawned OS thread
-// (true even under `--test-threads=1`), and the platform context is bound
-// per-thread. A second test's thread would never see the first test's
-// context and would fail with `NoEventLoopProvider`. Driving both
-// scenarios from a single-threaded `main()` keeps everything on one
-// thread, so the platform is initialized exactly once and both scenarios
-// run against it in sequence.
+// `harness = false` (see kiosk-gui/Cargo.toml): the testing platform can be initialized once per process, and
+// the default harness runs each `#[test]` on its own thread with a per-thread platform context, which fails
+// with `NoEventLoopProvider`. A single-threaded `main()` runs both scenarios in sequence on one platform.
 
 fn tapping_a_beneficiary_fires_beneficiary_selected_with_its_id() {
     slint::spawn_local(async move {
@@ -37,13 +30,8 @@ fn tapping_a_beneficiary_fires_beneficiary_selected_with_its_id() {
             selected_clone.set(id);
         });
 
-        // `Text` elements get an implicit `accessible-role: text` /
-        // `accessible-label: text` from Slint itself, so a plain label
-        // match would also match the beneficiary name's child Text node
-        // even before the button Rectangle is given its own
-        // accessible-role/accessible-label. Filter to the button role so
-        // this test genuinely exercises the beneficiary button's own
-        // accessibility wiring, not the incidental label on its child text.
+        // `Text` gets an implicit `accessible-role: text`, so a label match would also hit the name's child Text.
+        // Filter to the button role to exercise the button's own accessibility wiring.
         let elem = ElementHandle::find_by_accessible_label(&app, "Внук Саша")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("beneficiary button for Внук Саша not found");
@@ -235,12 +223,8 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
     slint::run_event_loop().unwrap();
 }
 
-// Regression test for the beneficiary-name-collision bug: when two
-// beneficiaries share a display name, `on_send_confirmed` must resolve the
-// wallet address using the id captured at tap time (like real main.rs does
-// via `selected_beneficiary_id`), not by re-matching the confirm screen's
-// name string against the model — a match-by-name would always resolve to
-// the FIRST same-named entry, even if the user tapped the second one.
+// Regression test: two beneficiaries share a display name. `on_send_confirmed` must resolve the wallet by the id
+// captured at tap time, not by name (a name match would always pick the first one).
 fn confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id() {
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();

@@ -1,8 +1,6 @@
-//! Shared chain-facing primitives for every `family-vault` client
-//! (kiosk-gui, admin-cli, family-app): pubkey conversion between the two
-//! incompatible Solana crate generations in this workspace, PDA derivation,
-//! instruction builders, BLE pairing frames, amount parsing and mint-decimals
-//! lookup.
+//! Shared chain-facing primitives for every `family-vault` client (kiosk-gui, admin-cli, family-app): pubkey
+//! conversion between the two Solana crate generations in this workspace, PDA derivation, instruction builders,
+//! BLE pairing frames, amount parsing and mint-decimals lookup.
 
 pub mod builders;
 pub mod pairing;
@@ -13,11 +11,8 @@ use spl_token::solana_program::program_pack::Pack;
 
 pub type AnchorPubkey = anchor_lang::prelude::Pubkey;
 
-/// Converts from the client-era `solana_pubkey::Pubkey` (used by
-/// `solana-client`/`solana-signer`) to the `anchor_lang::prelude::Pubkey`
-/// that Anchor-generated `accounts`/`instruction` bindings require. These
-/// are two distinct, incompatible types from different generations of the
-/// Solana crate ecosystem that happen to coexist in this workspace.
+/// Converts the client-era `solana_pubkey::Pubkey` to the `anchor_lang::prelude::Pubkey` that Anchor bindings
+/// require (two incompatible types from different Solana crate generations).
 pub fn to_anchor(p: Pubkey) -> AnchorPubkey {
     AnchorPubkey::new_from_array(p.to_bytes())
 }
@@ -27,10 +22,8 @@ pub fn to_client(p: AnchorPubkey) -> Pubkey {
     Pubkey::new_from_array(p.to_bytes())
 }
 
-/// Converts Anchor-generated `AccountMeta`s (old Solana crate generation)
-/// into the client-generation `AccountMeta`s that `solana_instruction::
-/// Instruction` needs. Every place that builds an instruction from an
-/// Anchor `accounts` struct needs exactly this conversion.
+/// Converts Anchor-generated `AccountMeta`s into the client-generation ones `solana_instruction::Instruction`
+/// needs; every instruction built from an Anchor `accounts` struct needs this.
 pub fn to_client_metas(
     metas: &[anchor_lang::prelude::AccountMeta],
 ) -> Vec<solana_instruction::AccountMeta> {
@@ -78,18 +71,15 @@ pub fn rotation_pda(program_id: &Pubkey, vault: &Pubkey, nonce: u64) -> (Pubkey,
     )
 }
 
-/// Decodes an SPL Mint account's `decimals` field from its raw account
-/// data. Split out from [`fetch_mint_decimals`] so the decode logic is
-/// testable without an RPC connection.
+/// Decodes an SPL Mint's `decimals` from raw account data, split out of [`fetch_mint_decimals`] for offline tests.
 pub fn decode_mint_decimals(mint_account_data: &[u8]) -> Result<u32, String> {
     spl_token::state::Mint::unpack(mint_account_data)
         .map(|mint| mint.decimals as u32)
         .map_err(|e| format!("could not decode mint account: {e}"))
 }
 
-/// Converts a whole-token amount into the token's base units (`amount *
-/// 10^decimals`). Checked: a silent wrap-around would move a different
-/// amount of money than the caller asked for.
+/// Converts a whole-token amount into base units (`amount * 10^decimals`). Checked: a wrap-around would move a
+/// different amount of money.
 pub fn whole_units_to_base_units(amount_whole_units: u64, decimals: u32) -> Result<u64, String> {
     10u64
         .checked_pow(decimals)
@@ -148,12 +138,8 @@ pub fn parse_decimal_amount(text: &str, decimals: u32) -> Result<u64, String> {
     Ok(value)
 }
 
-/// Formats base units as an exact decimal string: trailing fractional zeros
-/// are trimmed and a trailing dot is never printed ("2500000", 6 -> "2.5").
-///
-/// `decimals` is clamped to 255, the most an SPL mint can declare (its
-/// `decimals` field is a `u8`), so a bogus value can never build a gigantic
-/// string. Real mints are unaffected.
+/// Formats base units as an exact decimal string with trailing fractional zeros trimmed ("2500000", 6 -> "2.5").
+/// `decimals` is clamped to 255 (a `u8` field), so a bogus value cannot build a gigantic string.
 pub fn format_base_units(amount: u64, decimals: u32) -> String {
     let decimals = decimals.min(u32::from(u8::MAX));
     if decimals == 0 {

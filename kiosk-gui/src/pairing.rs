@@ -1,9 +1,7 @@
-//! Kiosk-side logic for first-run family-member pairing: the credentials
-//! the kiosk shows (a QR carrying a random secret, plus a 6-digit fallback
-//! code), the gate that checks them, and `PairingSession`, which turns raw
-//! BLE writes into an outcome. Pure logic — no Bluetooth and no chain I/O
-//! here (see `ble.rs` and `family_member.rs`), so it is fully unit-tested.
-//! The wire format itself lives in `family_vault_client::pairing`.
+//! Kiosk-side logic for first-run family-member pairing: the credentials the kiosk shows (a QR carrying a random
+//! secret and a 6-digit fallback code), the gate that checks them, and `PairingSession`, which turns raw BLE writes
+//! into an outcome. Pure logic, no Bluetooth or chain I/O (see `ble.rs`, `family_member.rs`). The wire format is in
+//! `family_vault_client::pairing`.
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -16,10 +14,8 @@ use family_vault_client::pairing::{
 /// and starts a cooldown.
 pub const MAX_WRONG_ATTEMPTS: u32 = 5;
 
-/// Cooldown after the first lockout; it doubles with each further one.
 pub const COOLDOWN_BASE: Duration = Duration::from_secs(30);
 
-/// The cooldown never grows beyond this. There is no permanent lockout.
 pub const COOLDOWN_MAX: Duration = Duration::from_secs(300);
 
 /// Cooldown after the `n`th lockout (1 for the first):
@@ -51,7 +47,6 @@ impl ViewGeneration {
         Self(std::sync::atomic::AtomicU64::new(0))
     }
 
-    /// Starts a new generation and returns it.
     pub fn next(&self) -> u64 {
         self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
@@ -67,7 +62,6 @@ impl ViewGeneration {
 pub struct PairingCredentials {
     secret: AuthField,
     pin: String,
-    /// `pin` zero-padded to 16 bytes, exactly as a central sends it.
     pin_field: AuthField,
 }
 
@@ -110,13 +104,11 @@ impl PairingCredentials {
         &self.pin
     }
 
-    /// The text to render as the pairing QR.
     pub fn qr_payload(&self) -> String {
         encode_qr_payload(self.secret())
     }
 }
 
-/// Fresh credentials from the OS RNG.
 pub fn generate_credentials() -> std::io::Result<PairingCredentials> {
     use std::io::Read;
     let mut bytes = [0u8; 20];
@@ -150,7 +142,6 @@ pub enum AuthCheck {
 pub struct AuthGate {
     credentials: PairingCredentials,
     wrong_attempts: u32,
-    /// Lockouts (rotations) so far; sets the cooldown length.
     lockouts: u32,
     cooldown_until: Option<Instant>,
 }
@@ -213,9 +204,7 @@ impl AuthGate {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WriteOutcome {
-    /// A partial frame was buffered; wait for more writes.
     NeedMore,
-    /// A complete frame carrying valid credentials.
     Accepted(PairingRequest),
     WrongAuth {
         attempts_left: u32,
@@ -286,7 +275,6 @@ mod tests {
     use solana_pubkey::Pubkey;
     use std::time::Duration;
 
-    /// secret = [1; 16]; pin = u32::from_le_bytes([1;4]) % 1_000_000 = 843009
     fn creds() -> PairingCredentials {
         PairingCredentials::from_random_bytes([1u8; 20])
     }
@@ -519,7 +507,6 @@ mod tests {
         assert_eq!(out, WriteOutcome::Malformed(FrameError::TooLong));
     }
 
-    /// Sends `n` wrong frames at `now`; every rotation hands out `next`.
     fn send_wrong(
         session: &mut PairingSession,
         n: u32,

@@ -1,7 +1,6 @@
-//! The IPC surface. Each command is thin: check the rules (permissions,
-//! pending operation), call one `family-app-core` function on a blocking
-//! thread, and phrase the outcome. No command does money math in
-//! JavaScript terms: amounts arrive as text and are parsed here, exactly.
+//! The IPC surface. Each command is thin: check the rules (permissions, pending operation), call one
+//! `family-app-core` function on a blocking thread, and phrase the outcome. Amounts arrive as text and are parsed
+//! here, exactly.
 
 pub mod actions;
 pub mod pairing;
@@ -95,9 +94,7 @@ pub fn pool_already_open(pool: &Pubkey, owned: &[Pubkey]) -> bool {
     owned.contains(pool)
 }
 
-/// Only one state-changing command (money, pairing, checking the pending
-/// record) may run at a time: a second one starting in the same instant
-/// would race with the first one's reads, and a double tap could pay twice.
+/// Only one state-changing command may run at a time: two at once would race on reads, and a double tap could pay twice.
 pub fn acquire_busy(state: &AppState) -> Result<BusyGuard, ErrorDto> {
     BusyGuard::acquire(&state.busy).ok_or_else(|| ErrorDto::new("blocked", "error.busy"))
 }
@@ -113,9 +110,8 @@ pub fn ensure_no_pending(state: &AppState) -> Result<(), ErrorDto> {
     }
 }
 
-/// Whether the pending record must be forgotten after a core call returned.
-/// Only `Unconfirmed` keeps it: every other outcome is settled (it landed,
-/// the node refused it, it failed on chain, or nothing was sent at all).
+/// Whether the pending record must be forgotten after a core call. Only `Unconfirmed` keeps it; every other
+/// outcome is settled.
 pub fn should_clear<T>(result: &Result<T, ActionError>) -> bool {
     !matches!(result, Err(ActionError::Unconfirmed { .. }))
 }
@@ -135,10 +131,9 @@ pub fn record_failed_dto(reason: String) -> ErrorDto {
     ErrorDto::new("internal", "error.record_not_saved").with_details(reason)
 }
 
-/// Runs one money operation with the "record before sending" rule: core's
-/// before-send hook writes the pending record after signing and before the
-/// network is touched, so a crash during the confirm wait cannot lose it.
-/// Afterwards the record is cleared unless the outcome is `Unconfirmed`.
+/// Runs one money operation with the "record before sending" rule: the before-send hook writes the pending record
+/// after signing and before the network is touched, so a crash during the confirm wait cannot lose it. Cleared
+/// afterwards unless the outcome is `Unconfirmed`.
 pub fn run_money<T>(
     state: &AppState,
     what: &Msg,

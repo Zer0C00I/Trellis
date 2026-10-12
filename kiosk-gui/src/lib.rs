@@ -80,8 +80,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
     let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
 
-    // Set by the setup screen's "Пропустить" button; read by the BLE
-    // pairing step running on the setup thread.
+    // Set by the setup screen's skip button, read by the BLE pairing step.
     let skip_pairing = Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
         let skip_pairing = skip_pairing.clone();
@@ -123,15 +122,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
         .into(),
     );
 
-    // Last-fetched snapshots, kept around so a beneficiary tap (which only
-    // carries a small integer `id`) can be resolved back to the wallet
-    // pubkey `submit_withdraw` needs. `chain.rs` doesn't track this itself.
+    // Last-fetched snapshots, to resolve a tapped beneficiary id back to its wallet pubkey.
     let personal_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
         Arc::new(Mutex::new(Vec::new()));
     let pool_beneficiaries: Arc<Mutex<Vec<(u8, solana_pubkey::Pubkey)>>> =
         Arc::new(Mutex::new(Vec::new()));
 
-    // Initial fetch, on a background thread so the UI shows immediately.
     refresh_vault_state_if_ready(
         app.as_weak(),
         &cfg,
@@ -139,15 +135,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         pool_beneficiaries.clone(),
     );
 
-    // A family member using a separate family app can add a beneficiary
-    // (or change a balance) at any time, independent of this device — the
-    // on-chain BeneficiaryList/Vault accounts are the only source of truth
-    // kiosk-gui has, there's no push notification from chain to this
-    // device. Re-fetch periodically so a newly-added payee's button shows
-    // up here without requiring the app to be restarted. 30s is frequent
-    // enough that "just added, why isn't it here" doesn't happen, and
-    // cheap enough (a couple of RPC reads) not to matter for a device that
-    // is otherwise idle almost all the time.
+    // Family members change on-chain state from their own app and nothing pushes it here, so re-fetch every 30s.
     let refresh_timer = slint::Timer::default();
     {
         let app_weak = app.as_weak();
@@ -168,11 +156,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         );
     }
 
-    // Currently-selected My Wallet beneficiary id, carried through the
-    // AmountSelect -> Confirm screen transition (which only round-trips
-    // the display name via selected-recipient-name/confirm-recipient-name)
-    // so `on_send_confirmed` can resolve the wallet address by id rather
-    // than by re-matching on the (not-guaranteed-unique) display name.
+    // Selected beneficiary id, kept across AmountSelect -> Confirm: names are not unique, ids are.
     let selected_beneficiary_id: Rc<RefCell<i32>> = Rc::new(RefCell::new(0));
     {
         let app_weak = app.as_weak();
@@ -241,11 +225,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
             let recipient_name = app.get_confirm_recipient_name();
 
-            // Resolve the wallet pubkey for the beneficiary the user
-            // actually tapped, using the id stored by on_beneficiary_selected
-            // rather than re-matching on the display name (names are not
-            // guaranteed unique on-chain, so name-matching could resolve to
-            // the wrong beneficiary).
+            // Resolve by id, not by display name (names are not unique on-chain).
             let recipient_id = *selected_beneficiary_id.borrow();
             let addr = personal_beneficiaries
                 .lock()
@@ -293,10 +273,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         app.on_ok_pressed(move || {
             let app = app_weak.unwrap();
             app.set_current_screen(Screen::MyWallet);
-            // A send just happened — refresh right away rather than
-            // waiting for the 30s timer, so the balance the user sees
-            // immediately reflects it (and picks up anything a family
-            // member changed in the meantime too).
+            // Refresh right after a send instead of waiting for the timer.
             refresh_vault_state_if_ready(
                 app.as_weak(),
                 &cfg,
@@ -351,9 +328,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
                 .map(|(_, addr)| *addr);
             let Some(addr) = addr else { return };
 
-            // Family Wallet has no amount-select/confirm screens of its own:
-            // send the first preset amount directly and reuse the shared
-            // Result screen.
+            // No amount-select/confirm here: send the first preset and reuse the Result screen.
             let amount = 10u64;
             let cfg = cfg.clone();
             let app_weak = app.as_weak();
@@ -389,12 +364,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
     app.run()
 }
 
-/// Drives the entire first-run setup flow on a background thread: load
-/// provisioning config, generate-or-load the owner keypair, show its QR,
-/// poll for funding, self-initialize the vault, write kiosk.toml, then
-/// switch to the normal My Wallet flow — all without restarting the
-/// process. See the design spec's "Фандинг и самостоятельная
-/// инициализация" section for the exact sequence this implements.
+/// First-run setup on a background thread: load config, keypair, funding QR, wait for funds,
+/// initialize the vault, pair a family member, write kiosk.toml, switch to My Wallet without a restart.
 fn run_setup_flow(
     app_weak: slint::Weak<AppWindow>,
     config_path: std::path::PathBuf,
@@ -437,10 +408,7 @@ fn run_setup_flow(
 
         let owner_pubkey_str = solana_signer::Signer::pubkey(&owner).to_string();
         {
-            // `slint::Image` is not `Send`, so it can't be built on this
-            // background thread and moved into the UI-thread closure —
-            // render it inside the closure instead, from the (Send)
-            // pubkey string.
+            // `slint::Image` is not `Send`: build it inside the UI-thread closure from the pubkey string.
             let app_weak = app_weak.clone();
             let owner_pubkey_str = owner_pubkey_str.clone();
             let _ = slint::invoke_from_event_loop(move || {
@@ -518,9 +486,6 @@ fn run_setup_flow(
             return;
         }
 
-        // Load the config we just wrote (exercises the exact same code
-        // path a normal boot uses) and switch straight into the normal
-        // flow in this same process — no restart.
         let cfg = match chain::load_config(&config_path) {
             Ok(cfg) => std::sync::Arc::new(cfg),
             Err(e) => {
@@ -557,14 +522,10 @@ fn set_setup_message(app_weak: &slint::Weak<AppWindow>, message: Message) {
     });
 }
 
-/// Generation of the pairing screen; see [`pairing::ViewGeneration`]. Only
-/// touched on the UI thread.
+/// Generation of the pairing screen, see [`pairing::ViewGeneration`]. UI thread only.
 static PAIRING_VIEW: pairing::ViewGeneration = pairing::ViewGeneration::new();
 
-/// Switches the setup screen into pairing mode: the pairing QR, the
-/// instruction and the fallback code. Safe to call from any thread — the
-/// `slint::Image` is built inside the UI-thread closure because it is not
-/// `Send`. Called again when the kiosk rotates its credentials.
+/// Switches the setup screen to pairing mode (QR, instruction, fallback code). Callable from any thread.
 fn show_pairing_view(
     app_weak: &slint::Weak<AppWindow>,
     credentials: &pairing::PairingCredentials,
@@ -581,9 +542,7 @@ fn show_pairing_view(
             app.set_setup_pin_text(code.into());
             app.set_setup_pairing_active(true);
             let generation = PAIRING_VIEW.next();
-            // The waiting text is only true while the cooldown lasts: put
-            // the normal instruction back once it ends (single change, no
-            // countdown) unless the screen has changed in the meantime.
+            // Put the normal instruction back when the cooldown ends, unless the screen changed meanwhile.
             if let Some(wait) = wait.filter(|d| *d > std::time::Duration::ZERO) {
                 slint::Timer::single_shot(wait, move || {
                     if PAIRING_VIEW.is_current(generation) {
@@ -597,8 +556,7 @@ fn show_pairing_view(
     });
 }
 
-/// Leaves pairing mode and puts the funding QR back (which is what the
-/// screen showed for the rest of setup before pairing existed).
+/// Leaves pairing mode and puts the funding QR back.
 fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
     let app_weak = app_weak.clone();
     let funding_qr_text = funding_qr_text.to_string();
@@ -613,12 +571,8 @@ fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
     });
 }
 
-/// First-run step between "personal vault exists" and "write kiosk.toml":
-/// let one family member hand the kiosk their key over Bluetooth and
-/// register them on-chain. Never fatal — no Bluetooth, a skip, or a chain
-/// failure all just continue setup (the first family member can then be
-/// added with `admin-cli`). Runs BEFORE `kiosk.toml` is written and is
-/// idempotent, so a power cut anywhere in here resumes cleanly.
+/// Optional first-run step: a family member hands over their key over Bluetooth and is registered on-chain.
+/// Never fatal, runs before kiosk.toml is written and is idempotent.
 fn run_family_pairing_step(
     app_weak: &slint::Weak<AppWindow>,
     rpc: &solana_client::rpc_client::RpcClient,
@@ -664,8 +618,6 @@ fn run_family_pairing_step(
     };
     let outcome = ble::wait_for_pairing(credentials, on_rotated, skip_pairing.as_ref());
     hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
-    // The funding QR is back on screen; do not leave the pairing
-    // instruction next to it on the skip / BLE-unavailable paths.
     set_setup_message(app_weak, Message::SetupAlmostDone);
 
     let request = match outcome {
@@ -715,10 +667,7 @@ fn run_family_pairing_step(
     set_setup_message(app_weak, Message::SetupAlmostDone);
 }
 
-/// Wraps `refresh_vault_state` so it becomes a no-op when `cfg` hasn't
-/// been populated yet — i.e. setup mode is still in progress. Used at
-/// every call site in `main()` instead of calling `refresh_vault_state`
-/// directly, since `cfg` may not exist yet on a fresh first boot.
+/// No-op until `cfg` exists, i.e. while setup is still running.
 fn refresh_vault_state_if_ready(
     app_weak: slint::Weak<AppWindow>,
     cfg: &Arc<Mutex<Option<Arc<ChainConfig>>>>,
@@ -731,11 +680,7 @@ fn refresh_vault_state_if_ready(
     refresh_vault_state(app_weak, cfg, personal_beneficiaries, pool_beneficiaries);
 }
 
-/// Fetches both vaults' current balance/beneficiary state on a background
-/// thread and applies it to the UI once done. Used both for the initial
-/// load and the periodic refresh (see the timer in `main`) — a family
-/// member's separate app can change on-chain state at any time, and this
-/// is how that eventually becomes visible here.
+/// Fetches both vaults' balances and beneficiaries on a background thread and applies them to the UI.
 fn refresh_vault_state(
     app_weak: slint::Weak<AppWindow>,
     cfg: Arc<ChainConfig>,
@@ -746,10 +691,7 @@ fn refresh_vault_state(
         let personal_result = chain::fetch_vault_snapshot(&cfg, false);
         let pool_result = chain::fetch_vault_snapshot(&cfg, true);
 
-        // Re-derive wallet pubkeys for beneficiary-id resolution. The
-        // snapshot only carries (id, name) for display, so beneficiary
-        // list bytes are re-fetched here to also capture (id, address)
-        // for later withdraw calls.
+        // The snapshot only carries (id, name); re-fetch the list to also get (id, address) for withdraws.
         let personal_addrs = fetch_beneficiary_addresses(&cfg, false);
         let pool_addrs = fetch_beneficiary_addresses(&cfg, true);
 
@@ -809,16 +751,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    // `i_slint_backend_testing`'s platform can only be initialized once per
-    // process (its own docs say so: the process-wide event-loop proxy is a
-    // `OnceCell`), and Rust's default `#[test]` harness runs every test
-    // function on its own freshly spawned OS thread -- even under
-    // `--test-threads=1` -- so a second test's thread would never observe
-    // the platform bound to the first test's thread. `tests/navigation.rs`
-    // hits the exact same constraint and solves it by driving every
-    // scenario from one `#[test]` function on one thread; we do the same
-    // here, calling the two (non-`#[test]`) scenario functions below in
-    // sequence from a single `#[test]` entry point.
+    // The testing platform can be initialized once per process and each `#[test]` gets its own thread,
+    // so every scenario runs from this single `#[test]` (same as tests/navigation.rs).
     #[test]
     fn pairing_wait_timer_uses_slint_mock_time() {
         i_slint_backend_testing::init_integration_test_with_mock_time();
@@ -829,17 +763,8 @@ mod tests {
         the_auto_return_timer_does_not_fire_while_on_a_different_screen();
     }
 
-    /// Exercises the real `slint::Timer::single_shot` scheduled by
-    /// `show_pairing_view`: after the cooldown, the timer must fire and put
-    /// the normal instruction back.
-    ///
-    /// `slint::invoke_from_event_loop` (used internally by
-    /// `show_pairing_view`) only queues its closure -- it runs once
-    /// `slint::run_event_loop()` actually pumps the queue -- so the
-    /// assertions are made from inside further queued closures rather than
-    /// immediately after the call, and the result is handed back out
-    /// through an `Arc<Mutex<..>>` (the closures must be `Send`, so a
-    /// captured `Rc`/`RefCell` won't compile).
+    /// After the cooldown the pairing timer must put the normal instruction back.
+    /// Assertions run in queued closures because `invoke_from_event_loop` only queues; results come back through an `Arc<Mutex<..>>`.
     fn pairing_wait_notice_reverts_to_normal_after_the_cooldown_elapses() {
         let app = AppWindow::new().unwrap();
         let credentials = pairing::PairingCredentials::from_random_bytes([9u8; 20]);
@@ -854,15 +779,12 @@ mod tests {
         let captured_clone = captured.clone();
         let app_weak = app.as_weak();
         slint::invoke_from_event_loop(move || {
-            // Immediately after `show_pairing_view`'s queued closure has
-            // run, the waiting text is in effect.
             let waiting = app_weak
                 .upgrade()
                 .map(|a| a.get_pairing_wait_secs())
                 .unwrap_or_default();
 
-            // Advance mock time past the cooldown; the pending single-shot
-            // timer fires synchronously as part of this call.
+            // Advance mock time past the cooldown.
             i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
 
             let after = app_weak
@@ -885,10 +807,7 @@ mod tests {
         assert_eq!(after, 0, "the cooldown must be cleared once it ends");
     }
 
-    /// A screen change (here, `hide_pairing_view`) that happens before the
-    /// cooldown elapses must invalidate the pending timer via
-    /// `PAIRING_VIEW`'s generation counter, so the timer's eventual firing
-    /// does not clobber whatever later replaced the pairing-wait text.
+    /// A screen change before the cooldown ends must invalidate the pending timer.
     fn a_stale_timer_does_not_overwrite_a_newer_screen_state() {
         let app = AppWindow::new().unwrap();
         let credentials = pairing::PairingCredentials::from_random_bytes([9u8; 20]);
@@ -903,20 +822,13 @@ mod tests {
         let final_text_clone = final_text.clone();
         let app_weak = app.as_weak();
         slint::invoke_from_event_loop(move || {
-            // The screen changes (e.g. pairing ends) BEFORE the cooldown
-            // elapses. `hide_pairing_view` itself only queues its own
-            // closure, so the follow-up step below is queued from here too
-            // -- guaranteeing it runs after `hide_pairing_view`'s closure
-            // (and thus after `PAIRING_VIEW.next()`) has actually executed.
+            // Queue the follow-up from here so it runs after `hide_pairing_view`'s closure.
             hide_pairing_view(&app_weak, "some-funding-qr-text");
 
             let app_weak2 = app_weak.clone();
             let final_text_clone2 = final_text_clone.clone();
             slint::invoke_from_event_loop(move || {
-                // The stale timer must NOT have overwritten this later
-                // status.
                 if let Some(app) = app_weak2.upgrade() {
-                    // A newer state, which the stale timer must not clobber.
                     app.set_pairing_wait_secs(7);
                 }
                 i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
@@ -939,35 +851,16 @@ mod tests {
         assert_eq!(final_text, 7);
     }
 
-    /// Exercises `app.slint`'s native `auto-return-timer` (a `Timer`
-    /// declared entirely in .slint, not driven from Rust): it must not fire
-    /// before its 6s interval elapses, and must switch back to
-    /// `Screen::MyWallet` once it does.
-    ///
-    /// Unlike the pairing-timer scenarios above, this timer's binding
-    /// (`running: current-screen == Screen.result`) and property
-    /// read/writes here don't go through `invoke_from_event_loop` --
-    /// `AppWindow::new()` runs on this same test thread, so
-    /// `set_current_screen`/`get_current_screen` apply synchronously (the
-    /// same direct style `tests/navigation.rs` uses inside its own
-    /// event-loop-driven closures), and `mock_elapsed_time` activates any
-    /// due timers synchronously too, with no running event loop required.
+    /// `app.slint`'s `auto-return-timer` must not fire before 6s and must go back to `Screen::MyWallet` after.
+    /// Property access is synchronous here and `mock_elapsed_time` fires due timers without an event loop.
     fn the_result_screen_auto_returns_to_my_wallet_after_six_seconds() {
         let app = AppWindow::new().unwrap();
 
         app.set_current_screen(Screen::Result);
 
-        // The `running: current-screen == Screen.result` binding is only
-        // re-evaluated (and the timer actually started) the next time
-        // property change handlers run, which `mock_elapsed_time` triggers
-        // as a side effect. A zero-duration call here starts the timer's
-        // count from "now" -- without it, the first real advance below
-        // would both start the timer AND count toward its interval in one
-        // step, undercounting how much mock time the timer has actually
-        // seen.
+        // A zero-duration advance starts the timer's count; without it the first real advance undercounts.
         i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
 
-        // Just under the 6s interval: the timer must not have fired yet.
         i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(5_900));
         assert_eq!(
             app.get_current_screen(),
@@ -975,7 +868,6 @@ mod tests {
             "auto-return-timer fired before its 6s interval elapsed"
         );
 
-        // Past the interval: the timer must now have fired.
         i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(200));
         assert_eq!(
             app.get_current_screen(),
@@ -984,24 +876,14 @@ mod tests {
         );
     }
 
-    /// Guards the timer's `running: current-screen == Screen.result`
-    /// binding: while on any other screen it must not run at all, so a
-    /// regression that removed the binding (making the timer always fire)
-    /// would be caught here.
+    /// While not on the result screen the timer must not run.
     fn the_auto_return_timer_does_not_fire_while_on_a_different_screen() {
         let app = AppWindow::new().unwrap();
 
-        // Deliberately NOT `Screen::MyWallet`: the timer's own effect is to
-        // set the screen TO `MyWallet`, so asserting against `MyWallet`
-        // itself would pass even if the timer incorrectly fired (a no-op
-        // change). Using a distinct screen makes an incorrect fire visible.
+        // Not `Screen::MyWallet`: that is the timer's own target, so a wrong fire would go unnoticed.
         app.set_current_screen(Screen::Confirm);
 
-        // See the sibling scenario above for why this zero-duration pump is
-        // needed before the real advance: it's what makes the `running`
-        // binding get (re-)evaluated, so a regression that hard-codes
-        // `running: true` actually starts counting from here rather than
-        // from partway into the 10s advance below.
+        // Zero-duration advance, see the scenario above.
         i_slint_backend_testing::mock_elapsed_time(Duration::ZERO);
 
         i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(10));

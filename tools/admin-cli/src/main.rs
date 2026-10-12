@@ -1,10 +1,6 @@
-//! Admin CLI for the `family-vault` program: initialize vaults, manage
-//! beneficiaries/approvers, and drive owner-side flows that the kiosk GUI
-//! deliberately never exposes on the vault owner's own device.
-//!
-//! Every subcommand builds one instruction from `family-vault`'s
-//! Anchor-generated client bindings, signs it, and sends it with
-//! `send_and_confirm_transaction`.
+//! Admin CLI for the `family-vault` program: initialize vaults, manage beneficiaries and approvers, and drive
+//! owner-side flows the kiosk deliberately never exposes. Each subcommand builds one instruction from the
+//! Anchor client bindings, signs it and sends it with `send_and_confirm_transaction`.
 
 mod registry;
 
@@ -198,9 +194,7 @@ fn cmd_register_vault(args: &[String]) {
     println!("registered vault '{name}' -> {pubkey}");
 }
 
-/// Splits a `--approvers a,b,c` / `--beneficiaries a,b,c` flag into
-/// registry names, ignoring a missing flag or empty entries (so trailing
-/// commas or an unset flag don't produce phantom names).
+/// Splits a `--approvers a,b,c` / `--beneficiaries a,b,c` flag into registry names, ignoring a missing flag and empty entries.
 fn arg_name_list(args: &[String], flag: &str) -> Vec<String> {
     arg(args, flag)
         .map(|s| {
@@ -212,14 +206,10 @@ fn arg_name_list(args: &[String], flag: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Runs `initialize_vault` on-chain, then registers the resulting vault under
-/// `--name` so later commands never need the raw vault pubkey.
-///
-/// For `--pool` vaults, also runs `initialize_approvers`, then one
-/// `add_trusted_approver` per `--approvers` name and one `add_beneficiary`
-/// per `--beneficiaries` name. Each step is its own transaction, sent in
-/// order; a failure partway through leaves everything up to that point
-/// on-chain, and the rest can be retried with the single-purpose commands.
+/// Runs `initialize_vault`, then registers the vault under `--name` so later commands never need its pubkey.
+/// For `--pool` it also runs `initialize_approvers`, then one `add_trusted_approver` per `--approvers` name and one
+/// `add_beneficiary` per `--beneficiaries` name. Each step is its own transaction; a failure partway leaves earlier
+/// steps on-chain and the rest can be retried with the single-purpose commands.
 fn cmd_create_vault(args: &[String]) {
     let path = registry_path(args);
     let mut reg = registry::load(&path);
@@ -433,9 +423,7 @@ fn cmd_deposit(args: &[String]) {
     }
 }
 
-/// The recipient must be registered as a beneficiary first (see
-/// `cmd_add_beneficiary`): the program only pays out to its closed address
-/// book, as an anti-scam measure.
+/// The recipient must already be a registered beneficiary: the program only pays its closed address book.
 fn cmd_add_beneficiary(args: &[String]) {
     let path = registry_path(args);
     let reg = registry::load(&path);
@@ -473,9 +461,7 @@ fn cmd_add_beneficiary(args: &[String]) {
     }
 }
 
-/// Adds a payee immediately, skipping the normal 48h cooldown. Needs two
-/// distinct trusted approvers, not the owner (see
-/// `family_vault::instructions::add_beneficiary_urgent`).
+/// Adds a payee immediately, skipping the 48h cooldown. Needs two distinct trusted approvers, not the owner.
 fn cmd_add_beneficiary_urgent(args: &[String]) {
     let path = registry_path(args);
     let reg = registry::load(&path);
