@@ -1,0 +1,60 @@
+// Every sentence the kiosk shows that Rust decides on. Rust sets a `Message`
+// (and, for a few, a name or a number); the words, and so the language, live
+// here and nowhere else.
+export enum Message {
+    none,
+    no-connection,
+    failed,
+    contact-support,
+    done,
+    setup-waiting,
+    setup-almost-done,
+    setup-adding-member,
+    setup-show-code,
+}
+
+export global Messages {
+    // `name` is only used by `done`; an empty name reads as "Recipient".
+    pure public function text(message: Message, name: string) -> string {
+        if message == Message.no-connection {
+            return @tr("No connection. Try again later");
+        }
+        if message == Message.failed {
+            return @tr("That did not work. Try again or call a relative");
+        }
+        if message == Message.contact-support {
+            return @tr("That did not work. Contact support");
+        }
+        if message == Message.done {
+            return @tr("Done! Money sent to {}", name == "" ? @tr("Recipient") : name);
+        }
+        if message == Message.setup-waiting {
+            return @tr("Waiting for confirmation...");
+        }
+        if message == Message.setup-almost-done {
+            return @tr("Almost done...");
+        }
+        if message == Message.setup-adding-member {
+            return @tr("Adding a family member...");
+        }
+        if message == Message.setup-show-code {
+            return @tr("Show this code to the relative who will have access to the family app");
+        }
+        return "";
+    }
+
+    pure public function recipient(name: string) -> string {
+        return name == "" ? @tr("Recipient") : name;
+    }
+
+    // `wait-secs` is the cooldown left, rounded up; 0 means no cooldown.
+    pure public function pairing-instruction(wait-secs: int) -> string {
+        if wait-secs <= 0 {
+            return @tr("Scan this code in the family app or type the digits:");
+        }
+        return @tr(
+            "Wait {}, then scan this code in the family app or type the digits:",
+            wait-secs < 60 ? @tr("{} sec", wait-secs) : @tr("{} min", Math.ceil(wait-secs / 60))
+        );
+    }
+}

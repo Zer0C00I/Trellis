@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { Message, Messages } from "messages.slint";
 
 export struct BeneficiaryItem {
     name: string,
@@ -7,6 +8,8 @@ export struct BeneficiaryItem {
 
 export component MyWalletScreen inherits Rectangle {
     in property <string> balance-text: "0";
+    // When not `none`, shown instead of the balance (the last fetch failed).
+    in property <Message> balance-message: Message.none;
     in property <[BeneficiaryItem]> beneficiaries: [];
 
     callback beneficiary-selected(int);
@@ -26,7 +29,7 @@ export component MyWalletScreen inherits Rectangle {
         }
 
         Text {
-            text: balance-text;
+            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
             color: Theme.fg;
             font-size: Theme.font-size-heading;
         }

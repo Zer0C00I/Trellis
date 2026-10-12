@@ -1,8 +1,10 @@
 import { Theme } from "theme.slint";
 import { BeneficiaryItem } from "my-wallet.slint";
+import { Message, Messages } from "messages.slint";
 
 export component FamilyWalletScreen inherits Rectangle {
     in property <string> balance-text: "0";
+    in property <Message> balance-message: Message.none;
     in property <[BeneficiaryItem]> beneficiaries: [];
 
     callback beneficiary-selected(int);
@@ -22,7 +24,7 @@ export component FamilyWalletScreen inherits Rectangle {
         }
 
         Text {
-            text: balance-text;
+            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
             color: Theme.fg;
             font-size: Theme.font-size-heading;
         }

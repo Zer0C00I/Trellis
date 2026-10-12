@@ -31,27 +31,13 @@ pub fn cooldown_for_lockout(n: u32) -> Duration {
         .min(COOLDOWN_MAX)
 }
 
-/// `30 s` -> `"30 сек."`, `60 s` -> `"1 мин."`; partial minutes round up.
-/// Abbreviations avoid Russian plural forms.
-pub fn display_wait(wait: Duration) -> String {
-    let secs = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
-    if secs < 60 {
-        format!("{secs} сек.")
-    } else {
-        format!("{} мин.", secs.div_ceil(60))
-    }
-}
-
-/// The setup-screen instruction above the pairing QR. During a cooldown it
-/// tells the family member to wait; without one it is the normal text.
-pub fn pairing_instruction(wait: Option<Duration>) -> String {
-    match wait {
-        None => "Отсканируйте этот код в приложении семьи или введите цифры:".to_string(),
-        Some(wait) => format!(
-            "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:",
-            display_wait(wait)
-        ),
-    }
+/// The cooldown left, in whole seconds rounded up, for the setup screen
+/// (`0` when there is none). The screen words it ("45 sec", "2 min").
+pub fn wait_seconds(wait: Option<Duration>) -> i32 {
+    wait.map_or(0, |wait| {
+        let secs = wait.as_secs().saturating_add(u64::from(wait.subsec_nanos() > 0));
+        i32::try_from(secs).unwrap_or(i32::MAX)
+    })
 }
 
 /// Monotonic counter identifying the current state of the pairing screen.
@@ -379,29 +365,13 @@ mod tests {
     }
 
     #[test]
-    fn display_wait_uses_seconds_below_a_minute_and_minutes_above() {
-        assert_eq!(display_wait(Duration::from_secs(30)), "30 сек.");
-        assert_eq!(display_wait(Duration::from_secs(59)), "59 сек.");
-        assert_eq!(display_wait(Duration::from_secs(60)), "1 мин.");
-        assert_eq!(display_wait(Duration::from_secs(90)), "2 мин.");
-        assert_eq!(display_wait(Duration::from_secs(120)), "2 мин.");
-        assert_eq!(display_wait(Duration::from_secs(300)), "5 мин.");
-    }
-
-    #[test]
-    fn pairing_instruction_is_the_normal_text_without_a_wait() {
-        assert_eq!(
-            pairing_instruction(None),
-            "Отсканируйте этот код в приложении семьи или введите цифры:"
-        );
-    }
-
-    #[test]
-    fn pairing_instruction_prefixes_the_wait_during_a_cooldown() {
-        assert_eq!(
-            pairing_instruction(Some(Duration::from_secs(30))),
-            "Подождите 30 сек., затем отсканируйте этот код в приложении семьи или введите цифры:"
-        );
+    fn wait_seconds_rounds_up_and_is_zero_without_a_wait() {
+        assert_eq!(wait_seconds(None), 0);
+        assert_eq!(wait_seconds(Some(Duration::ZERO)), 0);
+        assert_eq!(wait_seconds(Some(Duration::from_secs(30))), 30);
+        assert_eq!(wait_seconds(Some(Duration::from_millis(29_001))), 30);
+        assert_eq!(wait_seconds(Some(Duration::from_secs(300))), 300);
+        assert_eq!(wait_seconds(Some(Duration::MAX)), i32::MAX);
     }
 
     #[test]

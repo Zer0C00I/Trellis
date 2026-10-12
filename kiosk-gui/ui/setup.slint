@@ -1,10 +1,12 @@
 import { Theme } from "theme.slint";
+import { Message, Messages } from "messages.slint";
 
 export component SetupScreen inherits Rectangle {
     // In funding mode this is the funding QR; in pairing mode Rust swaps in
     // the pairing QR (the same property, so the Image element is shared).
     in property <image> qr-image;
-    in property <string> status-text: "";
+    // Funding mode: what the kiosk is doing.
+    in property <Message> message: Message.none;
 
     // Pairing mode: QR on the left, and on the right the instruction, the
     // fallback code for people who cannot scan, and a way to skip. The
@@ -12,6 +14,8 @@ export component SetupScreen inherits Rectangle {
     // control. See the family-app design spec, "Identity & Bootstrap".
     in property <bool> pairing-active: false;
     in property <string> pin-text: "";
+    // Pairing mode: seconds of cooldown left (0: none).
+    in property <int> pairing-wait-secs: 0;
 
     callback skip-pairing-requested();
 
@@ -40,7 +44,7 @@ export component SetupScreen inherits Rectangle {
             }
 
             Text {
-                text: status-text;
+                text: Messages.text(message, "");
                 color: Theme.fg;
                 font-size: Theme.font-size-body;
                 horizontal-alignment: center;
@@ -62,7 +66,7 @@ export component SetupScreen inherits Rectangle {
                 alignment: center;
 
                 Text {
-                    text: status-text;
+                    text: Messages.pairing-instruction(pairing-wait-secs);
                     color: Theme.fg;
                     font-size: Theme.font-size-body;
                     wrap: word-wrap;

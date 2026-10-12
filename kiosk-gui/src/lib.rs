@@ -37,12 +37,12 @@ fn config_path() -> std::path::PathBuf {
     std::path::PathBuf::from("kiosk.toml")
 }
 
-fn error_message_text(err: &ChainError) -> String {
+fn error_message(err: &ChainError) -> Message {
     match err {
-        ChainError::NoConnection => "Нет связи. Попробуй ещё раз позже".to_string(),
+        ChainError::NoConnection => Message::NoConnection,
         ChainError::ProgramRejected(raw) => {
             eprintln!("[kiosk-gui] transaction failed: {raw}");
-            "Не получилось. Попробуй ещё раз или позови родственника".to_string()
+            Message::Failed
         }
     }
 }
@@ -59,9 +59,11 @@ fn apply_snapshot(app: &AppWindow, is_pool: bool, snapshot: VaultSnapshot) {
     let model = Rc::new(slint::VecModel::from(items));
     if is_pool {
         app.set_family_balance_text(snapshot.balance_text.as_str().into());
+        app.set_family_balance_message(Message::None);
         app.set_family_beneficiaries(model.into());
     } else {
         app.set_balance_text(snapshot.balance_text.as_str().into());
+        app.set_balance_message(Message::None);
         app.set_beneficiaries(model.into());
     }
 }
@@ -104,8 +106,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
             }
             Err(e) => {
                 eprintln!("[kiosk-gui] failed to load config: {e}");
-                app.set_balance_text("Нет связи. Попробуй ещё раз позже".into());
-                app.set_family_balance_text("Нет связи. Попробуй ещё раз позже".into());
+                app.set_balance_message(Message::NoConnection);
+                app.set_family_balance_message(Message::NoConnection);
                 app.run()?;
                 return Ok(());
             }
@@ -178,7 +180,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         app.on_beneficiary_selected(move |id| {
             let app = app_weak.unwrap();
             let model = app.get_beneficiaries();
-            let mut found_name: slint::SharedString = "Получатель".into();
+            let mut found_name = slint::SharedString::default();
             for i in 0..model.row_count() {
                 if let Some(item) = model.row_data(i) {
                     if item.id == id {
@@ -232,9 +234,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
             let Some(cfg) = cfg.lock().unwrap().clone() else {
                 app.set_result_success(false);
-                app.set_result_message_text(
-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
-                );
+                app.set_result_message(Message::Failed);
                 app.set_current_screen(Screen::Result);
                 return;
             };
@@ -256,9 +256,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
             let Some(addr) = addr else {
                 app.set_result_success(false);
-                app.set_result_message_text(
-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
-                );
+                app.set_result_message(Message::Failed);
                 app.set_current_screen(Screen::Result);
                 return;
             };
@@ -274,13 +272,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
                     match result {
                         Ok(()) => {
                             app.set_result_success(true);
-                            app.set_result_message_text(
-                                format!("Готово! Деньги отправлены {recipient_name}").into(),
-                            );
+                            app.set_result_message(Message::Done);
+                            app.set_result_name(recipient_name);
                         }
                         Err(e) => {
                             app.set_result_success(false);
-                            app.set_result_message_text(error_message_text(&e).into());
+                            app.set_result_message(error_message(&e));
                         }
                     }
                     app.set_current_screen(Screen::Result);
@@ -331,15 +328,13 @@ pub fn run() -> Result<(), slint::PlatformError> {
 
             let Some(cfg) = cfg.lock().unwrap().clone() else {
                 app.set_result_success(false);
-                app.set_result_message_text(
-                    "Не получилось. Попробуй ещё раз или позови родственника".into(),
-                );
+                app.set_result_message(Message::Failed);
                 app.set_current_screen(Screen::Result);
                 return;
             };
 
             let model = app.get_family_beneficiaries();
-            let mut found_name: slint::SharedString = "Получатель".into();
+            let mut found_name = slint::SharedString::default();
             for i in 0..model.row_count() {
                 if let Some(item) = model.row_data(i) {
                     if item.id == id {
@@ -371,13 +366,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
                     match result {
                         Ok(()) => {
                             app.set_result_success(true);
-                            app.set_result_message_text(
-                                format!("Готово! Деньги отправлены {found_name}").into(),
-                            );
+                            app.set_result_message(Message::Done);
+                            app.set_result_name(found_name);
                         }
                         Err(e) => {
                             app.set_result_success(false);
-                            app.set_result_message_text(error_message_text(&e).into());
+                            app.set_result_message(error_message(&e));
                         }
                     }
                     app.set_current_screen(Screen::Result);
@@ -426,10 +420,7 @@ fn run_setup_flow(
             Ok(p) => p,
             Err(e) => {
                 eprintln!("[kiosk-gui] setup: failed to load provisioning.toml: {e}");
-                set_setup_status(
-                    &app_weak,
-                    "Не получилось. Обратитесь в поддержку".to_string(),
-                );
+                set_setup_message(&app_weak, Message::ContactSupport);
                 return;
             }
         };
@@ -439,10 +430,7 @@ fn run_setup_flow(
             Ok(k) => k,
             Err(e) => {
                 eprintln!("[kiosk-gui] setup: failed to generate/load keypair: {e}");
-                set_setup_status(
-                    &app_weak,
-                    "Не получилось. Обратитесь в поддержку".to_string(),
-                );
+                set_setup_message(&app_weak, Message::ContactSupport);
                 return;
             }
         };
@@ -459,10 +447,7 @@ fn run_setup_flow(
                 if let Some(app) = app_weak.upgrade() {
                     let qr = setup::render_qr(&owner_pubkey_str);
                     app.set_setup_qr_image(qr);
-                    app.set_setup_status_text(
-                        "Покажите этот код родственнику, у которого будет доступ к приложению семьи"
-                            .into(),
-                    );
+                    app.set_setup_message(Message::SetupShowCode);
                 }
             });
         }
@@ -477,7 +462,7 @@ fn run_setup_flow(
             }
         };
 
-        set_setup_status(&app_weak, "Ожидаем подтверждение...".to_string());
+        set_setup_message(&app_weak, Message::SetupWaiting);
 
         loop {
             match rpc.get_balance(&owner_pubkey_client) {
@@ -486,7 +471,7 @@ fn run_setup_flow(
             }
         }
 
-        set_setup_status(&app_weak, "Почти готово...".to_string());
+        set_setup_message(&app_weak, Message::SetupAlmostDone);
 
         let mut vault_result = None;
         for attempt in 0..5u32 {
@@ -505,10 +490,7 @@ fn run_setup_flow(
         }
 
         let Some((vault, beneficiary_list)) = vault_result else {
-            set_setup_status(
-                &app_weak,
-                "Не получилось. Обратитесь в поддержку".to_string(),
-            );
+            set_setup_message(&app_weak, Message::ContactSupport);
             return;
         };
 
@@ -532,10 +514,7 @@ fn run_setup_flow(
         };
         if let Err(e) = setup::write_kiosk_config(&config_path, &values) {
             eprintln!("[kiosk-gui] setup: failed to write kiosk.toml: {e}");
-            set_setup_status(
-                &app_weak,
-                "Не получилось. Обратитесь в поддержку".to_string(),
-            );
+            set_setup_message(&app_weak, Message::ContactSupport);
             return;
         }
 
@@ -546,10 +525,7 @@ fn run_setup_flow(
             Ok(cfg) => std::sync::Arc::new(cfg),
             Err(e) => {
                 eprintln!("[kiosk-gui] setup: wrote kiosk.toml but failed to reload it: {e}");
-                set_setup_status(
-                    &app_weak,
-                    "Не получилось. Обратитесь в поддержку".to_string(),
-                );
+                set_setup_message(&app_weak, Message::ContactSupport);
                 return;
             }
         };
@@ -572,11 +548,11 @@ fn run_setup_flow(
     });
 }
 
-fn set_setup_status(app_weak: &slint::Weak<AppWindow>, text: String) {
+fn set_setup_message(app_weak: &slint::Weak<AppWindow>, message: Message) {
     let app_weak = app_weak.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
-            app.set_setup_status_text(text.into());
+            app.set_setup_message(message);
         }
     });
 }
@@ -597,11 +573,11 @@ fn show_pairing_view(
     let app_weak = app_weak.clone();
     let qr_text = credentials.qr_payload();
     let code = pairing::display_pin(credentials.pin());
-    let instruction = pairing::pairing_instruction(wait);
+    let wait_secs = pairing::wait_seconds(wait);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
             app.set_setup_qr_image(setup::render_qr(&qr_text));
-            app.set_setup_status_text(instruction.into());
+            app.set_pairing_wait_secs(wait_secs);
             app.set_setup_pin_text(code.into());
             app.set_setup_pairing_active(true);
             let generation = PAIRING_VIEW.next();
@@ -612,7 +588,7 @@ fn show_pairing_view(
                 slint::Timer::single_shot(wait, move || {
                     if PAIRING_VIEW.is_current(generation) {
                         if let Some(app) = app_weak.upgrade() {
-                            app.set_setup_status_text(pairing::pairing_instruction(None).into());
+                            app.set_pairing_wait_secs(0);
                         }
                     }
                 });
@@ -629,6 +605,7 @@ fn hide_pairing_view(app_weak: &slint::Weak<AppWindow>, funding_qr_text: &str) {
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
             PAIRING_VIEW.next();
+            app.set_pairing_wait_secs(0);
             app.set_setup_pairing_active(false);
             app.set_setup_pin_text("".into());
             app.set_setup_qr_image(setup::render_qr(&funding_qr_text));
@@ -689,7 +666,7 @@ fn run_family_pairing_step(
     hide_pairing_view(app_weak, &solana_signer::Signer::pubkey(owner).to_string());
     // The funding QR is back on screen; do not leave the pairing
     // instruction next to it on the skip / BLE-unavailable paths.
-    set_setup_status(app_weak, "Почти готово...".to_string());
+    set_setup_message(app_weak, Message::SetupAlmostDone);
 
     let request = match outcome {
         Ok(Some(request)) => request,
@@ -703,7 +680,7 @@ fn run_family_pairing_step(
         }
     };
 
-    set_setup_status(app_weak, "Добавляем участника семьи...".to_string());
+    set_setup_message(app_weak, Message::SetupAddingMember);
     let mut added = false;
     for attempt in 0..5u32 {
         match family_member::add_first_family_member(
@@ -735,7 +712,7 @@ fn run_family_pairing_step(
             "[kiosk-gui] setup: could not register the family member; add them later with admin-cli"
         );
     }
-    set_setup_status(app_weak, "Почти готово...".to_string());
+    set_setup_message(app_weak, Message::SetupAlmostDone);
 }
 
 /// Wraps `refresh_vault_state` so it becomes a no-op when `cfg` hasn't
@@ -782,11 +759,11 @@ fn refresh_vault_state(
             };
             match personal_result {
                 Ok(snapshot) => apply_snapshot(&app, false, snapshot),
-                Err(e) => app.set_balance_text(error_message_text(&e).into()),
+                Err(e) => app.set_balance_message(error_message(&e)),
             }
             match pool_result {
                 Ok(snapshot) => apply_snapshot(&app, true, snapshot),
-                Err(e) => app.set_family_balance_text(error_message_text(&e).into()),
+                Err(e) => app.set_family_balance_message(error_message(&e)),
             }
             if let Ok(addrs) = personal_addrs {
                 *personal_beneficiaries.lock().unwrap() = addrs;
@@ -873,7 +850,7 @@ mod tests {
             Some(Duration::from_secs(30)),
         );
 
-        let captured: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
+        let captured: Arc<Mutex<Option<(i32, i32)>>> = Arc::new(Mutex::new(None));
         let captured_clone = captured.clone();
         let app_weak = app.as_weak();
         slint::invoke_from_event_loop(move || {
@@ -881,7 +858,7 @@ mod tests {
             // run, the waiting text is in effect.
             let waiting = app_weak
                 .upgrade()
-                .map(|a| a.get_setup_status_text().to_string())
+                .map(|a| a.get_pairing_wait_secs())
                 .unwrap_or_default();
 
             // Advance mock time past the cooldown; the pending single-shot
@@ -890,7 +867,7 @@ mod tests {
 
             let after = app_weak
                 .upgrade()
-                .map(|a| a.get_setup_status_text().to_string())
+                .map(|a| a.get_pairing_wait_secs())
                 .unwrap_or_default();
             *captured_clone.lock().unwrap() = Some((waiting, after));
             slint::quit_event_loop().unwrap();
@@ -904,15 +881,8 @@ mod tests {
             .unwrap()
             .take()
             .expect("the queued event-loop closure ran");
-        assert!(
-            waiting.contains("Подождите"),
-            "expected the waiting text, got: {waiting}"
-        );
-        assert!(
-            !after.contains("Подождите"),
-            "waiting text should have reverted, got: {after}"
-        );
-        assert_eq!(after, pairing::pairing_instruction(None));
+        assert_eq!(waiting, 30, "the cooldown must be shown while it lasts");
+        assert_eq!(after, 0, "the cooldown must be cleared once it ends");
     }
 
     /// A screen change (here, `hide_pairing_view`) that happens before the
@@ -929,7 +899,7 @@ mod tests {
             Some(Duration::from_secs(30)),
         );
 
-        let final_text: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let final_text: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
         let final_text_clone = final_text.clone();
         let app_weak = app.as_weak();
         slint::invoke_from_event_loop(move || {
@@ -939,19 +909,19 @@ mod tests {
             // -- guaranteeing it runs after `hide_pairing_view`'s closure
             // (and thus after `PAIRING_VIEW.next()`) has actually executed.
             hide_pairing_view(&app_weak, "some-funding-qr-text");
-            if let Some(app) = app_weak.upgrade() {
-                app.set_setup_status_text("Почти готово...".into());
-            }
 
             let app_weak2 = app_weak.clone();
             let final_text_clone2 = final_text_clone.clone();
             slint::invoke_from_event_loop(move || {
                 // The stale timer must NOT have overwritten this later
                 // status.
+                if let Some(app) = app_weak2.upgrade() {
+                    // A newer state, which the stale timer must not clobber.
+                    app.set_pairing_wait_secs(7);
+                }
                 i_slint_backend_testing::mock_elapsed_time(Duration::from_secs(31));
                 if let Some(app) = app_weak2.upgrade() {
-                    *final_text_clone2.lock().unwrap() =
-                        Some(app.get_setup_status_text().to_string());
+                    *final_text_clone2.lock().unwrap() = Some(app.get_pairing_wait_secs());
                 }
                 slint::quit_event_loop().unwrap();
             })
@@ -966,7 +936,7 @@ mod tests {
             .unwrap()
             .take()
             .expect("the queued event-loop closure ran");
-        assert_eq!(final_text, "Почти готово...");
+        assert_eq!(final_text, 7);
     }
 
     /// Exercises `app.slint`'s native `auto-return-timer` (a `Timer`

@@ -181,9 +181,8 @@ fn confirming_send_navigates_to_result_with_success_message() {
                 let app = app_weak.unwrap();
                 let recipient = app.get_confirm_recipient_name();
                 app.set_result_success(true);
-                app.set_result_message_text(
-                    format!("Готово! Деньги отправлены {recipient}").into(),
-                );
+                app.set_result_message(Message::Done);
+                app.set_result_name(recipient);
                 app.set_current_screen(Screen::Result);
             });
         }
@@ -195,9 +194,13 @@ fn confirming_send_navigates_to_result_with_success_message() {
 
         assert_eq!(app.get_current_screen(), Screen::Result);
         assert!(app.get_result_success());
-        assert_eq!(
-            app.get_result_message_text(),
-            slint::SharedString::from("Готово! Деньги отправлены Внук Саша")
+        assert_eq!(app.get_result_message(), Message::Done);
+        assert_eq!(app.get_result_name(), slint::SharedString::from("Внук Саша"));
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Done! Money sent to Внук Саша")
+                .next()
+                .is_some(),
+            "the result screen must show the sentence for `Done` with the recipient's name"
         );
 
         slint::quit_event_loop().unwrap();
@@ -485,6 +488,76 @@ fn the_russian_translation_is_bundled_and_can_be_selected() {
     slint::run_event_loop().unwrap();
 }
 
+fn text_exists(app: &AppWindow, text: &str) -> bool {
+    ElementHandle::find_by_accessible_label(app, text).next().is_some()
+}
+
+fn messages_are_worded_by_the_ui_in_both_languages() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+
+        // A failed balance fetch shows its sentence instead of the balance.
+        app.set_current_screen(Screen::MyWallet);
+        app.set_balance_text("120 USDC".into());
+        assert!(text_exists(&app, "120 USDC"));
+        app.set_balance_message(Message::NoConnection);
+        assert!(text_exists(&app, "No connection. Try again later"));
+        assert!(!text_exists(&app, "120 USDC"));
+        app.set_balance_message(Message::None);
+        assert!(text_exists(&app, "120 USDC"));
+
+        // The result screen words `Done` with the recipient, or a fallback.
+        app.set_current_screen(Screen::Result);
+        app.set_result_message(Message::Done);
+        app.set_result_name("Внук Саша".into());
+        assert!(text_exists(&app, "Done! Money sent to Внук Саша"));
+        app.set_result_name("".into());
+        assert!(text_exists(&app, "Done! Money sent to Recipient"));
+
+        // The pairing instruction follows the cooldown left.
+        app.set_current_screen(Screen::Setup);
+        app.set_setup_pairing_active(true);
+        let normal = "Scan this code in the family app or type the digits:";
+        assert!(text_exists(&app, normal));
+        app.set_pairing_wait_secs(45);
+        assert!(text_exists(
+            &app,
+            "Wait 45 sec, then scan this code in the family app or type the digits:"
+        ));
+        app.set_pairing_wait_secs(61);
+        assert!(text_exists(
+            &app,
+            "Wait 2 min, then scan this code in the family app or type the digits:"
+        ));
+        app.set_pairing_wait_secs(0);
+        assert!(text_exists(&app, normal));
+
+        // The same states, in Russian.
+        slint::select_bundled_translation("ru").unwrap();
+        assert!(text_exists(
+            &app,
+            "Отсканируйте этот код в приложении семьи или введите цифры:"
+        ));
+        app.set_pairing_wait_secs(61);
+        assert!(text_exists(
+            &app,
+            "Подождите 2 мин., затем отсканируйте этот код в приложении семьи или введите цифры:"
+        ));
+        app.set_current_screen(Screen::Result);
+        assert!(text_exists(&app, "Готово! Деньги отправлены Получатель"));
+        app.set_result_name("Внук Саша".into());
+        assert!(text_exists(&app, "Готово! Деньги отправлены Внук Саша"));
+        app.set_current_screen(Screen::MyWallet);
+        app.set_balance_message(Message::NoConnection);
+        assert!(text_exists(&app, "Нет связи. Попробуй ещё раз позже"));
+
+        slint::select_bundled_translation("en").unwrap();
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -527,6 +600,9 @@ fn main() {
     the_russian_translation_is_bundled_and_can_be_selected();
     println!("test the_russian_translation_is_bundled_and_can_be_selected ... ok");
 
+    messages_are_worded_by_the_ui_in_both_languages();
+    println!("test messages_are_worded_by_the_ui_in_both_languages ... ok");
+
     println!();
-    println!("test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

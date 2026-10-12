@@ -1,8 +1,11 @@
 import { Theme } from "theme.slint";
+import { Message, Messages } from "messages.slint";
 
 export component ResultScreen inherits Rectangle {
     in property <bool> success: true;
-    in property <string> message-text: "";
+    in property <Message> message: Message.none;
+    // The recipient, for `Message.done`.
+    in property <string> name: "";
 
     callback ok-pressed();
 
@@ -21,7 +24,7 @@ export component ResultScreen inherits Rectangle {
         }
 
         Text {
-            text: message-text;
+            text: Messages.text(message, name);
             color: Theme.fg;
             font-size: Theme.font-size-heading;
             horizontal-alignment: center;

@@ -41,3 +41,42 @@ msgstr "Отмена"
 
 msgid "OK"
 msgstr "Ок"
+
+msgid "No connection. Try again later"
+msgstr "Нет связи. Попробуй ещё раз позже"
+
+msgid "That did not work. Try again or call a relative"
+msgstr "Не получилось. Попробуй ещё раз или позови родственника"
+
+msgid "That did not work. Contact support"
+msgstr "Не получилось. Обратитесь в поддержку"
+
+msgid "Done! Money sent to {}"
+msgstr "Готово! Деньги отправлены {}"
+
+msgid "Recipient"
+msgstr "Получатель"
+
+msgid "Waiting for confirmation..."
+msgstr "Ожидаем подтверждение..."
+
+msgid "Almost done..."
+msgstr "Почти готово..."
+
+msgid "Adding a family member..."
+msgstr "Добавляем участника семьи..."
+
+msgid "Show this code to the relative who will have access to the family app"
+msgstr "Покажите этот код родственнику, у которого будет доступ к приложению семьи"
+
+msgid "Scan this code in the family app or type the digits:"
+msgstr "Отсканируйте этот код в приложении семьи или введите цифры:"
+
+msgid "Wait {}, then scan this code in the family app or type the digits:"
+msgstr "Подождите {}, затем отсканируйте этот код в приложении семьи или введите цифры:"
+
+msgid "{} sec"
+msgstr "{} сек."
+
+msgid "{} min"
+msgstr "{} мин."

@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { Message } from "messages.slint";
 import { SetupScreen } from "setup.slint";
 import { MyWalletScreen, BeneficiaryItem } from "my-wallet.slint";
 import { AmountSelectScreen } from "amount-select.slint";
@@ -6,7 +7,7 @@ import { ConfirmScreen } from "confirm.slint";
 import { ResultScreen } from "result.slint";
 import { FamilyWalletScreen } from "family-wallet.slint";
 
-export { BeneficiaryItem }
+export { BeneficiaryItem, Message }
 
 export enum Screen { setup, my-wallet, amount-select, confirm, result, family-wallet }
 
@@ -18,18 +19,22 @@ export component AppWindow inherits Window {
     in-out property <Screen> current-screen: Screen.my-wallet;
 
     in property <image> setup-qr-image <=> setup.qr-image;
-    in property <string> setup-status-text <=> setup.status-text;
+    in property <Message> setup-message <=> setup.message;
+    in property <int> pairing-wait-secs <=> setup.pairing-wait-secs;
     in property <bool> setup-pairing-active <=> setup.pairing-active;
     in property <string> setup-pin-text <=> setup.pin-text;
     in property <string> balance-text <=> wallet.balance-text;
+    in property <Message> balance-message <=> wallet.balance-message;
     in property <[BeneficiaryItem]> beneficiaries <=> wallet.beneficiaries;
     in property <string> selected-recipient-name <=> amount-select.recipient-name;
     in property <[string]> presets <=> amount-select.presets;
     in property <string> confirm-recipient-name <=> confirm.recipient-name;
     in property <string> confirm-amount-text <=> confirm.amount-text;
     in property <bool> result-success <=> result.success;
-    in property <string> result-message-text <=> result.message-text;
+    in property <Message> result-message <=> result.message;
+    in property <string> result-name <=> result.name;
     in property <string> family-balance-text <=> family-wallet.balance-text;
+    in property <Message> family-balance-message <=> family-wallet.balance-message;
     in property <[BeneficiaryItem]> family-beneficiaries <=> family-wallet.beneficiaries;
 
     callback skip-pairing-requested <=> setup.skip-pairing-requested;
