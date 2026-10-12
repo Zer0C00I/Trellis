@@ -1,6 +1,8 @@
 // A scripted stand-in for the Rust commands: same names, same shapes as
-// src-tauri/src/dto.rs (sentences are catalog keys with params, as from Rust). Pick a scenario with ?mock=owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
+// src-tauri/src/dto.rs (sentences are catalog keys with params, as from Rust). Pick a scenario with ?mock=demo|owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
 const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
+const demo = scenario === 'demo';
+const NAME = demo ? { anna: 'Granddaughter Anna', peter: 'Neighbour Peter' } : { anna: 'Внучка Анна', peter: 'Сосед Пётр' };
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 const ME = '7Hn3mQe1dKq9vXw2YfPz8LbT5aRcUoJs4NgBxVyE6AtM';
@@ -8,8 +10,8 @@ const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 const msg = (key, params = {}) => ({ key, params });
 
 const payees = [
-  { name: 'Внучка Анна', address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: msg('payee.ready') },
-  { name: 'Сосед Пётр', address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: msg('payee.wait_hours', { n: 31 }) },
+  { name: NAME.anna, address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: msg('payee.ready') },
+  { name: NAME.peter, address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: msg('payee.wait_hours', { n: 31 }) },
 ].map((p) => ({ ...p, address_short: short(p.address) }));
 
 const guardians = [
@@ -48,22 +50,29 @@ const grandma = {
   permissions: { deposit: true, send: false, add_payee: false, add_guardian: false, approve: true },
 };
 grandma.address_short = short(grandma.address);
+if (demo) {
+  pool.balance = '340 USDC';
+  pool.daily_limit = '30 USDC';
+  pool.remaining_today = '30 USDC';
+  grandma.balance = '120 USDC';
+  grandma.pending = [{ ...grandma.pending[0], amount: '35 USDC' }];
+}
 
 const now = () => Math.floor(Date.now() / 1000);
 const history = () => [
   { signature: 's1', ...msg('history.deposit', { amount: '50 USDC' }), time: now() - 3600 },
   { signature: 's2', ...msg('history.withdraw', { amount: '12.5 USDC' }), time: now() - 86400 * 2 },
-  { signature: 's3', ...msg('history.payee_added', { name: 'Внучка Анна' }), time: now() - 86400 * 9 },
+  { signature: 's3', ...msg('history.payee_added', { name: NAME.anna }), time: now() - 86400 * 9 },
   { signature: 's4', ...msg('history.opened'), time: now() - 86400 * 40 },
 ];
 
-let vaults = { owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], 'unconfirmed-waiting': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
+let vaults = { demo: [], owner: [pool], guardian: [grandma], empty: [], waiting: [], unconfirmed: [pool], 'unconfirmed-failed': [pool], 'unconfirmed-waiting': [pool], stuck: [], lowsol: [pool] }[scenario] ?? [pool];
 let solGot = false;
 let pendingTx = scenario.startsWith('unconfirmed') ? { what: msg('op.send', { amount: '5 USDC' }), signature: 'sig123' } : null;
 let waitingPolls = 0;
 let moved = 0; // every deposit/send changes the balance, as on a real chain
 const setBalance = () => {
-  pool.balance = `${(250.5 + moved).toFixed(2).replace(/\.?0+$/, '')} USDC`;
+  pool.balance = `${((demo ? 340 : 250.5) + moved).toFixed(2).replace(/\.?0+$/, '')} USDC`;
 };
 
 // Test hook: the chain moves on its own (someone else paid in).
@@ -81,7 +90,7 @@ const handlers = {
     return !solGot && ['lowsol', 'empty', 'waiting', 'stuck'].includes(scenario) ? { sol: '0', low_sol: true } : { sol: '0.1', low_sol: false };
   },
   list_vaults: () => {
-    if (scenario === 'waiting' && ++waitingPolls >= 3) vaults = [grandma];
+    if ((scenario === 'waiting' || demo) && ++waitingPolls >= 3) vaults = demo ? [pool, grandma] : [grandma];
     return vaults.map((v) => ({ address: v.address, address_short: v.address_short, mine: v.is_owner }));
   },
   load_vault: ({ vault }) => {
@@ -108,10 +117,12 @@ const handlers = {
       pendingTx = { what: msg('op.send', { amount: `${amount} USDC` }), signature: 'sigU' };
       throw err('unconfirmed', 'error.unconfirmed');
     }
-    if (Number(amount) > 70) {
+    const left = Number(String(pool.remaining_today).split(' ')[0]);
+    if (Number(amount) > left) {
       return { signature: 'sigR', ...msg('notice.request_filed') };
     }
     moved -= Number(amount);
+    if (demo) pool.remaining_today = `${left - Number(amount)} USDC`;
     setBalance();
     return { signature: 'sigS', ...msg('notice.sent') };
   },

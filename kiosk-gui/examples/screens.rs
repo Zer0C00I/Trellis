@@ -1,7 +1,7 @@
 //! Shows one kiosk screen filled with demo data, for presentations and for
 //! checking a layout by eye.
 //!
-//!     cargo run -p kiosk-gui --example screens -- <screen> [ru|en] [long|wide] [snapshot.ppm]
+//!     cargo run -p kiosk-gui --example screens -- <screen> [ru|en] [long|wide] [name=<text>] [amount=<text>] [snapshot.ppm]
 //!
 //! Screens: wallet, family, amount, confirm, ok, fail, setup, wait.
 //! `long` uses long names with spaces, `wide` the widest 32-character names.
@@ -34,6 +34,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let long = args.iter().any(|a| a == "long");
     let wide = args.iter().any(|a| a == "wide");
     let snapshot = args.iter().find(|a| a.ends_with(".ppm"));
+    let arg = |key: &str| {
+        args.iter()
+            .find_map(|a| a.strip_prefix(key))
+            .map(str::to_owned)
+    };
+    let custom_name = arg("name=");
+    let custom_amount = arg("amount=");
 
     let app = AppWindow::new()?;
     slint::select_bundled_translation(language)?;
@@ -52,6 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         ["Grandson Sasha", "Daughter Masha", "Neighbour Peter"]
     };
+    let shown = custom_name.as_deref().unwrap_or(names[0]);
+    let amount = custom_amount.as_deref().unwrap_or("20 USDC");
     app.set_presets(
         Rc::new(slint::VecModel::from(vec![
             "10 USDC".into(),
@@ -64,10 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.set_family_balance_text("340 USDC".into());
     app.set_beneficiaries(items(&[(names[0], 1), (names[1], 2), (names[2], 3)]));
     app.set_family_beneficiaries(items(&[(names[0], 1), (names[1], 2)]));
-    app.set_selected_recipient_name(names[0].into());
-    app.set_confirm_recipient_name(names[0].into());
-    app.set_confirm_amount_text("20 USDC".into());
-    app.set_result_name(names[0].into());
+    app.set_selected_recipient_name(shown.into());
+    app.set_confirm_recipient_name(shown.into());
+    app.set_confirm_amount_text(amount.into());
+    app.set_result_name(shown.into());
     match screen {
         "wallet" => app.set_current_screen(Screen::MyWallet),
         "family" => app.set_current_screen(Screen::FamilyWallet),
