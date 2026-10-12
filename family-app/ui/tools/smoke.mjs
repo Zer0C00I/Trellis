@@ -112,6 +112,8 @@ try {
   const buttonDisabled = (label) => evaluate(`[...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(label)})?.disabled`);
 
   let lang = 'ru';
+  // The mock names its sample people in the language the app shows.
+  const person = (who) => ({ en: { anna: 'Granddaughter Anna', peter: 'Neighbour Peter' }, ru: { anna: 'Внучка Анна', peter: 'Сосед Пётр' } })[lang][who];
   const tests = [];
   const test = (name, fn) => tests.push([`[${lang}] ${name}`, fn]);
   // What the page shows, from the same catalogs the page uses.
@@ -148,7 +150,7 @@ try {
     await until("document.querySelector('input[name=payee]')", 'payee list');
     assert.equal(await evaluate("document.querySelectorAll('input[name=payee]').length"), 1);
     const page = await text();
-    assert.match(page, /Сосед Пётр/); // listed as "not yet usable", with the wait in this language
+    assert.ok(page.includes(person('peter')), page); // listed as "not yet usable", with the wait in this language
     assert.ok(page.toLocaleLowerCase(lang).includes(t('payee.wait_hours', { n: 31 }).toLocaleLowerCase(lang)), page);
   });
 
@@ -442,7 +444,7 @@ try {
 
   test('names from the chain are shown as text, never as HTML', async () => {
     await open('owner', 'people');
-    await until(has('Внучка Анна'), 'people list');
+    await until(has(person('anna')), 'people list');
     await evaluate(`import('./dom.js').then(({h}) => { document.body.append(h('div', {id:'x'}, '<img src=x onerror=window.__pwned=1>')); })`);
     await sleep(200);
     assert.equal(await evaluate('window.__pwned === undefined && !document.querySelector("#x img")'), true);

@@ -1,18 +1,26 @@
 // A scripted stand-in for the Rust commands: same names, same shapes as
 // src-tauri/src/dto.rs (sentences are catalog keys with params, as from Rust). Pick a scenario with ?mock=demo|owner|guardian|empty|waiting|unconfirmed|unconfirmed-failed|unconfirmed-waiting|send-unconfirmed|stuck|lowsol|offline
+import { currentLocale } from './i18n.js';
+
 const scenario = new URLSearchParams(location.search).get('mock') || 'owner';
 const demo = scenario === 'demo';
-const NAME = demo ? { anna: 'Granddaughter Anna', peter: 'Neighbour Peter' } : { anna: 'Внучка Анна', peter: 'Сосед Пётр' };
+// Sample people, named in the language the app is showing.
+const NAMES = {
+  en: { anna: 'Granddaughter Anna', peter: 'Neighbour Peter' },
+  ru: { anna: 'Внучка Анна', peter: 'Сосед Пётр' },
+};
+const name = (who) => (NAMES[currentLocale()] ?? NAMES.en)[who];
 const delay = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 const ME = '7Hn3mQe1dKq9vXw2YfPz8LbT5aRcUoJs4NgBxVyE6AtM';
 const short = (a) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 const msg = (key, params = {}) => ({ key, params });
 
+const payee = (who, address, rest) => ({ get name() { return name(who); }, address, address_short: short(address), ...rest });
 const payees = [
-  { name: NAME.anna, address: '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', active: true, status: msg('payee.ready') },
-  { name: NAME.peter, address: 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', active: false, status: msg('payee.wait_hours', { n: 31 }) },
-].map((p) => ({ ...p, address_short: short(p.address) }));
+  payee('anna', '9xQeWvG816bUx9EPfHnxZq3JdRkaLo5SyMtBpNwC2Ue', { active: true, status: msg('payee.ready') }),
+  payee('peter', 'F3sA7kDmW2cLhVn6TqYbJ9uXoR1ePzG4iKaNvMy8CdBt', { active: false, status: msg('payee.wait_hours', { n: 31 }) }),
+];
 
 const guardians = [
   { address: ME, is_me: true },
@@ -64,7 +72,7 @@ const history = () => [
   ...demoSent,
   { signature: 's1', ...msg('history.deposit', { amount: '50 USDC' }), time: now() - 3600 },
   { signature: 's2', ...msg('history.withdraw', { amount: '12.5 USDC' }), time: now() - 86400 * 2 },
-  { signature: 's3', ...msg('history.payee_added', { name: NAME.anna }), time: now() - 86400 * 9 },
+  { signature: 's3', ...msg('history.payee_added', { name: name('anna') }), time: now() - 86400 * 9 },
   { signature: 's4', ...msg('history.opened'), time: now() - 86400 * 40 },
 ];
 
