@@ -1,3 +1,9 @@
 [workspace]
 members = ["programs/family-vault", "kiosk-gui", "tools/admin-cli", "tools/family-vault-client", "tools/family-app-core", "family-app/src-tauri"]
 resolver = "2"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
