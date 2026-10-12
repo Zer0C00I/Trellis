@@ -62,7 +62,8 @@ try {
   await writing;
   const end = Math.max(frames.at(-1).ts + 0.5, frames[0].ts + scenes.reduce((n, s) => n + s.seconds, 0));
   const list = frames.map((f, i) => `file '${f.file.replace('demo/out/', '')}'\nduration ${((frames[i + 1]?.ts ?? end) - f.ts).toFixed(4)}`).join('\n');
-  writeFileSync('demo/out/rec.txt', `${list}\n`);
+  // ffmpeg's concat demuxer drops the last duration unless the file is listed once more.
+  writeFileSync('demo/out/rec.txt', `${list}\nfile '${frames.at(-1).file.replace('demo/out/', '')}'\n`);
 } finally {
   await page.close();
   server.close();
