@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PublicKey } from '@solana/web3.js'
 import { BN } from '@coral-xyz/anchor'
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from '@solana/spl-token'
@@ -33,6 +33,21 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
   const { program, provider } = useAnchorProvider()
   const [amount, setAmount] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // The depositor's USDC, shown for reference and for "Max". null = unknown, '' = no token account.
+  const [walletUsdc, setWalletUsdc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen || !provider) return
+    let cancelled = false
+    const ata = getAssociatedTokenAddressSync(USDC_MINT, provider.wallet.publicKey)
+    provider.connection
+      .getTokenAccountBalance(ata)
+      .then((b) => !cancelled && setWalletUsdc(b.value.uiAmountString ?? '0'))
+      .catch(() => !cancelled && setWalletUsdc(''))
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, provider])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +63,7 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
     const depositorTokenAccount = getAssociatedTokenAddressSync(USDC_MINT, depositor)
 
     setIsSubmitting(true)
-    const toastId = toast.loading('Depositing USDC...')
+    const toastId = toast.loading('Depositing USDC…')
     try {
       const info = await provider.connection.getAccountInfo(depositorTokenAccount)
       if (!info) {
@@ -74,7 +89,7 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
         })
         .rpc()
 
-      toast.success('Deposit confirmed!', {
+      toast.success('Deposit confirmed', {
         id: toastId,
         action: { label: 'View', onClick: () => window.open(explorerTxUrl(sig), '_blank') },
       })
@@ -89,54 +104,84 @@ export function DepositUsdcModal({ isOpen, onClose, vaultPda, vaultTokenAccount,
     }
   }
 
+  const trimmed = amount.trim()
+  const amountInvalid = trimmed.length > 0 && !toBaseUnits(trimmed)
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] bg-zinc-950 border border-zinc-800 text-zinc-100">
+      <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle>Deposit USDC</DialogTitle>
-          <DialogDescription className="text-zinc-400">
-            Move Devnet USDC from your wallet into your vault. Need test USDC? Use the{' '}
-            <a href="https://faucet.circle.com/" target="_blank" rel="noopener noreferrer" className="underline">
+          <DialogDescription>
+            Moves Devnet USDC from your wallet into the vault. Need test USDC? Get some from the{' '}
+            <a
+              href="https://faucet.circle.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-wisteria underline decoration-wisteria/40 underline-offset-4 hover:decoration-wisteria"
+            >
               Circle faucet
             </a>{' '}
-            (Solana Devnet).
+            (pick Solana Devnet).
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="deposit-usdc-amount" className="text-zinc-400">
-              Amount (USDC)
-            </Label>
-            <Input
-              id="deposit-usdc-amount"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="bg-zinc-900 border-zinc-800 font-mono"
-              required
-            />
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <Label htmlFor="deposit-usdc-amount">Amount</Label>
+              <span className="text-sm text-moss">
+                {walletUsdc === null
+                  ? provider
+                    ? 'Checking your balance…'
+                    : null
+                  : walletUsdc === ''
+                    ? 'No USDC in this wallet yet'
+                    : `In your wallet: ${walletUsdc} USDC`}
+              </span>
+            </div>
+            <div className="relative">
+              <Input
+                id="deposit-usdc-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="tabular h-14 pr-28 text-2xl font-semibold"
+                autoComplete="off"
+                required
+                aria-invalid={amountInvalid || undefined}
+                aria-describedby="deposit-hint"
+              />
+              <span
+                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-[15px] text-moss ${walletUsdc && walletUsdc !== '0' ? 'right-16' : 'right-4'}`}
+              >
+                USDC
+              </span>
+              {walletUsdc && walletUsdc !== '0' && (
+                <button
+                  type="button"
+                  onClick={() => setAmount(walletUsdc)}
+                  className="absolute top-1/2 right-2 h-9 -translate-y-1/2 rounded-md px-2.5 text-sm font-medium text-wisteria hover:bg-bloom/60"
+                >
+                  Max
+                </button>
+              )}
+            </div>
+            <p id="deposit-hint" className={`text-sm ${amountInvalid ? 'text-rust' : 'text-moss'}`}>
+              {amountInvalid
+                ? `Enter a number above zero, with up to ${USDC_DECIMALS} decimals.`
+                : 'You can deposit any amount. The daily limit only applies to sending.'}
+            </p>
           </div>
-          <DialogFooter className="mt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="hover:bg-zinc-800 text-zinc-400"
-            >
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button
-              id="deposit-usdc-submit"
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
+            <Button id="deposit-usdc-submit" type="submit" disabled={isSubmitting || !toBaseUnits(trimmed)}>
               {isSubmitting ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Depositing...
-                </span>
+                <>
+                  <Loader2 className="animate-spin" /> Depositing
+                </>
               ) : (
                 'Deposit'
               )}

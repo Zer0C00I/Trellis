@@ -1,179 +1,155 @@
-import Image from 'next/image'
 import Link from 'next/link'
+import { Check } from 'lucide-react'
+import { SiteShell } from '@/components/site/site-shell'
+
+const PLANS = [
+  {
+    name: 'Personal',
+    price: 'Free',
+    note: 'You pay Solana network rent only',
+    who: 'Self-custody for one person’s savings.',
+    cta: { label: 'Create a free vault', href: '/dashboard' },
+    features: ['Web app', 'Up to 2 guardians', 'Standard waiting periods', 'Pay only Solana network rent'],
+  },
+  {
+    name: 'Pro',
+    price: '$25',
+    unit: '/month',
+    note: 'Billed yearly at $300',
+    who: 'Governance and alerts for an active family estate.',
+    cta: { label: 'Start with Pro', href: '/dashboard' },
+    features: [
+      'Everything in Personal',
+      'Up to 5 guardians',
+      'SMS and push alerts',
+      'Downloadable audit logs',
+      'Phantom and Backpack support',
+    ],
+    highlight: true,
+  },
+  {
+    name: 'Advisor',
+    price: '$499',
+    unit: '/year',
+    note: 'Flat yearly rate',
+    who: 'Estate planners and small law firms managing several estates.',
+    cta: { label: 'Talk to sales', href: 'mailto:trellisvault@gmail.com' },
+    features: [
+      'Up to 50 client estates',
+      'Co-branded vault interface',
+      'Priority API access',
+      'A dedicated success manager',
+      'PDF estate reports',
+    ],
+  },
+]
+
+const TERMINAL = [
+  'One Trellis kiosk (touchscreen, pairs with family phones by code)',
+  'Up to 5 guardians for approvals',
+  'Software licence for one estate or trust',
+  'Support on business days, 8am to 8pm EST',
+  'Next-business-day device replacement',
+  'API access for practice-management tools',
+  'Guided setup, including key generation',
+]
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-black font-sans selection:bg-blue-500/30 selection:text-blue-200">
-      <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[95%] max-w-6xl rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 z-50 px-6 py-4 flex justify-between items-center shadow-[0_0_40px_-10px_rgba(0,0,0,0.5)]">
-        <Link href="/" className="flex items-center gap-2">
-          <Image
-            src="/logo.png"
-            alt="Trellis"
-            width={240}
-            height={80}
-            className="h-20 w-auto -my-6 invert mix-blend-screen"
-          />
-        </Link>
-        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-300">
-          <Link href="/#features" className="hover:text-white transition-colors">
-            Features
-          </Link>
-          <Link href="/#hardware" className="hover:text-white transition-colors">
-            Kiosk
-          </Link>
-          <Link href="/pricing" className="text-white transition-colors">
-            Pricing
-          </Link>
-          <Link href="/docs" className="hover:text-white transition-colors">
-            Docs
-          </Link>
-        </div>
-        <Link href="/dashboard">
-          <button className="bg-white hover:bg-slate-200 text-black text-sm font-bold rounded-full px-6 py-2.5 transition-colors">
-            Launch App
-          </button>
-        </Link>
-      </nav>
-
-      <section className="relative bg-black text-white pt-48 pb-16 px-8 overflow-hidden flex flex-col items-center text-center">
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-r from-emerald-900/40 via-blue-900/20 to-black blur-[120px] pointer-events-none"></div>
-
-        <div className="relative z-10 max-w-5xl mx-auto flex flex-col items-center">
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-6 leading-tight">
-            Free for the people
-            <br />
-            who use it.
-          </h1>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed mb-12">
-            The core of Trellis is free, always. Paid extras are an idea for later, and nothing is for sale yet.
-          </p>
-        </div>
+    <SiteShell>
+      <section className="mx-auto max-w-[1200px] px-4 pb-12 pt-12 sm:px-6 md:pt-20">
+        <h1 className="max-w-3xl text-[42px] font-semibold leading-[1.04] tracking-[-0.03em] sm:text-[56px]">
+          Pricing
+        </h1>
+        <p className="mt-6 max-w-2xl text-lg leading-relaxed text-moss sm:text-[19px]">
+          From a free personal vault to a kiosk at a relative&apos;s home. Start free and upgrade when your family needs
+          more.
+        </p>
       </section>
 
-      <section className="bg-black text-white pb-32 px-8 relative z-10">
-        <div className="max-w-[900px] mx-auto space-y-8">
-          <div className="bg-black border border-white/10 rounded-3xl p-8 md:p-10">
-            <h3 className="text-xl font-semibold tracking-tight mb-2 text-white">The core, free for the owner</h3>
-            <div className="text-3xl font-mono tracking-tight mb-6 text-emerald-400">Free</div>
-            <ul className="space-y-3 text-sm text-slate-300">
-              <li className="flex items-start gap-3">
-                <span className="text-emerald-400">✓</span> Seeing the balance and sending to approved payees
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="text-emerald-400">✓</span> The shared family pool and its daily limit
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="text-emerald-400">✓</span> Guardian approvals and key recovery
-              </li>
-            </ul>
-            <p className="text-sm text-slate-500 leading-relaxed mt-6">
-              Nobody&apos;s access to their own money depends on a subscription. The only cost today is Solana network
-              rent and fees, paid in Devnet SOL while this is a prototype.
-            </p>
-          </div>
-
-          <div className="bg-black border border-white/10 rounded-3xl p-8 md:p-10">
-            <h3 className="text-xl font-semibold tracking-tight mb-2 text-white">
-              Possible paid extras, not built yet
-            </h3>
-            <div className="text-sm font-mono tracking-tight mb-6 text-blue-400">
-              PAID BY A RELATIVE, NEVER BY THE OWNER
-            </div>
-            <ul className="space-y-3 text-sm text-slate-300">
-              <li className="flex items-start gap-3">
-                <span className="text-blue-400">•</span> Spending analytics
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="text-blue-400">•</span> Notifications for the family
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="text-blue-400">•</span> Remote management of limits
-              </li>
-            </ul>
-            <p className="text-sm text-slate-500 leading-relaxed mt-6">
-              These are ideas, with no prices and no launch date. If they ever exist, they will not lock the owner out
-              of the core.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <footer className="bg-black text-slate-500 py-20 px-8 border-t border-white/10">
-        <div className="max-w-[1200px] mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
-            <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center gap-2 mb-2">
-                <Image
-                  src="/logo.png"
-                  alt="Trellis"
-                  width={400}
-                  height={128}
-                  className="h-40 w-auto -my-12 -ml-8 invert mix-blend-screen"
-                />
+      <section className="mx-auto max-w-[1200px] px-4 pb-16 sm:px-6 md:pb-24">
+        <div className="grid gap-6 lg:grid-cols-3 lg:gap-0 lg:border-t-2 lg:border-ivy">
+          {PLANS.map((p, i) => (
+            <div
+              key={p.name}
+              className={`flex flex-col border-t-2 border-ivy pt-6 lg:border-t-0 lg:px-8 lg:pb-2 ${i === 0 ? 'lg:pl-0' : 'lg:border-l lg:border-l-rule'} ${
+                p.highlight ? 'lg:bg-paper lg:pt-8' : 'lg:pt-8'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-[21px] font-semibold">{p.name}</h2>
+                {p.highlight && (
+                  <span className="rounded-full bg-bloom px-2.5 py-0.5 text-sm font-medium text-wisteria-ink">
+                    Most families
+                  </span>
+                )}
               </div>
-              <p className="text-slate-400 text-sm font-light leading-relaxed max-w-sm">
-                A family vault on Solana: an older person&apos;s kiosk, a family app for oversight, and an on-chain
-                program that enforces the rules. Prototype on Devnet.
+              <p className="mt-4 text-[42px] font-semibold leading-none tracking-tight">
+                <span className="tabular">{p.price}</span>
+                {p.unit && <span className="text-[17px] font-normal text-moss">{p.unit}</span>}
               </p>
-            </div>
-
-            <div>
-              <h4 className="text-white font-semibold mb-6 text-sm">Product</h4>
-              <ul className="space-y-4 text-sm font-medium">
-                <li>
-                  <Link href="/dashboard" className="hover:text-emerald-400 transition-colors">
-                    Launch App
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/#features" className="hover:text-emerald-400 transition-colors">
-                    Features
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/#hardware" className="hover:text-emerald-400 transition-colors">
-                    Kiosk
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/pricing" className="hover:text-emerald-400 transition-colors">
-                    Pricing
-                  </Link>
-                </li>
+              <p className="mt-2 text-sm text-moss">{p.note}</p>
+              <p className="mt-4 text-[16px] leading-relaxed">{p.who}</p>
+              <ul className="mt-6 flex-1 space-y-2.5">
+                {p.features.map((f) => (
+                  <li key={f} className="flex gap-2.5 text-[15px]">
+                    <Check className="mt-0.5 size-4 shrink-0 text-sap" strokeWidth={2.5} aria-hidden />
+                    {f}
+                  </li>
+                ))}
               </ul>
+              <Link
+                href={p.cta.href}
+                className={`mt-8 inline-flex h-11 items-center justify-center rounded-md px-5 text-[15px] font-medium transition-colors ${
+                  p.highlight
+                    ? 'bg-wisteria text-white hover:bg-wisteria-ink'
+                    : 'border border-ivy/35 text-ivy hover:border-ivy/60 hover:bg-ivy/[0.05]'
+                }`}
+              >
+                {p.cta.label}
+              </Link>
             </div>
+          ))}
+        </div>
+      </section>
 
-            <div>
-              <h4 className="text-white font-semibold mb-6 text-sm">Docs & Social</h4>
-              <ul className="space-y-4 text-sm font-medium">
-                <li>
-                  <Link href="/docs" className="hover:text-emerald-400 transition-colors">
-                    Documentation
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="https://x.com/TrellisVault"
-                    target="_blank"
-                    className="hover:text-emerald-400 transition-colors"
-                  >
-                    X (Twitter)
-                  </Link>
-                </li>
-                <li>
-                  <a href="mailto:trellisvault@gmail.com" className="hover:text-emerald-400 transition-colors">
-                    Contact
-                  </a>
-                </li>
-              </ul>
-            </div>
+      <section className="bg-ivy text-lichen">
+        <div className="mx-auto grid max-w-[1200px] gap-12 px-4 py-16 sm:px-6 md:grid-cols-2 md:py-24">
+          <div>
+            <h2 className="text-[34px] font-semibold leading-tight sm:text-[42px]">Trellis Terminal</h2>
+            <p className="mt-4 max-w-md text-lg leading-relaxed text-lichen/80">
+              A dedicated kiosk for the vault holder. No browser, no seed phrase, and every rule enforced on-chain.
+            </p>
+            <dl className="mt-8 grid max-w-md grid-cols-2 gap-6 border-t border-lichen/20 pt-6">
+              <div>
+                <dt className="text-sm text-lichen/70">Device deposit</dt>
+                <dd className="tabular mt-1 text-[34px] font-semibold leading-none">$12,500</dd>
+              </div>
+              <div>
+                <dt className="text-sm text-lichen/70">Yearly licence</dt>
+                <dd className="tabular mt-1 text-[34px] font-semibold leading-none">$9,600</dd>
+              </div>
+            </dl>
+            <a
+              href="mailto:trellisvault@gmail.com"
+              className="mt-8 inline-flex h-12 items-center rounded-md bg-lichen px-6 font-medium text-ivy transition-colors hover:bg-white"
+            >
+              Talk to sales
+            </a>
           </div>
-
-          <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-mono">
-            <div>&copy; {new Date().getFullYear()} Trellis</div>
+          <div>
+            <h3 className="text-[19px] font-semibold">What&apos;s included</h3>
+            <ul className="mt-4 border-t border-lichen/20">
+              {TERMINAL.map((t) => (
+                <li key={t} className="flex gap-3 border-b border-lichen/20 py-3.5 text-[16px]">
+                  <Check className="mt-1 size-4 shrink-0 text-bloom" strokeWidth={2.5} aria-hidden />
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      </footer>
-    </div>
+      </section>
+    </SiteShell>
   )
 }

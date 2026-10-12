@@ -1,25 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Trellis tokens. A trellis is the lattice that holds up what grows on it:
+ * Ivy is the structure, Lichen the ground, Wisteria the one thing that acts.
+ * The same palette is used by family-app/ui and kiosk-gui/ui/theme.slint.
+ */
 @theme inline {
+  --color-lichen: var(--lichen);
+  --color-paper: var(--paper);
+  --color-ivy: var(--ivy);
+  --color-ivy-2: var(--ivy-2);
+  --color-moss: var(--moss);
+  --color-wisteria: var(--wisteria);
+  --color-wisteria-ink: var(--wisteria-ink);
+  --color-bloom: var(--bloom);
+  --color-sap: var(--sap);
+  --color-amber: var(--amber);
+  --color-rust: var(--rust);
+  --color-rule: var(--rule);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -36,173 +40,262 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-onest), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Radius by rank: controls and rows, panels, dots. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
 }
 
 :root {
-  --radius: 0.75rem;
-  --background: #0a0f1e;
-  --foreground: #e8ecf4;
-  --card: #111827;
-  --card-foreground: #e8ecf4;
-  --popover: #111827;
-  --popover-foreground: #e8ecf4;
-  --primary: #9945ff;
-  --primary-foreground: #ffffff;
-  --secondary: #1a2236;
-  --secondary-foreground: #e8ecf4;
-  --muted: #1a2236;
-  --muted-foreground: #6b7a99;
-  --accent: #1e293b;
-  --accent-foreground: #e8ecf4;
-  --destructive: #ef4444;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.12);
-  --ring: #9945ff;
-  --chart-1: #9945ff;
-  --chart-2: #14f195;
-  --chart-3: #3b82f6;
-  --chart-4: #f59e0b;
-  --chart-5: #ef4444;
-  --sidebar: #0d1321;
-  --sidebar-foreground: #e8ecf4;
-  --sidebar-primary: #9945ff;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1a2236;
-  --sidebar-accent-foreground: #e8ecf4;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #9945ff;
-}
+  --lichen: #e9ece4;
+  --paper: #f5f7f2;
+  --ivy: #17301f;
+  --ivy-2: #22402c;
+  --moss: #4e5d52;
+  --wisteria: #5b4aa0;
+  --wisteria-ink: #4a3b8a;
+  --bloom: #dcd5f0;
+  --sap: #2f6b40;
+  --amber: #8a5a0b;
+  --rust: #a3402e;
+  --rule: rgb(78 93 82 / 0.22);
 
-.dark {
-  --background: #0a0f1e;
-  --foreground: #e8ecf4;
-  --card: #111827;
-  --card-foreground: #e8ecf4;
-  --popover: #111827;
-  --popover-foreground: #e8ecf4;
-  --primary: #9945ff;
+  --background: var(--lichen);
+  --foreground: var(--ivy);
+  --card: var(--paper);
+  --card-foreground: var(--ivy);
+  --popover: var(--paper);
+  --popover-foreground: var(--ivy);
+  --primary: var(--wisteria);
   --primary-foreground: #ffffff;
-  --secondary: #1a2236;
-  --secondary-foreground: #e8ecf4;
-  --muted: #1a2236;
-  --muted-foreground: #6b7a99;
-  --accent: #1e293b;
-  --accent-foreground: #e8ecf4;
-  --destructive: #ef4444;
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.12);
-  --ring: #9945ff;
-  --chart-1: #9945ff;
-  --chart-2: #14f195;
-  --chart-3: #3b82f6;
-  --chart-4: #f59e0b;
-  --chart-5: #ef4444;
-  --sidebar: #0d1321;
-  --sidebar-foreground: #e8ecf4;
-  --sidebar-primary: #9945ff;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1a2236;
-  --sidebar-accent-foreground: #e8ecf4;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: #9945ff;
+  --secondary: #dfe4d9;
+  --secondary-foreground: var(--ivy);
+  --muted: #dfe4d9;
+  --muted-foreground: var(--moss);
+  --accent: #dfe4d9;
+  --accent-foreground: var(--ivy);
+  --destructive: var(--rust);
+  --border: var(--rule);
+  --input: rgb(78 93 82 / 0.45);
+  --ring: var(--wisteria);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-family:
-      'Inter',
-      system-ui,
-      -apple-system,
-      sans-serif;
+    @apply bg-background text-foreground font-sans;
+    font-size: 17px;
+    line-height: 1.55;
+    font-feature-settings: 'ss01' on;
+  }
+
+  ::selection {
+    background: var(--bloom);
+    color: var(--ivy);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--wisteria);
+    outline-offset: 2px;
   }
 
   button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;
   }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/* Amounts line up digit for digit. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A thin dotted leader between a rule and its value, like a schedule in a deed. */
+.leader {
+  flex: 1;
+  min-width: 2rem;
+  border-bottom: 2px dotted var(--rule);
+  transform: translateY(-0.35em);
+}
+
+/* ---------- Wallet adapter ---------- */
+
+.wallet-adapter-button {
+  font-family: var(--font-onest), system-ui, sans-serif !important;
 }
 
 .wallet-adapter-button-trigger {
-  height: auto !important;
-  @apply !bg-gradient-to-r !from-purple-600 !to-purple-500 !text-white !border-0 !shadow-lg !shadow-purple-500/20;
-  @apply !px-4 !py-2 !rounded-xl !text-sm !font-semibold !transition-all;
+  height: 40px !important;
+  padding: 0 16px !important;
+  border-radius: 6px !important;
+  background: var(--ivy) !important;
+  color: var(--lichen) !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
 }
 
-.wallet-adapter-button-trigger:hover {
-  @apply !from-purple-500 !to-purple-400 !shadow-purple-500/30;
-  transform: translateY(-1px);
+.wallet-adapter-button-trigger:not([disabled]):hover {
+  background: var(--ivy-2) !important;
+}
+
+.wallet-adapter-button-trigger .wallet-adapter-button-start-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+}
+
+.wallet-adapter-dropdown-list {
+  background: var(--paper) !important;
+  color: var(--ivy) !important;
+  border: 1px solid var(--rule);
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px -12px rgb(23 48 31 / 0.35) !important;
+  font-family: var(--font-onest), system-ui, sans-serif !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+  color: var(--ivy) !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+}
+
+.wallet-adapter-dropdown-list-item:not([disabled]):hover {
+  background: var(--bloom) !important;
 }
 
 .wallet-adapter-modal-wrapper {
-  @apply !bg-card/95 backdrop-blur-xl !border !border-white/10 !rounded-2xl;
+  background: var(--paper) !important;
+  color: var(--ivy) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 24px 64px -24px rgb(23 48 31 / 0.45) !important;
+  font-family: var(--font-onest), system-ui, sans-serif !important;
+}
+
+.wallet-adapter-modal-overlay {
+  background: rgb(23 48 31 / 0.45) !important;
 }
 
 .wallet-adapter-modal-title {
-  @apply !text-foreground;
+  color: var(--ivy) !important;
+  font-weight: 600 !important;
 }
 
-.glass {
-  background: rgba(17, 24, 39, 0.6);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.wallet-adapter-modal-button-close {
+  background: var(--lichen) !important;
 }
 
-@keyframes gradient-shift {
-  0%,
-  100% {
-    background-position: 0% 50%;
+.wallet-adapter-modal-button-close svg {
+  fill: var(--ivy) !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button {
+  color: var(--ivy) !important;
+  border-radius: 6px !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:not([disabled]):hover {
+  background: var(--lichen) !important;
+}
+
+.wallet-adapter-modal-list-more {
+  color: var(--moss) !important;
+}
+
+.wallet-adapter-modal-list-more svg {
+  fill: var(--moss) !important;
+}
+
+/* ---------- Hero lattice ---------- */
+
+.lattice-slat {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.vine-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.blossom {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lattice-slat {
+    stroke-dashoffset: 1;
+    animation: draw 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
   }
-  50% {
-    background-position: 100% 50%;
+
+  .vine-path {
+    stroke-dashoffset: 1;
+    animation: draw 1.4s cubic-bezier(0.45, 0, 0.25, 1) 0.7s forwards;
+  }
+
+  .blossom {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bloom 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    animation-delay: var(--d, 1.4s);
+  }
+
+  .blossom-label {
+    opacity: 0;
+    animation: fade 0.4s ease-out forwards;
+    animation-delay: calc(var(--d, 1.4s) + 0.15s);
+  }
+
+  .allowance-fill {
+    transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 }
 
-@keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 15px rgba(153, 69, 255, 0.15);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(153, 69, 255, 0.3);
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient-shift 8s ease infinite;
+@keyframes bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
-.animate-glow {
-  animation: pulse-glow 3s ease-in-out infinite;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+@keyframes fade {
+  to {
+    opacity: 1;
+  }
 }

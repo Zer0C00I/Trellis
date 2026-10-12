@@ -11,7 +11,7 @@ export function WalletButton() {
   )
 
   if (!mounted) {
-    return <div className="h-10 w-[130px] bg-white/5 rounded-md animate-pulse" />
+    return <div className="h-10 w-[140px] animate-pulse rounded-md bg-ivy/10" />
   }
 
   return <WalletMultiButton />
