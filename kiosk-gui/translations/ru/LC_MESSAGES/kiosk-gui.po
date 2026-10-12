@@ -1,0 +1,43 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: kiosk-gui\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Device setup"
+msgstr "Настройка устройства"
+
+msgid "Skip"
+msgstr "Пропустить"
+
+msgid "My wallet"
+msgstr "Мой кошелёк"
+
+msgid "Family wallet"
+msgstr "Семейный кошелёк"
+
+msgid "Help"
+msgstr "Помощь"
+
+msgid "Back to my wallet"
+msgstr "Назад к моему кошельку"
+
+msgid "How much to send to {}?"
+msgstr "Сколько отправить {}?"
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Send {} → {}?"
+msgstr "Отправить {} → {}?"
+
+msgid "Send"
+msgstr "Отправить"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "OK"
+msgstr "Ок"

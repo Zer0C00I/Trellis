@@ -20,7 +20,7 @@ export component MyWalletScreen inherits Rectangle {
         spacing: Theme.spacing;
 
         Text {
-            text: "Мой кошелёк";
+            text: @tr("My wallet");
             color: Theme.fg;
             font-size: Theme.font-size-heading;
         }
@@ -65,14 +65,14 @@ export component MyWalletScreen inherits Rectangle {
         border-width: 2px;
         border-radius: 8px;
         accessible-role: button;
-        accessible-label: "Семейный кошелёк";
+        accessible-label: @tr("Family wallet");
 
         TouchArea {
             clicked => { family-wallet-requested(); }
         }
 
         Text {
-            text: "Семейный кошелёк";
+            text: @tr("Family wallet");
             color: Theme.secondary-button-fg;
             font-size: 20px;
             horizontal-alignment: center;
@@ -92,7 +92,7 @@ export component MyWalletScreen inherits Rectangle {
         border-width: 2px;
         border-radius: 8px;
         accessible-role: button;
-        accessible-label: "Помощь";
+        accessible-label: @tr("Help");
 
         TouchArea {
             clicked => { help-requested(); }

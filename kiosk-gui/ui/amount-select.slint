@@ -14,7 +14,7 @@ export component AmountSelectScreen inherits Rectangle {
         spacing: Theme.spacing;
 
         Text {
-            text: "Сколько отправить " + recipient-name + "?";
+            text: @tr("How much to send to {}?", recipient-name);
             color: Theme.fg;
             font-size: Theme.font-size-heading;
             wrap: word-wrap;
@@ -51,14 +51,14 @@ export component AmountSelectScreen inherits Rectangle {
         border-width: 2px;
         border-radius: 8px;
         accessible-role: button;
-        accessible-label: "Назад";
+        accessible-label: @tr("Back");
 
         TouchArea {
             clicked => { back-requested(); }
         }
 
         Text {
-            text: "Назад";
+            text: @tr("Back");
             color: Theme.secondary-button-fg;
             font-size: Theme.font-size-body;
             horizontal-alignment: center;

@@ -23,7 +23,7 @@ export component SetupScreen inherits Rectangle {
         alignment: center;
 
         Text {
-            text: "Настройка устройства";
+            text: @tr("Device setup");
             color: Theme.fg;
             font-size: Theme.font-size-heading;
             horizontal-alignment: center;
@@ -82,14 +82,14 @@ export component SetupScreen inherits Rectangle {
                     border-width: 2px;
                     border-radius: 8px;
                     accessible-role: button;
-                    accessible-label: "Пропустить";
+                    accessible-label: @tr("Skip");
 
                     TouchArea {
                         clicked => { skip-pairing-requested(); }
                     }
 
                     Text {
-                        text: "Пропустить";
+                        text: @tr("Skip");
                         color: Theme.secondary-button-fg;
                         font-size: Theme.font-size-body;
                         horizontal-alignment: center;

@@ -156,7 +156,7 @@ fn cancelling_confirmation_returns_to_my_wallet() {
             });
         }
 
-        let elem = ElementHandle::find_by_accessible_label(&app, "Отмена")
+        let elem = ElementHandle::find_by_accessible_label(&app, "Cancel")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("cancel button not found");
         elem.single_click(PointerEventButton::Left).await;
@@ -188,7 +188,7 @@ fn confirming_send_navigates_to_result_with_success_message() {
             });
         }
 
-        let elem = ElementHandle::find_by_accessible_label(&app, "Отправить")
+        let elem = ElementHandle::find_by_accessible_label(&app, "Send")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("send button not found");
         elem.single_click(PointerEventButton::Left).await;
@@ -219,7 +219,7 @@ fn pressing_ok_on_result_returns_to_my_wallet_immediately() {
             });
         }
 
-        let elem = ElementHandle::find_by_accessible_label(&app, "Ок")
+        let elem = ElementHandle::find_by_accessible_label(&app, "OK")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("ok button not found");
         elem.single_click(PointerEventButton::Left).await;
@@ -317,7 +317,7 @@ fn confirming_send_with_duplicate_beneficiary_names_resolves_the_tapped_id() {
 
         assert_eq!(app.get_current_screen(), Screen::Confirm);
 
-        let send = ElementHandle::find_by_accessible_label(&app, "Отправить")
+        let send = ElementHandle::find_by_accessible_label(&app, "Send")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("send button not found");
         send.single_click(PointerEventButton::Left).await;
@@ -354,13 +354,13 @@ fn family_wallet_button_navigates_there_and_back_button_returns() {
 
         assert_eq!(app.get_current_screen(), Screen::MyWallet);
 
-        let to_family = ElementHandle::find_by_accessible_label(&app, "Семейный кошелёк")
+        let to_family = ElementHandle::find_by_accessible_label(&app, "Family wallet")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("family wallet button not found");
         to_family.single_click(PointerEventButton::Left).await;
         assert_eq!(app.get_current_screen(), Screen::FamilyWallet);
 
-        let back = ElementHandle::find_by_accessible_label(&app, "Назад к моему кошельку")
+        let back = ElementHandle::find_by_accessible_label(&app, "Back to my wallet")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("back button not found");
         back.single_click(PointerEventButton::Left).await;
@@ -376,7 +376,7 @@ fn help_button_on_my_wallet_is_accessibility_discoverable() {
     slint::spawn_local(async move {
         let app = AppWindow::new().unwrap();
 
-        let help = ElementHandle::find_by_accessible_label(&app, "Помощь")
+        let help = ElementHandle::find_by_accessible_label(&app, "Help")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("help button not found");
         assert!(help.accessible_role() == Some(AccessibleRole::Button));
@@ -392,7 +392,7 @@ fn help_button_on_family_wallet_is_accessibility_discoverable() {
         let app = AppWindow::new().unwrap();
         app.set_current_screen(Screen::FamilyWallet);
 
-        let help = ElementHandle::find_by_accessible_label(&app, "Помощь")
+        let help = ElementHandle::find_by_accessible_label(&app, "Help")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("help button not found");
         assert!(help.accessible_role() == Some(AccessibleRole::Button));
@@ -409,7 +409,7 @@ fn skip_button_exists_only_while_pairing_is_active() {
         app.set_current_screen(Screen::Setup);
 
         assert!(
-            ElementHandle::find_by_accessible_label(&app, "Пропустить")
+            ElementHandle::find_by_accessible_label(&app, "Skip")
                 .next()
                 .is_none(),
             "skip button must not exist outside pairing mode"
@@ -417,7 +417,7 @@ fn skip_button_exists_only_while_pairing_is_active() {
 
         app.set_setup_pairing_active(true);
         assert!(
-            ElementHandle::find_by_accessible_label(&app, "Пропустить")
+            ElementHandle::find_by_accessible_label(&app, "Skip")
                 .any(|e| e.accessible_role() == Some(AccessibleRole::Button)),
             "skip button must exist as a button in pairing mode"
         );
@@ -439,12 +439,45 @@ fn tapping_skip_fires_skip_pairing_requested() {
         let fired_clone = fired.clone();
         app.on_skip_pairing_requested(move || fired_clone.set(true));
 
-        let button = ElementHandle::find_by_accessible_label(&app, "Пропустить")
+        let button = ElementHandle::find_by_accessible_label(&app, "Skip")
             .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
             .expect("skip button not found");
         button.single_click(PointerEventButton::Left).await;
 
         assert!(fired.get());
+
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
+fn the_russian_translation_is_bundled_and_can_be_selected() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        app.set_current_screen(Screen::MyWallet);
+
+        slint::select_bundled_translation("ru")
+            .expect("the Russian translation must be bundled into the binary");
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Семейный кошелёк")
+                .any(|e| e.accessible_role() == Some(AccessibleRole::Button)),
+            "the family wallet button must be labelled in Russian after selecting ru"
+        );
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Family wallet")
+                .next()
+                .is_none(),
+            "the English label must be gone after selecting ru"
+        );
+
+        // Every other scenario relies on the English source text.
+        slint::select_bundled_translation("en").unwrap();
+        assert!(
+            ElementHandle::find_by_accessible_label(&app, "Family wallet")
+                .any(|e| e.accessible_role() == Some(AccessibleRole::Button)),
+            "the family wallet button must be labelled in English after selecting en"
+        );
 
         slint::quit_event_loop().unwrap();
     })
@@ -491,6 +524,9 @@ fn main() {
     tapping_skip_fires_skip_pairing_requested();
     println!("test tapping_skip_fires_skip_pairing_requested ... ok");
 
+    the_russian_translation_is_bundled_and_can_be_selected();
+    println!("test the_russian_translation_is_bundled_and_can_be_selected ... ok");
+
     println!();
-    println!("test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

@@ -16,7 +16,7 @@ export component FamilyWalletScreen inherits Rectangle {
         spacing: Theme.spacing;
 
         Text {
-            text: "Семейный кошелёк";
+            text: @tr("Family wallet");
             color: Theme.fg;
             font-size: Theme.font-size-heading;
         }
@@ -60,14 +60,14 @@ export component FamilyWalletScreen inherits Rectangle {
         border-width: 2px;
         border-radius: 8px;
         accessible-role: button;
-        accessible-label: "Назад к моему кошельку";
+        accessible-label: @tr("Back to my wallet");
 
         TouchArea {
             clicked => { back-to-my-wallet-requested(); }
         }
 
         Text {
-            text: "Назад к моему кошельку";
+            text: @tr("Back to my wallet");
             color: Theme.secondary-button-fg;
             font-size: 20px;
             horizontal-alignment: center;
@@ -86,7 +86,7 @@ export component FamilyWalletScreen inherits Rectangle {
         border-width: 2px;
         border-radius: 8px;
         accessible-role: button;
-        accessible-label: "Помощь";
+        accessible-label: @tr("Help");
 
         TouchArea {
             clicked => { help-requested(); }

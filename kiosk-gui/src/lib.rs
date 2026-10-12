@@ -72,6 +72,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
         language::startup_language(&config_path, std::env::var("LANG").ok().as_deref());
     eprintln!("[kiosk-gui] language: {}", language.code());
     let app = AppWindow::new()?;
+    if let Err(e) = slint::select_bundled_translation(language.code()) {
+        eprintln!("[kiosk-gui] could not select the {} translation: {e}", language.code());
+    }
 
     let cfg: Arc<Mutex<Option<Arc<ChainConfig>>>> = Arc::new(Mutex::new(None));
 

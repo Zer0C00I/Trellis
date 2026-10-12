@@ -34,14 +34,14 @@ export component ResultScreen inherits Rectangle {
             background: Theme.button-bg;
             border-radius: 8px;
             accessible-role: button;
-            accessible-label: "Ок";
+            accessible-label: @tr("OK");
 
             TouchArea {
                 clicked => { ok-pressed(); }
             }
 
             Text {
-                text: "Ок";
+                text: @tr("OK");
                 color: Theme.button-fg;
                 font-size: Theme.font-size-body;
                 horizontal-alignment: center;
