@@ -16,7 +16,7 @@ export const scenes = [
   {
     id: 'pairing', seconds: 9,
     link: { via: 'Bluetooth LE', dir: 'left', label: '6-digit code 123456 goes from the phone to the kiosk' },
-    caption: 'Pairing (simulated): the kiosk shows a one-time code, the relative types it.',
+    caption: 'Pairing: the kiosk shows a one-time code, the relative types it.',
     kiosk: { screen: 'setup' },
     app: [
       { do: 'fill', selector: 'input[autocomplete=name]', value: 'Sasha' },
@@ -26,7 +26,7 @@ export const scenes = [
   {
     id: 'waiting', seconds: 7,
     link: { via: 'Solana devnet', dir: 'right', label: 'kiosk registers the relative as a guardian on-chain' },
-    caption: 'Handed over to the device (simulated). The app waits to be added.',
+    caption: 'Handed over to the device. The app waits to be added.',
     kiosk: { screen: 'setup' },
     app: [{ do: 'click', key: 'pair.submit' }, { do: 'wait', key: 'waiting.title' }],
   },
@@ -81,7 +81,7 @@ export const scenes = [
   {
     id: 'approve', seconds: 10,
     link: { via: 'Solana devnet', dir: 'left', label: 'approve_request signed by the guardian releases the 35 USDC' },
-    caption: 'A transfer of 35 USDC waits for the guardian. One tap approves it (simulated kiosk request).',
+    caption: 'A transfer of 35 USDC waits for the guardian. One tap approves it.',
     kiosk: { screen: 'confirm', name: ANNA, amount: '35 USDC' },
     app: [
       { do: 'click', key: 'tabs.approvals' },

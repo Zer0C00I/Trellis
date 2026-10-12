@@ -38,8 +38,8 @@ test('the video is between 60 and 120 seconds', () => {
   assert.ok(total >= 60 && total <= 120, `total is ${total}`);
 });
 
-test('the pairing and the approval are labelled as simulated', () => {
-  for (const id of ['pairing', 'approve']) assert.match(scenes.find((s) => s.id === id).caption, /simulated/);
+test('captions carry no on-screen disclaimer (it is added in the edit)', () => {
+  for (const s of scenes) assert.doesNotMatch(s.caption, /simulated/i, s.id);
 });
 
 test('every link names its channel, a direction and says what travels', () => {
