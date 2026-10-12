@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
+import { BeneficiaryItem } from "my-wallet.slint";
 import { Message, Messages } from "messages.slint";
-import { SidePanel, SecondaryButton } from "components.slint";
-import { BeneficiaryItem, BeneficiaryGrid } from "my-wallet.slint";
 
 export component FamilyWalletScreen inherits Rectangle {
     in property <string> balance-text: "0";
@@ -15,34 +15,67 @@ export component FamilyWalletScreen inherits Rectangle {
     background: Theme.bg;
 
     HorizontalLayout {
-        padding: Theme.margin;
-        spacing: Theme.margin;
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
 
-        SidePanel {
-            title: @tr("Family wallet");
-            value: root.balance-message == Message.none ? root.balance-text : Messages.text(root.balance-message, "");
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: Theme.spacing;
 
-            // Same spot as MyWalletScreen's "Family wallet" button —
-            // spec: consistent navigation (WCAG 3.2.3/3.2.4).
-            SecondaryButton {
-                text: @tr("Back to my wallet");
-                on-dark: true;
-                font-size: 20px;
-                min-height: 72px;
-                clicked => { root.back-to-my-wallet-requested(); }
+            Text {
+                text: @tr("Family wallet");
+                color: Theme.fg;
+                font-size: Theme.font-size-heading;
             }
 
-            SecondaryButton {
-                text: "?   " + @tr("Help");
-                label: @tr("Help");
-                on-dark: true;
-                clicked => { root.help-requested(); }
+            Text {
+                text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+                color: Theme.fg;
+                font-size: Theme.font-size-heading;
+                wrap: word-wrap;
+            }
+
+            for b in beneficiaries: KioskButton {
+                text: b.name;
+                clicked => { beneficiary-selected(b.id); }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
             }
         }
 
-        BeneficiaryGrid {
-            items: root.beneficiaries;
-            selected(id) => { root.beneficiary-selected(id); }
+        // The right column holds the controls that are the same on every
+        // screen, so the beneficiary list never runs under them.
+        VerticalLayout {
+            width: 200px;
+            spacing: Theme.spacing;
+
+            // In the same place as the "Family wallet" button of the other screen.
+            KioskButton {
+                text: @tr("Back to my wallet");
+                primary: false;
+                font-size: 24px;
+                clicked => { back-to-my-wallet-requested(); }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+
+                KioskButton {
+                    text: "?";
+                    primary: false;
+                    font-size: Theme.font-size-heading;
+                    min-width: Theme.target-size;
+                    accessible-label: @tr("Help");
+                    clicked => { help-requested(); }
+                }
+            }
         }
     }
 }

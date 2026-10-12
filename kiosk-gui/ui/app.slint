@@ -1,6 +1,3 @@
-import "fonts/Onest-Regular.ttf";
-import "fonts/Onest-SemiBold.ttf";
-import "fonts/JetBrainsMono-Bold.ttf";
 import { Theme } from "theme.slint";
 import { Message } from "messages.slint";
 import { SetupScreen } from "setup.slint";
@@ -18,7 +15,6 @@ export component AppWindow inherits Window {
     width: 800px;
     height: 480px;
     background: Theme.bg;
-    default-font-family: "Onest";
 
     in-out property <Screen> current-screen: Screen.my-wallet;
 

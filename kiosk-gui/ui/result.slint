@@ -1,6 +1,6 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
 import { Message, Messages } from "messages.slint";
-import { PrimaryButton } from "components.slint";
 
 export component ResultScreen inherits Rectangle {
     in property <bool> success: true;
@@ -13,49 +13,21 @@ export component ResultScreen inherits Rectangle {
     background: Theme.bg;
 
     VerticalLayout {
-        padding: Theme.margin;
-        spacing: 24px;
+        padding: Theme.spacing;
+        spacing: Theme.spacing;
         alignment: center;
 
-        HorizontalLayout {
-            alignment: center;
-
-            // A drawn mark rather than a ✓/✗ glyph: same shape on every font.
-            Rectangle {
-                width: 128px;
-                height: 128px;
-                border-radius: 64px;
-                background: root.success ? Theme.success-color : Theme.error-color;
-                accessible-role: text;
-                accessible-label: root.success ? @tr("Success") : @tr("Error");
-
-                if root.success : Path {
-                    width: 128px;
-                    height: 128px;
-                    viewbox-width: 128;
-                    viewbox-height: 128;
-                    commands: "M 36 66 L 56 86 L 94 44";
-                    stroke: Theme.panel-fg;
-                    stroke-width: 11px;
-                }
-
-                if !root.success : Path {
-                    width: 128px;
-                    height: 128px;
-                    viewbox-width: 128;
-                    viewbox-height: 128;
-                    commands: "M 44 44 L 84 84 M 84 44 L 44 84";
-                    stroke: Theme.panel-fg;
-                    stroke-width: 11px;
-                }
-            }
+        Text {
+            text: success ? "✓" : "✗";
+            color: success ? Theme.success-color : Theme.error-color;
+            font-size: 96px;
+            horizontal-alignment: center;
         }
 
         Text {
-            text: Messages.text(root.message, root.name);
+            text: Messages.text(message, name);
             color: Theme.fg;
-            font-size: 36px;
-            font-weight: 600;
+            font-size: Theme.font-size-heading;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
@@ -63,11 +35,10 @@ export component ResultScreen inherits Rectangle {
         HorizontalLayout {
             alignment: center;
 
-            PrimaryButton {
-                width: 260px;
-                height: 72px;
+            KioskButton {
                 text: @tr("OK");
-                clicked => { root.ok-pressed(); }
+                min-width: 200px;
+                clicked => { ok-pressed(); }
             }
         }
     }

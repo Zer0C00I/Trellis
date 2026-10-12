@@ -1,47 +1,26 @@
-// Trellis kiosk theme. Same palette as the website and the family app:
-// Lichen ground, Ivy ink and buttons, Wisteria only as a non-text accent.
-// Every text/background pair clears WCAG 2.2 AAA's 7:1 floor:
-//   Ivy on Lichen 11.9:1, Ivy on Paper 13.1:1, Lichen on Ivy 11.9:1,
-//   panel-muted on Ivy 8.7:1, muted on Lichen 7.9:1,
-//   success on Lichen 7.7:1, error on Lichen 8.3:1.
 export global Theme {
-    out property <color> bg: #e9ece4;          // Lichen
-    out property <color> fg: #17301f;          // Ivy
-    out property <color> muted: #3b4a40;
+    // Pure black-on-white: 21:1 contrast, clears WCAG 2.2 AAA's 7:1
+    // floor with margin, no per-color contrast math needed.
+    out property <color> bg: #ffffff;
+    out property <color> fg: #000000;
 
-    out property <color> panel-bg: #17301f;
-    out property <color> panel-fg: #e9ece4;
-    out property <color> panel-muted: #c3cdc2;
+    out property <color> button-bg: #000000;
+    out property <color> button-fg: #ffffff;
 
-    out property <color> tile-bg: #f5f7f2;     // Paper
-    out property <color> tile-pressed: #dcd5f0;
-    out property <color> tile-border: #c9d1c4;
-    out property <color> accent: #5b4aa0;      // Wisteria: stripes and marks, never text
+    out property <color> secondary-button-bg: #ffffff;
+    out property <color> secondary-button-border: #000000;
+    out property <color> secondary-button-fg: #000000;
 
-    out property <color> button-bg: #17301f;
-    out property <color> button-pressed: #2c5039;
-    out property <color> button-fg: #e9ece4;
-
-    out property <color> secondary-button-bg: transparent;
-    out property <color> secondary-button-pressed: #d7ddd1;
-    out property <color> secondary-button-border: #17301f;
-    out property <color> secondary-button-fg: #17301f;
-
-    out property <color> success-color: #1f5132;
-    out property <color> error-color: #7a2618;
+    out property <color> success-color: #1b5e20;
+    out property <color> error-color: #b71c1c;
 
     // Spec: 60x60px minimum target size, 16px spacing — exceeds the
     // WCAG 2.2 AAA 44x44px floor (empirically ~70% fewer mis-taps).
-    out property <length> target-size: 64px;
+    out property <length> target-size: 60px;
     out property <length> spacing: 16px;
-    out property <length> margin: 24px;
-    out property <length> radius: 10px;
-    out property <length> panel-width: 280px;
 
     out property <length> font-size-heading: 40px;
     out property <length> font-size-body: 28px;
-    out property <length> font-size-label: 22px;
-    out property <length> font-size-balance: 40px;
 
     // Questions that carry a recipient name of up to 32 characters: smaller
     // than a heading, so that three lines of them still leave room for the
