@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
 import { Messages } from "messages.slint";
 
 export component ConfirmScreen inherits Rectangle {
@@ -17,53 +18,22 @@ export component ConfirmScreen inherits Rectangle {
         Text {
             text: @tr("Send {} → {}?", amount-text, Messages.recipient(recipient-name));
             color: Theme.fg;
-            font-size: Theme.font-size-heading;
+            font-size: Theme.font-size-question;
             wrap: word-wrap;
         }
 
         HorizontalLayout {
             spacing: Theme.spacing;
 
-            Rectangle {
-                height: Theme.target-size;
-                background: Theme.button-bg;
-                border-radius: 8px;
-                accessible-role: button;
-                accessible-label: @tr("Send");
-
-                TouchArea {
-                    clicked => { send-confirmed(); }
-                }
-
-                Text {
-                    text: @tr("Send");
-                    color: Theme.button-fg;
-                    font-size: Theme.font-size-body;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+            KioskButton {
+                text: @tr("Send");
+                clicked => { send-confirmed(); }
             }
 
-            Rectangle {
-                height: Theme.target-size;
-                background: Theme.secondary-button-bg;
-                border-color: Theme.secondary-button-border;
-                border-width: 2px;
-                border-radius: 8px;
-                accessible-role: button;
-                accessible-label: @tr("Cancel");
-
-                TouchArea {
-                    clicked => { send-cancelled(); }
-                }
-
-                Text {
-                    text: @tr("Cancel");
-                    color: Theme.secondary-button-fg;
-                    font-size: Theme.font-size-body;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+            KioskButton {
+                text: @tr("Cancel");
+                primary: false;
+                clicked => { send-cancelled(); }
             }
         }
     }

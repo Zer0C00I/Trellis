@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
 import { Message, Messages } from "messages.slint";
 
 export component SetupScreen inherits Rectangle {
@@ -79,26 +80,10 @@ export component SetupScreen inherits Rectangle {
                     font-weight: 700;
                 }
 
-                Rectangle {
-                    height: Theme.target-size;
-                    background: Theme.secondary-button-bg;
-                    border-color: Theme.secondary-button-border;
-                    border-width: 2px;
-                    border-radius: 8px;
-                    accessible-role: button;
-                    accessible-label: @tr("Skip");
-
-                    TouchArea {
-                        clicked => { skip-pairing-requested(); }
-                    }
-
-                    Text {
-                        text: @tr("Skip");
-                        color: Theme.secondary-button-fg;
-                        font-size: Theme.font-size-body;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                KioskButton {
+                    text: @tr("Skip");
+                    primary: false;
+                    clicked => { skip-pairing-requested(); }
                 }
             }
         }

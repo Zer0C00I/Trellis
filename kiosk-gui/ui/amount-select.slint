@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
 import { Messages } from "messages.slint";
 
 export component AmountSelectScreen inherits Rectangle {
@@ -17,53 +18,28 @@ export component AmountSelectScreen inherits Rectangle {
         Text {
             text: @tr("How much to send to {}?", Messages.recipient(recipient-name));
             color: Theme.fg;
-            font-size: Theme.font-size-heading;
+            font-size: Theme.font-size-question;
             wrap: word-wrap;
         }
 
-        for amount[i] in presets: Rectangle {
-            height: Theme.target-size;
-            background: Theme.button-bg;
-            border-radius: 8px;
-            accessible-role: button;
-            accessible-label: amount;
-
-            TouchArea {
-                clicked => { amount-selected(i); }
-            }
-
-            Text {
-                text: amount;
-                color: Theme.button-fg;
-                font-size: Theme.font-size-body;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-    }
-
-    Rectangle {
-        x: Theme.spacing;
-        y: parent.height - self.height - Theme.spacing;
-        width: 140px;
-        height: Theme.target-size;
-        background: Theme.secondary-button-bg;
-        border-color: Theme.secondary-button-border;
-        border-width: 2px;
-        border-radius: 8px;
-        accessible-role: button;
-        accessible-label: @tr("Back");
-
-        TouchArea {
-            clicked => { back-requested(); }
+        for amount[i] in presets: KioskButton {
+            text: amount;
+            clicked => { amount-selected(i); }
         }
 
-        Text {
-            text: @tr("Back");
-            color: Theme.secondary-button-fg;
-            font-size: Theme.font-size-body;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        HorizontalLayout {
+            alignment: start;
+
+            KioskButton {
+                text: @tr("Back");
+                primary: false;
+                min-width: 140px;
+                clicked => { back-requested(); }
+            }
         }
     }
 }

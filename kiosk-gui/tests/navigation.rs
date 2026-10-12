@@ -558,6 +558,123 @@ fn messages_are_worded_by_the_ui_in_both_languages() {
     slint::run_event_loop().unwrap();
 }
 
+/// A button's box on the 800x480 window: `(label, x, y, width, height)`.
+type ButtonBox = (String, f32, f32, f32, f32);
+
+/// The boxes of every `KioskButton` inside the screen with element id `screen`.
+fn button_boxes(app: &AppWindow, screen: &str) -> Vec<ButtonBox> {
+    let root = ElementHandle::find_by_element_id(app, screen)
+        .next()
+        .unwrap_or_else(|| panic!("no screen {screen}"));
+    root.query_descendants()
+        .match_inherits("KioskButton")
+        .find_all()
+        .iter()
+        .map(|button| {
+            let position = button.absolute_position();
+            let size = button.size();
+            (
+                button.accessible_label().unwrap_or_default().to_string(),
+                position.x,
+                position.y,
+                size.width,
+                size.height,
+            )
+        })
+        .collect()
+}
+
+fn assert_buttons_fit(context: &str, buttons: &[ButtonBox]) {
+    assert!(!buttons.is_empty(), "{context}: no buttons found");
+    for (label, x, y, width, height) in buttons {
+        assert!(
+            *width >= 60.0 && *height >= 60.0,
+            "{context}: `{label}` is {width}x{height}, under the 60px touch target"
+        );
+        assert!(
+            *x >= 0.0 && *y >= 0.0 && x + width <= 800.0 && y + height <= 480.0,
+            "{context}: `{label}` at ({x}, {y}) {width}x{height} leaves the 800x480 window"
+        );
+    }
+    for (i, a) in buttons.iter().enumerate() {
+        for b in &buttons[i + 1..] {
+            let apart = a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1 || a.2 + a.4 <= b.2 || b.2 + b.4 <= a.2;
+            assert!(apart, "{context}: `{}` overlaps `{}`", a.0, b.0);
+        }
+    }
+}
+
+fn buttons_fit_the_screen_in_both_languages_with_the_longest_names() {
+    slint::spawn_local(async move {
+        let app = AppWindow::new().unwrap();
+        // The test backend measures text narrower than the real renderer, so
+        // this checks the box rules (touch size, inside the window, no
+        // overlap, centred OK); `examples/screens.rs` shows how the text
+        // wraps inside them.
+        let widest = "W".repeat(32);
+        let names = [widest.as_str(), "Александр Константинович", "Внучка Екатерина Дм."];
+        let items = |names: &[&str]| -> slint::ModelRc<BeneficiaryItem> {
+            std::rc::Rc::new(slint::VecModel::from(
+                names
+                    .iter()
+                    .zip(1..)
+                    .map(|(name, id)| BeneficiaryItem { name: (*name).into(), id })
+                    .collect::<Vec<_>>(),
+            ))
+            .into()
+        };
+        app.set_beneficiaries(items(&names));
+        app.set_family_beneficiaries(items(&names[..2]));
+        app.set_presets(
+            std::rc::Rc::new(slint::VecModel::from(vec![
+                "10 USDC".into(),
+                "20 USDC".into(),
+                "50 USDC".into(),
+            ]))
+            .into(),
+        );
+        app.set_selected_recipient_name(widest.clone().into());
+        app.set_confirm_recipient_name(widest.clone().into());
+        app.set_confirm_amount_text("50 USDC".into());
+        app.set_result_name(widest.clone().into());
+        app.set_result_message(Message::Done);
+        app.set_setup_pairing_active(true);
+        app.set_setup_pin_text("123 456".into());
+        app.set_pairing_wait_secs(95);
+
+        for language in ["en", "ru"] {
+            slint::select_bundled_translation(language).unwrap();
+            for (screen, id, buttons) in [
+                (Screen::MyWallet, "AppWindow::wallet", 5),
+                (Screen::FamilyWallet, "AppWindow::family-wallet", 4),
+                (Screen::AmountSelect, "AppWindow::amount-select", 4),
+                (Screen::Confirm, "AppWindow::confirm", 2),
+                (Screen::Result, "AppWindow::result", 1),
+                (Screen::Setup, "AppWindow::setup", 1),
+            ] {
+                app.set_current_screen(screen);
+                let context = format!("{language} {id}");
+                let boxes = button_boxes(&app, id);
+                assert_eq!(boxes.len(), buttons, "{context}: {boxes:?}");
+                assert_buttons_fit(&context, &boxes);
+            }
+
+            // The OK button sits in the middle of the window.
+            app.set_current_screen(Screen::Result);
+            let ok = &button_boxes(&app, "AppWindow::result")[0];
+            assert!(
+                (ok.1 + ok.3 / 2.0 - 400.0).abs() <= 1.0,
+                "{language}: OK is not centred: {ok:?}"
+            );
+        }
+
+        slint::select_bundled_translation("en").unwrap();
+        slint::quit_event_loop().unwrap();
+    })
+    .unwrap();
+    slint::run_event_loop().unwrap();
+}
+
 fn main() {
     i_slint_backend_testing::init_integration_test_with_system_time();
 
@@ -603,6 +720,9 @@ fn main() {
     messages_are_worded_by_the_ui_in_both_languages();
     println!("test messages_are_worded_by_the_ui_in_both_languages ... ok");
 
+    buttons_fit_the_screen_in_both_languages_with_the_longest_names();
+    println!("test buttons_fit_the_screen_in_both_languages_with_the_longest_names ... ok");
+
     println!();
-    println!("test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
+    println!("test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s");
 }

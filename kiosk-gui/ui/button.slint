@@ -1,0 +1,42 @@
+import { Theme } from "theme.slint";
+
+// The one button of the kiosk. The label wraps and the button grows with it,
+// so a long translation never spills out; the height never drops below the
+// touch target.
+export component KioskButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: true;
+    in property <length> font-size: Theme.font-size-body;
+
+    callback clicked();
+
+    min-height: Theme.target-size;
+    background: primary ? Theme.button-bg : Theme.secondary-button-bg;
+    border-color: Theme.secondary-button-border;
+    border-width: primary ? 0px : 2px;
+    border-radius: 8px;
+    accessible-role: button;
+    accessible-label: text;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: primary ? Theme.button-fg : Theme.secondary-button-fg;
+            font-size: root.font-size;
+            // A name without a space must wrap rather than widen the button.
+            min-width: 0px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

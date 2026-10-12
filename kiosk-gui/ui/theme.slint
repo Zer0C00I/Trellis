@@ -22,6 +22,11 @@ export global Theme {
     out property <length> font-size-heading: 40px;
     out property <length> font-size-body: 28px;
 
+    // Questions that carry a recipient name of up to 32 characters: smaller
+    // than a heading, so that three lines of them still leave room for the
+    // buttons below.
+    out property <length> font-size-question: 32px;
+
     // The fallback pairing code must be read and typed correctly, so it
     // gets the largest type on its screen.
     out property <length> font-size-code: 64px;

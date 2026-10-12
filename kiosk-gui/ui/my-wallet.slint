@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { KioskButton } from "button.slint";
 import { Message, Messages } from "messages.slint";
 
 export struct BeneficiaryItem {
@@ -18,95 +19,68 @@ export component MyWalletScreen inherits Rectangle {
 
     background: Theme.bg;
 
-    VerticalLayout {
+    HorizontalLayout {
         padding: Theme.spacing;
         spacing: Theme.spacing;
 
-        Text {
-            text: @tr("My wallet");
-            color: Theme.fg;
-            font-size: Theme.font-size-heading;
-        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            spacing: Theme.spacing;
 
-        Text {
-            text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
-            color: Theme.fg;
-            font-size: Theme.font-size-heading;
-        }
-
-        for b in beneficiaries: Rectangle {
-            height: Theme.target-size;
-            background: Theme.button-bg;
-            border-radius: 8px;
-            accessible-role: button;
-            accessible-label: b.name;
-
-            TouchArea {
-                clicked => { beneficiary-selected(b.id); }
+            Text {
+                text: @tr("My wallet");
+                color: Theme.fg;
+                font-size: Theme.font-size-heading;
             }
 
             Text {
+                text: balance-message == Message.none ? balance-text : Messages.text(balance-message, "");
+                color: Theme.fg;
+                font-size: Theme.font-size-heading;
+                wrap: word-wrap;
+            }
+
+            for b in beneficiaries: KioskButton {
                 text: b.name;
-                color: Theme.button-fg;
-                font-size: Theme.font-size-body;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                clicked => { beneficiary-selected(b.id); }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
             }
         }
-    }
 
-    Rectangle {
-        // Family wallet button — top area, visually distinct from the
-        // beneficiary list (spec: not the same visual weight as sending
-        // money, since it navigates rather than moves funds).
-        x: parent.width - self.width - Theme.spacing;
-        y: Theme.spacing;
-        width: 180px;
-        height: Theme.target-size;
-        background: Theme.secondary-button-bg;
-        border-color: Theme.secondary-button-border;
-        border-width: 2px;
-        border-radius: 8px;
-        accessible-role: button;
-        accessible-label: @tr("Family wallet");
+        // The right column holds the controls that are the same on every
+        // screen, so the beneficiary list never runs under them.
+        VerticalLayout {
+            width: 200px;
+            spacing: Theme.spacing;
 
-        TouchArea {
-            clicked => { family-wallet-requested(); }
-        }
+            // Distinct from the beneficiary list: it navigates, it moves no funds.
+            KioskButton {
+                text: @tr("Family wallet");
+                primary: false;
+                font-size: 24px;
+                clicked => { family-wallet-requested(); }
+            }
 
-        Text {
-            text: @tr("Family wallet");
-            color: Theme.secondary-button-fg;
-            font-size: 20px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            wrap: word-wrap;
-        }
-    }
+            Rectangle {
+                vertical-stretch: 1;
+            }
 
-    Rectangle {
-        // Help button — fixed bottom-right on every screen (spec: 3.2.6).
-        x: parent.width - self.width - Theme.spacing;
-        y: parent.height - self.height - Theme.spacing;
-        width: Theme.target-size;
-        height: Theme.target-size;
-        background: Theme.secondary-button-bg;
-        border-color: Theme.secondary-button-border;
-        border-width: 2px;
-        border-radius: 8px;
-        accessible-role: button;
-        accessible-label: @tr("Help");
+            HorizontalLayout {
+                alignment: end;
 
-        TouchArea {
-            clicked => { help-requested(); }
-        }
-
-        Text {
-            text: "?";
-            color: Theme.secondary-button-fg;
-            font-size: Theme.font-size-heading;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+                KioskButton {
+                    text: "?";
+                    primary: false;
+                    font-size: Theme.font-size-heading;
+                    min-width: Theme.target-size;
+                    accessible-label: @tr("Help");
+                    clicked => { help-requested(); }
+                }
+            }
         }
     }
 }
