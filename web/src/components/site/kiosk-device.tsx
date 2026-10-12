@@ -1,31 +1,34 @@
-// The kiosk's "My wallet" screen as redesigned in kiosk-gui/ui: an Ivy panel
-// with the balance on the left and the family as large tiles on the right.
-// Drawn at the device's 800x480 proportions; purely illustrative.
+// The kiosk's "My wallet" screen as built in kiosk-gui/ui: black on white for
+// WCAG 2.2 AAA contrast, family as large black buttons, and the controls that
+// stay put on every screen in the right column. Drawn at the device's 800x480
+// proportions; purely illustrative.
 
-const FAMILY = ['Внук Саша', 'Дочка Маша', 'Сын Иван', 'Соседка Нина']
+const FAMILY = ['Grandson Sasha', 'Daughter Masha', 'Son Ivan']
 
 export function KioskDevice({ className = '' }: { className?: string }) {
   return (
     <div className={`w-full max-w-[560px] ${className}`} aria-hidden>
       <div className="rounded-[22px] bg-[#0d1a11] p-3 shadow-[0_30px_60px_-30px_rgb(0_0_0/0.6)] ring-1 ring-black/40">
-        <div className="grid aspect-[800/480] grid-cols-[36%_1fr] gap-[2.5%] overflow-hidden rounded-[10px] bg-lichen p-[2.5%]">
-          <div className="flex flex-col rounded-[6px] bg-ivy p-[7%] text-lichen">
-            <span className="text-[clamp(8px,1.6vw,13px)] opacity-80">Мой кошелёк</span>
-            <span className="tabular mt-[4%] text-[clamp(14px,3.4vw,28px)] font-semibold leading-none">$1 240</span>
-            <span className="mt-[3%] text-[clamp(7px,1.3vw,11px)] opacity-70">USDC</span>
-            <span className="mt-auto rounded-[4px] border border-lichen/50 py-[5%] text-center text-[clamp(7px,1.3vw,11px)]">
-              Семейный кошелёк
-            </span>
-          </div>
-          <div className="grid grid-cols-2 content-start gap-[4%]">
+        <div className="grid aspect-[800/480] grid-cols-[1fr_27%] gap-[2.5%] overflow-hidden rounded-[10px] bg-white p-[2.5%] text-black">
+          <div className="flex flex-col gap-[3%]">
+            <span className="text-[clamp(10px,2.2vw,18px)] leading-none">My wallet</span>
+            <span className="tabular text-[clamp(12px,2.6vw,22px)] font-semibold leading-none">120 USDC</span>
             {FAMILY.map((name) => (
               <span
                 key={name}
-                className="flex aspect-[2.6/1] items-center rounded-[5px] border-l-[3px] border-wisteria bg-paper px-[8%] text-[clamp(8px,1.6vw,13px)] font-medium text-ivy shadow-[0_1px_0_rgb(23_48_31/0.12)]"
+                className="flex flex-1 items-center justify-center rounded-[4px] bg-black text-[clamp(8px,1.6vw,13px)] font-medium text-white"
               >
                 {name}
               </span>
             ))}
+          </div>
+          <div className="flex flex-col justify-between">
+            <span className="rounded-[4px] border-2 border-black py-[12%] text-center text-[clamp(7px,1.3vw,11px)] font-medium">
+              Family wallet
+            </span>
+            <span className="self-end rounded-[4px] border-2 border-black px-[18%] py-[8%] text-[clamp(10px,2vw,16px)] font-semibold">
+              ?
+            </span>
           </div>
         </div>
       </div>
