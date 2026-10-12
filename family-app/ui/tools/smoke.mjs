@@ -370,6 +370,76 @@ try {
     assert.deepEqual(await evaluate('window.__log'), ['disabled']);
   });
 
+  test('the language can be switched on the Me tab, is remembered and rewords the screen', async () => {
+    const other = lang === 'ru' ? 'en' : 'ru';
+    const names = { en: 'English', ru: 'Русский' };
+    try {
+      await open('owner', 'me');
+      assert.ok((await text()).includes(t('me.address_title')));
+      assert.equal(await evaluate('document.documentElement.lang'), lang);
+      await click(names[other]);
+      setLocale(other, { persist: false });
+      await until(has(t('me.address_title')), 'the screen in the other language');
+      assert.equal(await evaluate('document.documentElement.lang'), other);
+      assert.equal(await evaluate("document.querySelector('[aria-pressed=true]').textContent.trim()"), names[other]);
+      // Reload without "?lang": the saved choice wins over the system language.
+      await navigate('about:blank');
+      await navigate(`${base}?mock=owner&t=${++visit}#/home`);
+      await until("document.getElementById('app').innerText.length > 20", 'reload');
+      assert.ok((await text()).includes(t('home.role_owner')));
+    } finally {
+      setLocale(lang, { persist: false });
+      await evaluate('localStorage.clear()');
+    }
+  });
+
+  test('a notice already on screen is reworded when the language changes', async () => {
+    const other = lang === 'ru' ? 'en' : 'ru';
+    const names = { en: 'English', ru: 'Русский' };
+    try {
+      await open('owner', 'me');
+      await evaluate("__ctx.notify({ key: 'notice.sent' })");
+      await until(has(t('notice.sent')), 'notice');
+      await click(names[other]);
+      setLocale(other, { persist: false });
+      await until(has(t('notice.sent')), 'the notice in the other language');
+    } finally {
+      setLocale(lang, { persist: false });
+      await evaluate('localStorage.clear()');
+    }
+  });
+
+  test('no screen is wider than a 360px phone, with the longest text of each language', async () => {
+    await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: false });
+    const wide = `(() => {
+      const width = document.documentElement.clientWidth;
+      const bad = [...document.querySelectorAll('#app *')]
+        .filter((e) => e.getBoundingClientRect().right > width + 0.5 && getComputedStyle(e).position !== 'fixed')
+        .map((e) => e.tagName.toLowerCase() + '.' + e.className + ': ' + (e.textContent || '').trim().slice(0, 40));
+      return { scroll: document.documentElement.scrollWidth, width, bad: bad.slice(0, 5) };
+    })()`;
+    try {
+      for (const [scenario, route] of [
+        ['owner', 'home'], ['owner', 'send'], ['owner', 'people'], ['owner', 'me'],
+        ['guardian', 'approvals'], ['guardian', 'home'], ['empty', 'home'], ['unconfirmed', 'home'],
+      ]) {
+        await open(scenario, route);
+        await sleep(400);
+        const r = await evaluate(wide);
+        assert.ok(r.scroll <= r.width && r.bad.length === 0, `${scenario}/${route}: ${JSON.stringify(r)}`);
+      }
+      await open('waiting');
+      await fill('input[autocomplete=name]', 'Внук Саша');
+      await fill('input[placeholder^="fvpair1"]', '123456');
+      await click(t('pair.submit'));
+      await until(has(t('waiting.title')), 'waiting');
+      const r = await evaluate(wide);
+      assert.ok(r.scroll <= r.width && r.bad.length === 0, `waiting: ${JSON.stringify(r)}`);
+    } finally {
+      await send('Emulation.clearDeviceMetricsOverride');
+    }
+  });
+
   test('names from the chain are shown as text, never as HTML', async () => {
     await open('owner', 'people');
     await until(has('Внучка Анна'), 'people list');

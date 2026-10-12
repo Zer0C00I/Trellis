@@ -45,6 +45,12 @@ const ctx = {
     location.hash = `#/${route}`;
   },
   onLeave: (fn) => leaveHooks.push(fn),
+  // Words everything again in the chosen language; nobody is typing in the
+  // button that triggered this, and a notice on screen is re-worded too.
+  setLanguage: (language) => {
+    setLocale(language);
+    render();
+  },
   setWaiting: (waiting) => update({ waiting, pairHint: !waiting && store.waiting }),
   // A success message ({ key, params }, as Rust sends it) that outlives the
   // re-render that fresh data causes; it is worded again if the language changes.
