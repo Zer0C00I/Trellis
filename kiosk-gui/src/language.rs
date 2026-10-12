@@ -28,13 +28,13 @@ impl Language {
 }
 
 /// The configured value if it names a supported language, otherwise the
-/// prefix of `LANG` (`ru_RU.UTF-8` is `ru`), otherwise Russian, which is
-/// what every already-installed kiosk speaks.
+/// prefix of `LANG` (`ru_RU.UTF-8` is `ru`), otherwise English. A kiosk that
+/// should speak Russian sets `language = "ru"` in `kiosk.toml`.
 pub fn resolve_language(configured: Option<&str>, lang_env: Option<&str>) -> Language {
     configured
         .and_then(Language::parse)
         .or_else(|| lang_env.and_then(language_from_env))
-        .unwrap_or(Language::Ru)
+        .unwrap_or(Language::En)
 }
 
 fn language_from_env(lang: &str) -> Option<Language> {
@@ -118,12 +118,12 @@ mod tests {
     }
 
     #[test]
-    fn everything_else_is_russian() {
-        assert_eq!(resolve_language(None, None), Language::Ru);
-        assert_eq!(resolve_language(None, Some("C")), Language::Ru);
-        assert_eq!(resolve_language(None, Some("POSIX")), Language::Ru);
-        assert_eq!(resolve_language(None, Some("fr_FR.UTF-8")), Language::Ru);
-        assert_eq!(resolve_language(None, Some("")), Language::Ru);
+    fn everything_else_is_english() {
+        assert_eq!(resolve_language(None, None), Language::En);
+        assert_eq!(resolve_language(None, Some("C")), Language::En);
+        assert_eq!(resolve_language(None, Some("POSIX")), Language::En);
+        assert_eq!(resolve_language(None, Some("fr_FR.UTF-8")), Language::En);
+        assert_eq!(resolve_language(None, Some("")), Language::En);
     }
 
     #[test]
@@ -162,8 +162,8 @@ mod tests {
 
         std::fs::remove_file(&kiosk).unwrap();
         std::fs::remove_file(dir.join("provisioning.toml")).unwrap();
-        assert_eq!(startup_language(&kiosk, Some("en_US.UTF-8")), Language::En);
-        assert_eq!(startup_language(&kiosk, None), Language::Ru);
+        assert_eq!(startup_language(&kiosk, Some("ru_RU.UTF-8")), Language::Ru);
+        assert_eq!(startup_language(&kiosk, None), Language::En);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
