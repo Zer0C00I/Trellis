@@ -54,12 +54,14 @@ if (demo) {
   pool.balance = '340 USDC';
   pool.daily_limit = '30 USDC';
   pool.remaining_today = '30 USDC';
-  grandma.balance = '120 USDC';
+  Object.assign(grandma, { is_pool: true, balance: '500 USDC', daily_limit: '30 USDC', remaining_today: '30 USDC', payees, guardians });
   grandma.pending = [{ ...grandma.pending[0], amount: '35 USDC' }];
 }
+const demoSent = [];
 
 const now = () => Math.floor(Date.now() / 1000);
 const history = () => [
+  ...demoSent,
   { signature: 's1', ...msg('history.deposit', { amount: '50 USDC' }), time: now() - 3600 },
   { signature: 's2', ...msg('history.withdraw', { amount: '12.5 USDC' }), time: now() - 86400 * 2 },
   { signature: 's3', ...msg('history.payee_added', { name: NAME.anna }), time: now() - 86400 * 9 },
@@ -122,6 +124,7 @@ const handlers = {
       return { signature: 'sigR', ...msg('notice.request_filed') };
     }
     moved -= Number(amount);
+    if (demo) demoSent.unshift({ signature: `d${demoSent.length}`, ...msg('history.withdraw', { amount: `${amount} USDC` }), time: now() });
     if (demo) pool.remaining_today = `${left - Number(amount)} USDC`;
     setBalance();
     return { signature: 'sigS', ...msg('notice.sent') };

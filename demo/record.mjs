@@ -47,8 +47,8 @@ try {
     for (const step of s.app) {
       if (step.do === 'fill') await run(`await stage.fill(${js(step.selector)}, ${js(step.value)});`);
       else if (step.do === 'select') await run(`await stage.select(${js(step.selector)}, ${js(step.value)});`);
-      else if (step.do === 'click') await run(`await stage.click(${js(t(step.key))});`);
-      else if (step.do === 'wait') await run(`await stage.wait(${js(t(step.key))});`);
+      else if (step.do === 'click') await run(`await stage.click(${js(t(step.key, step.params))});`);
+      else if (step.do === 'wait') await run(`await stage.wait(${js(t(step.key, step.params))});`);
       else if (step.do === 'pause') await sleep(step.ms);
     }
     const used = Date.now() - t0;

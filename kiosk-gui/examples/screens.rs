@@ -1,7 +1,7 @@
 //! Shows one kiosk screen filled with demo data, for presentations and for
 //! checking a layout by eye.
 //!
-//!     cargo run -p kiosk-gui --example screens -- <screen> [ru|en] [long|wide] [name=<text>] [amount=<text>] [snapshot.ppm]
+//!     cargo run -p kiosk-gui --example screens -- <screen> [ru|en] [long|wide] [name=<text>] [amount=<text>] [family-balance=<text>] [snapshot.ppm]
 //!
 //! Screens: wallet, family, amount, confirm, ok, fail, setup, wait.
 //! `long` uses long names with spaces, `wide` the widest 32-character names.
@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let custom_name = arg("name=");
     let custom_amount = arg("amount=");
+    let custom_family_balance = arg("family-balance=");
 
     let app = AppWindow::new()?;
     slint::select_bundled_translation(language)?;
@@ -70,7 +71,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
     );
     app.set_balance_text("120 USDC".into());
-    app.set_family_balance_text("340 USDC".into());
+    app.set_family_balance_text(
+        custom_family_balance
+            .as_deref()
+            .unwrap_or("340 USDC")
+            .into(),
+    );
     app.set_beneficiaries(items(&[(names[0], 1), (names[1], 2), (names[2], 3)]));
     app.set_family_beneficiaries(items(&[(names[0], 1), (names[1], 2)]));
     app.set_selected_recipient_name(shown.into());
