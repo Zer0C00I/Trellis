@@ -64,3 +64,7 @@ itself.
 
 Android and Windows builds, camera QR scanning, urgent add (needs two signers),
 owner rotation, notifications. See `docs/superpowers/plans/2026-10-10-family-app-tauri-ui.md`.
+
+## License
+
+GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [LICENSE](../LICENSE).

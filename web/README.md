@@ -27,3 +27,7 @@ npm run build    # static export of the marketing pages and the dashboard shell
 ## Dashboard scope
 
 The dashboard is the vault owner's view: create a personal vault, deposit USDC, add beneficiaries and guardians, and see pending requests. Approving a withdrawal is done by a guardian from their own device, not here.
+
+## License
+
+GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [LICENSE](../LICENSE).
