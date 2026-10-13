@@ -67,3 +67,7 @@ The tests in [`tests/`](tests/) drive the real UI — click **Connect Wallet**, 
 - **[Vitest](https://vitest.dev) + [Testing Library](https://testing-library.com/docs/react-testing-library/intro/)** render the actual app components in jsdom and interact with them by role and label, the same way a user would.
 
 The tests point the app's client factory at the surfnet via the optional URL override on `createAppClient` — everything else (plugins, signing, subscriptions, live balance updates) is the production code path.
+
+## License
+
+GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [LICENSE](../../LICENSE).
