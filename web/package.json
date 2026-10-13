@@ -1,5 +1,6 @@
 {
   "name": "family-vault",
+  "license": "AGPL-3.0-only",
   "scripts": {
     "build": "next build",
     "ci": "npm run build && npm run lint && npm run format:check",
